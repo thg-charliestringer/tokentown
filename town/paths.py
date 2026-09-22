@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import re
-import stat
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -132,11 +131,6 @@ class Paths:
         return self.home / "Library" / "Application Support" / "tokentown"
 
     @property
-    def legacy_secret_dir(self) -> Path:
-        """Where the same files lived when Tokentown was called ccboard. See adopt_legacy_dir."""
-        return self.home / "Library" / "Application Support" / "ccboard"
-
-    @property
     def secret_file(self) -> Path:
         return self.secret_dir / "secret"
 
@@ -172,31 +166,6 @@ def default_paths() -> Paths:
     if town_home:
         return Paths(home=Path(town_home))
     return Paths(home=Path.home(), config_dir=config_dir_from(os.environ.get(CONFIG_DIR_ENV)))
-
-
-def adopt_legacy_dir(paths: Paths) -> bool:
-    """Carry the pre-rename ccboard folder over to Tokentown once, so done marks and PR links survive.
-
-    os.rename, not a copy: within one filesystem it is atomic, so an interrupted run cannot leave the secret in
-    one folder and done.json in the other. Anything unexpected (the new folder already there, the old one gone,
-    a symlink, another user's directory, a cross-device rename) leaves both sides untouched and returns False:
-    a fresh folder costs one reconnect, whereas guessing here could lose the marks.
-    """
-    new, old = paths.secret_dir, paths.legacy_secret_dir
-    try:
-        if new.exists():
-            return False
-        st = os.lstat(old)
-    except OSError:
-        return False
-    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
-        return False
-    try:
-        new.parent.mkdir(parents=True, exist_ok=True)
-        os.rename(old, new)
-    except OSError:
-        return False
-    return True
 
 
 def is_denied(path: Path | str) -> bool:
