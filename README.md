@@ -12,14 +12,6 @@ Python 3.13 or later (stdlib only) and vanilla JS: no npm, no CDN, no web fonts,
 `127.0.0.1` only. The one outside service is GitHub, read-only, through your own `gh` sign-in. Nothing is sent or
 published, and your teammates install nothing.
 
-It was called ccboard, and nothing of that name is left. If you ran the old version, stop it with the old
-command (`ccboard stop`) before you upgrade: `tokentown stop` looks for a process named after the new
-command, so it will not find one still running from the old code. The first `tokentown` command then moves
-`~/Library/Application Support/ccboard/` across to `~/Library/Application Support/tokentown/`. The secret
-comes with it, so your Valhalla marks, your PR links and any tab you already have open all survive. The page's
-own remembered choices (view, map, island, rail, privacy) start again from their defaults once, because they
-are stored under the new name.
-
 ## Run it
 
 Clone it into a folder you keep, and start it from there:
@@ -418,10 +410,6 @@ folder:
 
 Both JSON files are written to a temp file and renamed into place, never through a symlink, and a file that is not a
 plain file owned by you is ignored.
-
-The folder was called `ccboard` before the rename. The first `tokentown` command renames it, and only when there
-is no `tokentown` folder yet and the old one is a plain directory owned by you. Anything else leaves both sides
-untouched and starts a fresh folder.
 
 ## Security model
 

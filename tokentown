@@ -71,7 +71,7 @@ if str(CODE_DIR) not in sys.path:
     sys.path.insert(0, str(CODE_DIR))
 
 from town import security  # noqa: E402
-from town.paths import HOST, PORT, Paths, adopt_legacy_dir, default_paths  # noqa: E402
+from town.paths import HOST, PORT, Paths, default_paths  # noqa: E402
 
 DEVNULL = subprocess.DEVNULL
 MIN_ENV = {"PATH": "/usr/bin:/bin"}
@@ -271,8 +271,6 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) > 1 or command not in {"open", "url", "serve", "stop", "check", "rotate"}:
         sys.stderr.write(__doc__.split("\n", 2)[2])
         return 2
-    # Every command reaches the private folder, and `serve` re-enters here in the child, so one call covers all.
-    adopt_legacy_dir(default_paths())
     if command in ("open", "url"):
         return launch(command)
     if command == "serve":

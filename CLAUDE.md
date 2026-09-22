@@ -3,15 +3,14 @@
 A local page showing every Claude Code session on this Mac as an animated village (Village view) or a kanban
 (Board view). See [README.md](README.md) for what it does, the lane rules, what it reads and the security model.
 It was called ccboard. The launcher is `tokentown`, the package is `town`, and its files live in
-`~/Library/Application Support/tokentown/`. `paths.adopt_legacy_dir`, called once from the launcher's
-`main`, renames a pre-rename `ccboard` folder to the new name so the secret, done marks and links survive.
+`~/Library/Application Support/tokentown/`.
 
 ## Layout
 
 ```
 tokentown            launcher: start/open, url, serve, stop, check, rotate
-town/paths.py        constants, Paths (every folder Claude may use), the read denylist, the legacy folder move,
-                     PR_URL_RE, RELEASE_TAG_RE, ids and ports
+town/paths.py        constants, Paths (every folder Claude may use), the read denylist, PR_URL_RE,
+                     RELEASE_TAG_RE, ids and ports
 town/model.py        dataclasses shared by every module
 town/sources.py      Scanner: desktop records, live registry, transcript tails, ps, background work
 town/usage.py        TokenLedger: token counts, read incrementally from transcripts

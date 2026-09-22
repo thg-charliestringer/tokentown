@@ -36,7 +36,7 @@ from town.done import DoneStore
 from town.linkstore import LinkStore
 from town.model import (CliTranscript, DesktopRecord, GitHubPr, PrLink, PullRequest, RawSnapshot, ReviewRequest,
                        ReviewSnapshot, Tail, TailRecord)
-from town.paths import CODE_DIR, EDITOR_OPEN_URL_RE, EDITORS, Paths, adopt_legacy_dir
+from town.paths import CODE_DIR, EDITOR_OPEN_URL_RE, EDITORS, Paths
 
 LOCAL = "local_11111111-2222-4333-8444-555555555555"
 NOT_IN_BOARD = "local_99999999-2222-4333-8444-555555555555"
@@ -331,63 +331,6 @@ class SecretTests(unittest.TestCase):
         with self.assertRaises(OSError):
             security.load_or_create_secret(self.paths)
 
-
-
-class LegacyDirTests(unittest.TestCase):
-    """The pre-rename ccboard folder is carried across once, and never at the cost of what is already there."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.paths = Paths(home=Path(self.tmp.name))
-
-    def make_legacy(self, **files) -> Path:
-        old = self.paths.legacy_secret_dir
-        old.mkdir(parents=True, mode=0o700)
-        for name, text in files.items():
-            (old / name).write_text(text)
-        return old
-
-    def test_nothing_to_do_without_a_legacy_dir(self):
-        self.assertFalse(adopt_legacy_dir(self.paths))
-        self.assertFalse(self.paths.secret_dir.exists())
-
-    def test_legacy_dir_is_renamed_with_its_files(self):
-        self.make_legacy(secret="ab" * 32 + "\n", **{"done.json": '{"v": 1}', "links.json": "[]"})
-        self.assertTrue(adopt_legacy_dir(self.paths))
-        self.assertFalse(self.paths.legacy_secret_dir.exists())
-        self.assertEqual(sorted(p.name for p in self.paths.secret_dir.iterdir()),
-                         ["done.json", "links.json", "secret"])
-        self.assertEqual(self.paths.secret_file.read_text().strip(), "ab" * 32)
-        self.assertEqual(stat.S_IMODE(os.stat(self.paths.secret_dir).st_mode), 0o700)
-
-    def test_a_second_run_is_a_no_op(self):
-        self.make_legacy(secret="ab" * 32 + "\n")
-        self.assertTrue(adopt_legacy_dir(self.paths))
-        self.assertFalse(adopt_legacy_dir(self.paths))
-
-    def test_an_existing_new_dir_wins_and_the_legacy_one_is_left_alone(self):
-        self.make_legacy(**{"done.json": "old"})
-        self.paths.secret_dir.mkdir(parents=True, mode=0o700)
-        (self.paths.secret_dir / "done.json").write_text("new")
-        self.assertFalse(adopt_legacy_dir(self.paths))
-        self.assertEqual((self.paths.secret_dir / "done.json").read_text(), "new")
-        self.assertEqual((self.paths.legacy_secret_dir / "done.json").read_text(), "old")
-
-    def test_a_symlink_in_place_of_the_legacy_dir_is_refused(self):
-        target = Path(self.tmp.name) / "elsewhere"
-        target.mkdir()
-        (target / "done.json").write_text("planted")
-        self.paths.legacy_secret_dir.parent.mkdir(parents=True, exist_ok=True)
-        self.paths.legacy_secret_dir.symlink_to(target, target_is_directory=True)
-        self.assertFalse(adopt_legacy_dir(self.paths))
-        self.assertFalse(self.paths.secret_dir.exists())
-
-    def test_a_legacy_file_rather_than_a_directory_is_refused(self):
-        self.paths.legacy_secret_dir.parent.mkdir(parents=True, exist_ok=True)
-        self.paths.legacy_secret_dir.write_text("not a directory")
-        self.assertFalse(adopt_legacy_dir(self.paths))
-        self.assertFalse(self.paths.secret_dir.exists())
 
 
 class HmacTests(unittest.TestCase):
@@ -2882,18 +2825,6 @@ class LauncherTests(unittest.TestCase):
                 self.assertNotIn("No such file", message)
                 self.assertEqual(message.count("\n"), 1)
         kill.assert_not_called()
-
-    def test_main_carries_the_legacy_dir_over_before_running_a_command(self):
-        """The one call in main is what every command relies on, so wire it, not just the function."""
-        old = self.paths.legacy_secret_dir
-        old.mkdir(parents=True, mode=0o700)
-        (old / "done.json").write_text('{"v": 1}')
-        with mock.patch.dict(os.environ, {"TOWN_HOME": str(self.paths.home)}), \
-                mock.patch.object(self.launcher, "stop", return_value=0) as stop:
-            self.assertEqual(self.launcher.main(["stop"]), 0)
-        stop.assert_called_once_with()
-        self.assertFalse(old.exists())
-        self.assertEqual((self.paths.secret_dir / "done.json").read_text(), '{"v": 1}')
 
     def test_unknown_subcommand(self):
         with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
