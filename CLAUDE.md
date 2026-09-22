@@ -35,6 +35,7 @@ tests/fixtures.py    synthetic home builder
 tests/test_*.py      unittest suites, one per module (test_status.py also covers board.py and check.py, and
                      test_updates.py covers actions.update_command)
 tests/web_harness.mjs headless node checks of village.js and app.js, run by tests/test_web.py
+.github/workflows/tests.yml  the whole suite on GitHub's macOS runner, Python 3.13 and 3.14, for every PR
 ```
 
 ## Commands
