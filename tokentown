@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""Tokentown: a local board of every Claude Code session on this Mac.
+
+  tokentown          start the server if needed and open the board in Safari
+  tokentown url      same, but print the one-time launch URL instead of opening Safari
+  tokentown serve    run the server in the foreground
+  tokentown stop     stop the running server
+  tokentown check    print the scan health report
+  tokentown rotate   replace the secret
+"""
+from __future__ import annotations
+
+import glob
+import hmac
+import http.client
+import os
+import re
+import secrets
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+# Everything down to the check below must still run under the Python 3.9 that macOS ships.
+MIN_PYTHON = (3, 13)
+# python.org, Homebrew on Apple silicon and on Intel, uv and pyenv. Only searched when the python3 that ran this
+# file is too old.
+PYTHON_GLOBS = (
+    "/Library/Frameworks/Python.framework/Versions/3.*/bin/python3.*",
+    "/opt/homebrew/bin/python3.*",
+    "/usr/local/bin/python3.*",
+    "~/.local/bin/python3.*",
+    "~/.pyenv/versions/3.*/bin/python3.*",
+)
+# Set before running this file again, so a python3.N that is not what its name says cannot loop.
+REEXEC_ENV = "TOKENTOWN_REEXEC"
+
+
+def find_python(patterns=PYTHON_GLOBS, minimum=MIN_PYTHON):
+    """The oldest executable python3.N that is at least `minimum`, going by the version in its name, or None."""
+    best = None
+    for pattern in patterns:
+        for path in glob.glob(os.path.expanduser(pattern)):
+            m = re.search(r"/python3\.([0-9]+)\Z", path)
+            if m is None or (3, int(m.group(1))) < minimum:
+                continue
+            if os.path.isfile(path) and os.access(path, os.X_OK) and (best is None or int(m.group(1)) < best[0]):
+                best = (int(m.group(1)), path)
+    return best[1] if best else None
+
+
+def run_under_newer_python(version=sys.version_info, environ=os.environ, find=find_python, execv=os.execv,
+                           err=sys.stderr) -> int:
+    """Run this file again under a Python that is new enough. Returns only when there is none (or in tests)."""
+    python = None if environ.get(REEXEC_ENV) else find()
+    if python is None:
+        err.write("tokentown: needs Python %d.%d or later, and this is %d.%d.%d. Install it from python.org or with "
+                  "Homebrew (brew install python), then run tokentown again.\n" % (MIN_PYTHON + tuple(version[:3])))
+        return 1
+    environ[REEXEC_ENV] = "1"
+    execv(python, [python, os.path.abspath(__file__)] + sys.argv[1:])
+    return 1
+
+
+if sys.version_info < MIN_PYTHON:
+    sys.exit(run_under_newer_python())
+
+CODE_DIR = Path(__file__).resolve().parent
+if str(CODE_DIR) not in sys.path:
+    sys.path.insert(0, str(CODE_DIR))
+
+from town import security  # noqa: E402
+from town.paths import HOST, PORT, Paths, adopt_legacy_dir, default_paths  # noqa: E402
+
+DEVNULL = subprocess.DEVNULL
+MIN_ENV = {"PATH": "/usr/bin:/bin"}
+# The server reads these from the shell that starts it: a test's synthetic home, where Claude Code keeps its files,
+# and where gh keeps its sign-in. Everything else stays behind.
+PASS_ENV = ("TOWN_HOME", "CLAUDE_CONFIG_DIR", "GH_CONFIG_DIR", "XDG_CONFIG_HOME", "GH_TOKEN")
+START_WAIT_S = 5.0
+STOP_WAIT_S = 3.0
+LAUNCH_URL_RE = re.compile(r"http://127\.0\.0\.1:[0-9]{1,5}/#c=[0-9a-f]{32}\.[0-9]{1,15}\.[0-9a-f]{64}")
+
+OURS, REFUSED, OTHER = "ours", "refused", "other"
+
+
+def _now_ms() -> int:
+    return time.time_ns() // 1_000_000
+
+
+def probe(secret: bytes, port: int = PORT, timeout: float = 2.0) -> str:
+    """OURS when /healthz proves it holds our secret, REFUSED when nothing listens, else OTHER."""
+    nonce = secrets.token_hex(16)
+    conn = http.client.HTTPConnection(HOST, port, timeout=timeout)
+    try:
+        conn.request("GET", f"/healthz?n={nonce}")
+        resp = conn.getresponse()
+        body = resp.read(256)
+        status = resp.status
+    except ConnectionRefusedError:
+        return REFUSED
+    except (OSError, http.client.HTTPException):
+        return OTHER
+    finally:
+        conn.close()
+    expected = security.health_response(secret, nonce).encode("ascii")
+    return OURS if status == 200 and hmac.compare_digest(body.strip(), expected) else OTHER
+
+
+def server_env(environ=os.environ) -> dict[str, str]:
+    env = dict(MIN_ENV, HOME=environ.get("HOME", str(Path.home())))
+    env.update({key: environ[key] for key in PASS_ENV if environ.get(key)})
+    return env
+
+
+def spawn_server():
+    return subprocess.Popen(
+        [sys.executable, str(CODE_DIR / "tokentown"), "serve"],
+        cwd=str(CODE_DIR),
+        stdin=DEVNULL,
+        stdout=DEVNULL,
+        stderr=DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+        env=server_env(),
+    )
+
+
+def _other_message(port: int) -> str:
+    return (f"tokentown: something else is answering on {HOST}:{port} and it cannot prove it is Tokentown. "
+            "Refusing to use it. If it is an old copy from before `tokentown rotate`, stop that process "
+            "and run tokentown again.\n")
+
+
+def ensure_running(secret: bytes, *, port: int = PORT, spawn=spawn_server, wait_s: float = START_WAIT_S,
+                   err=sys.stderr) -> bool:
+    state = probe(secret, port)
+    if state == OURS:
+        return True
+    if state == OTHER:
+        err.write(_other_message(port))
+        return False
+    child = spawn()
+    deadline = time.monotonic() + wait_s
+    while time.monotonic() < deadline:
+        time.sleep(0.1)
+        state = probe(secret, port, timeout=1.0)
+        if state == OURS:
+            return True
+        if child is not None and child.poll() is not None:
+            break
+    if state == OTHER:
+        err.write(_other_message(port))
+    else:
+        err.write(f"tokentown: the server did not start within {wait_s:g} s. Run `tokentown serve` to see why.\n")
+    return False
+
+
+def launch(mode: str = "open", *, paths: Paths | None = None, port: int = PORT, run=subprocess.run,
+           spawn=spawn_server, out=sys.stdout, err=sys.stderr, now_ms=_now_ms,
+           wait_s: float = START_WAIT_S) -> int:
+    paths = paths or default_paths()
+    try:
+        secret = security.load_or_create_secret(paths)
+    except (OSError, ValueError) as exc:
+        err.write(f"tokentown: cannot use the secret ({type(exc).__name__}). Try: tokentown rotate\n")
+        return 1
+    if not ensure_running(secret, port=port, spawn=spawn, wait_s=wait_s, err=err):
+        return 1
+    url = f"http://{HOST}:{port}/#c={security.mint_code(secret, now_ms())}"
+    if not LAUNCH_URL_RE.fullmatch(url):
+        err.write("tokentown: refusing to use a malformed launch URL.\n")
+        return 1
+    if mode == "url":
+        out.write(url + "\n")
+        err.write("This link works once, within 30 seconds.\n")
+        return 0
+    # Only the launch file's path reaches argv: every local user can read process arguments with ps.
+    security.remove_stale_launch_files(paths, now_ms())
+    try:
+        launch_file = security.write_launch_file(paths, url)
+    except OSError as exc:
+        err.write(f"tokentown: could not write the launch file ({type(exc).__name__}). Try: tokentown url\n")
+        return 1
+    try:
+        run(["/usr/bin/open", "-a", "Safari", str(launch_file)], shell=False, timeout=10,
+            stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL, env=dict(MIN_ENV))
+    except (OSError, subprocess.SubprocessError) as exc:
+        launch_file.unlink(missing_ok=True)
+        err.write(f"tokentown: could not open Safari ({type(exc).__name__}). Try: tokentown url\n")
+        return 1
+    return 0
+
+
+def listening_pids(port: int, run=subprocess.run) -> list[int]:
+    result = run(["/usr/sbin/lsof", "-nP", f"-tiTCP:{port}", "-sTCP:LISTEN"], shell=False, timeout=10,
+                 stdin=DEVNULL, capture_output=True, text=True, env=dict(MIN_ENV))
+    return [int(line) for line in (result.stdout or "").split() if line.isascii() and line.isdigit()]
+
+
+def is_tokentown_server(pid: int, run=subprocess.run) -> bool:
+    result = run(["/bin/ps", "-o", "command=", "-p", str(int(pid))], shell=False, timeout=10,
+                 stdin=DEVNULL, capture_output=True, text=True, env=dict(MIN_ENV))
+    command = (result.stdout or "").strip()
+    return command.endswith(" serve") and "tokentown" in command
+
+
+def stop(*, paths: Paths | None = None, port: int = PORT, run=subprocess.run, kill=os.kill,
+         out=sys.stdout, err=sys.stderr, wait_s: float = STOP_WAIT_S) -> int:
+    paths = paths or default_paths()
+    try:
+        secret = security.read_secret(paths)
+    except (OSError, ValueError) as exc:
+        err.write(f"tokentown: cannot read the secret ({type(exc).__name__}), so cannot verify the server.\n")
+        return 1
+    state = probe(secret if secret is not None else secrets.token_bytes(32), port)
+    if state == REFUSED:
+        out.write("Tokentown is not running.\n")
+        return 0
+    if state == OTHER:
+        err.write(f"tokentown: whatever is on {HOST}:{port} did not prove it is Tokentown. Not stopping it.\n")
+        return 1
+    # probe said OURS, so a Tokentown server is listening: a failure here is lsof or ps, not a missing server, and
+    # saying "could not find it" would send you looking for the wrong thing.
+    try:
+        pids = [pid for pid in listening_pids(port, run) if pid != os.getpid() and is_tokentown_server(pid, run)]
+    except (OSError, subprocess.SubprocessError) as exc:
+        err.write(f"tokentown: could not list what is listening on {HOST}:{port} ({type(exc).__name__}). "
+                  "The server is still running.\n")
+        return 1
+    if not pids:
+        err.write("tokentown: could not find the server process.\n")
+        return 1
+    for pid in pids:
+        kill(pid, signal.SIGTERM)
+    deadline = time.monotonic() + wait_s
+    while time.monotonic() < deadline:
+        if probe(secret, port, timeout=1.0) == REFUSED:
+            out.write("Tokentown stopped.\n")
+            return 0
+        time.sleep(0.1)
+    err.write("tokentown: the server did not stop in time.\n")
+    return 1
+
+
+def rotate(*, paths: Paths | None = None, port: int = PORT, run=subprocess.run, kill=os.kill,
+           out=sys.stdout, err=sys.stderr) -> int:
+    paths = paths or default_paths()
+    try:
+        old = security.read_secret(paths)
+    except (OSError, ValueError):
+        old = None
+    if old is not None and probe(old, port) == OURS:
+        stop(paths=paths, port=port, run=run, kill=kill, out=out, err=err)
+    security.rotate_secret(paths)
+    security.remove_stale_launch_files(paths, _now_ms(), max_age_ms=-1)
+    out.write("Secret replaced. Open tabs are now disconnected.\n")
+    new = security.read_secret(paths)
+    if probe(new, port) == REFUSED:
+        out.write("Run tokentown to start the server and reconnect.\n")
+    else:
+        out.write(f"A server still answers on {HOST}:{port} with the old secret. Stop that process, "
+                  "then run tokentown to restart the server and reconnect.\n")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    command = args[0] if args else "open"
+    if len(args) > 1 or command not in {"open", "url", "serve", "stop", "check", "rotate"}:
+        sys.stderr.write(__doc__.split("\n", 2)[2])
+        return 2
+    # Every command reaches the private folder, and `serve` re-enters here in the child, so one call covers all.
+    adopt_legacy_dir(default_paths())
+    if command in ("open", "url"):
+        return launch(command)
+    if command == "serve":
+        from town.server import serve
+        serve()
+        return 0
+    if command == "stop":
+        return stop()
+    if command == "check":
+        from town.check import run_check
+        return run_check(default_paths())
+    return rotate()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>Tokentown</title>
+<link rel="icon" id="favicon" href="data:,">
+<link rel="stylesheet" href="/app.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body data-view="village">
+<div id="edge-band" class="edge-band" hidden></div>
+
+<div id="connect-banner" class="banner banner-connect" role="alert" hidden>
+  <span class="banner-icon" data-icon="alert"></span>
+  <span id="connect-text" class="banner-text">Run tokentown in Terminal to connect</span>
+</div>
+
+<header id="hud" class="hud">
+  <div class="hud-top">
+    <button id="brand-btn" class="brand" type="button" aria-controls="info" title="How Tokentown works (i)">
+      <span>Tokentown</span>
+      <span class="chip-icon" data-icon="info"></span>
+    </button>
+    <div class="hud-status">
+      <span id="checked" class="checked" aria-live="off">Not connected</span>
+      <div id="usage" class="usage" role="group" aria-label="Plan usage" title="From the Claude app's usage history, which updates about every 15 minutes while the app is in use." hidden></div>
+      <button id="health-btn" class="health-btn" type="button" aria-expanded="false" aria-controls="health-panel">
+        <span id="health-dot" class="health-dot"></span>
+        <span id="health-word">Health</span>
+      </button>
+      <button id="privacy-btn" class="chip-btn" type="button" aria-pressed="false" hidden>
+        <span class="chip-icon" data-icon="eye"></span>
+        <span id="privacy-word">Titles shown</span>
+      </button>
+      <button id="help-btn" class="chip-btn" type="button" aria-controls="help">
+        <span class="chip-icon" data-icon="help"></span>
+        <span>Keys</span>
+      </button>
+      <button id="info-btn" class="chip-btn" type="button" aria-controls="info">
+        <span class="chip-icon" data-icon="info"></span>
+        <span>How it works</span>
+      </button>
+      <div class="switch-group">
+        <div class="view-switch mode-switch" role="group" aria-label="Map">
+          <button id="mode-village" type="button" aria-pressed="true" title="Every session on one map. A character's colour is its repo">One village</button>
+          <button id="mode-world" type="button" aria-pressed="false" title="One island per repo. Click an island to sail in">World</button>
+        </div>
+      </div>
+      <div class="view-switch" role="group" aria-label="View">
+        <button id="view-village" type="button" aria-pressed="true">Village</button>
+        <button id="view-board" type="button" aria-pressed="false">Board</button>
+      </div>
+    </div>
+  </div>
+  <div class="hud-row">
+    <nav id="pills" class="pills" aria-label="Session counts"></nav>
+    <span id="hud-scope" class="hud-scope" hidden></span>
+    <div id="hud-legend" class="legend legend-hud" role="group" aria-label="Character colours by repo and sizes by output tokens" hidden></div>
+  </div>
+</header>
+
+<div id="ratelimit-banner" class="banner banner-ratelimit" role="status" hidden>
+  <span class="banner-icon" data-icon="clock"></span>
+  <span id="ratelimit-text" class="banner-text"></span>
+</div>
+
+<div id="update-banner" class="banner banner-update" role="status" hidden>
+  <span class="banner-icon" data-icon="download"></span>
+  <span id="update-text" class="banner-text"></span>
+  <span id="update-actions" class="banner-actions">
+    <button id="update-news" class="btn" type="button" aria-controls="news">What's new</button>
+    <button id="update-go" class="btn btn-primary" type="button">
+      <span id="update-go-icon" class="chip-icon"></span>
+      <span id="update-go-word">Update now</span>
+    </button>
+    <button id="update-later" class="btn" type="button">Later</button>
+  </span>
+</div>
+
+<div id="health-panel" class="health-panel" role="dialog" aria-label="Health details" hidden></div>
+
+<main id="main" class="main">
+  <section id="village-view" class="village-view" aria-label="Village">
+    <div id="village-stage" class="village-stage">
+      <canvas id="village" class="village-canvas" aria-label="Village of sessions. The list on the right shows sessions that are blocked, errored or need input."></canvas>
+      <div id="scene-bar" class="scene-bar st-muted" hidden>
+        <nav id="crumbs" class="crumbs" aria-label="Where you are"></nav>
+        <button id="scene-back" class="btn scene-back" type="button">
+          <span class="chip-icon" data-icon="chevronLeft"></span>
+          <span id="scene-back-word">Back to the village</span>
+        </button>
+      </div>
+      <button id="rail-show" class="rail-show" type="button" aria-controls="rail" aria-expanded="false" hidden>
+        <span class="chip-icon" data-icon="chevronLeft"></span>
+        <span>Show list</span>
+        <span id="rail-show-count" class="rail-show-count" aria-hidden="true" hidden>0</span>
+      </button>
+      <div id="village-tip" class="village-tip" role="tooltip" hidden></div>
+      <div id="village-fallback" class="village-fallback" hidden>
+        <p>The village could not load.</p>
+        <p>Press <kbd>v</kbd> for the Board.</p>
+      </div>
+    </div>
+    <aside id="rail" class="rail" aria-label="Sessions that are blocked, errored or need input">
+      <div class="rail-head">
+        <button id="rail-hide" class="chip-btn rail-toggle" type="button" aria-controls="rail" aria-expanded="true">
+          <span>Hide list</span>
+          <span class="chip-icon" data-icon="chevronRight"></span>
+        </button>
+      </div>
+      <div id="rail-scope" class="rail-scope" hidden>
+        <span id="rail-scope-text" class="rail-scope-text"></span>
+        <button id="rail-scope-btn" class="btn rail-scope-btn" type="button">Show every repo</button>
+      </div>
+      <div id="card-slot" class="card-slot"></div>
+      <div id="rail-body" class="rail-body"></div>
+      <div id="rail-legend" class="legend legend-rail" role="group" aria-label="Character colours by repo and sizes by output tokens" hidden></div>
+    </aside>
+  </section>
+
+  <section id="board-view" class="board-view" aria-label="Board" hidden>
+    <div id="board-body" class="board-body"></div>
+    <div id="board-foot" class="board-foot"></div>
+  </section>
+</main>
+
+<div id="help" class="overlay" role="dialog" aria-modal="true" aria-labelledby="help-title" hidden>
+  <div class="overlay-box">
+    <div class="overlay-head">
+      <h2 id="help-title">Keys</h2>
+      <button id="help-close" class="icon-btn" type="button" aria-label="Close">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+    <table class="keys">
+      <tbody>
+        <tr><td><kbd>v</kbd></td><td>Switch Village and Board</td></tr>
+        <tr><td><kbd>w</kbd></td><td>Switch One village and World of islands</td></tr>
+        <tr><td><kbd>p</kbd></td><td>Privacy: hide titles</td></tr>
+        <tr><td><kbd>s</kbd></td><td>Show or hide the list beside the Village</td></tr>
+        <tr><td><kbd>n</kbd></td><td>Pick the blocked session that has waited longest, sailing to its island first if it is on another one</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>Open the picked session</td></tr>
+        <tr><td><kbd>d</kbd></td><td>Send to Valhalla, or Bring back: the picked session. Works on any card that is not running or blocked, even with a PR still open. Same as dragging a card there</td></tr>
+        <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>Move through the Board, column by column</td></tr>
+        <tr><td><kbd>&#8593;</kbd> <kbd>&#8595;</kbd></td><td>Move up and down a Board column</td></tr>
+        <tr><td><kbd>&#8592;</kbd> <kbd>&#8594;</kbd></td><td>Move between Board columns</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Cancel a drag, hide the tooltip, close panels, leave the cottages or the sand castle, then leave the island, clear the pick</td></tr>
+        <tr><td>One village</td><td>Every session on one map. A character's colour is the repo it works in</td></tr>
+        <tr><td>World of islands</td><td>One island per repo, sized by how many sessions it holds. Each island has its own Porch, Workshop, Cottages, Harbour, jail, graveyard and Valhalla islet, so every place is per island</td></tr>
+        <tr><td>Click an island</td><td>Sail in: the same village, that repo only. <kbd>n</kbd> sails in too</td></tr>
+        <tr><td>Hover an island</td><td>Its lanes and total, before you sail in, and any PRs waiting on your review. The badges on it are Blocked, Needs input, Errored, PR open, Jail and reviews waiting</td></tr>
+        <tr><td>Leave an island</td><td><kbd>Esc</kbd>, Back to the world, or World in the bar over the map</td></tr>
+        <tr><td>The count pills</td><td>Always the whole board, every repo. The list beside the map follows what is on screen, and says so while an island is open</td></tr>
+        <tr><td>The Board</td><td>Ten columns, one per lane: Blocked, Errored, Needs input, Running, PR open, Jail, Idle, Recent, Valhalla, Graveyard. It scrolls sideways</td></tr>
+        <tr><td>Click a card</td><td>Open that session in Claude, or in its editor for a session in VS Code, VS Code Insiders or Cursor. A terminal session that has ended copies its resume command</td></tr>
+        <tr><td>Drag a card</td><td>Onto Valhalla marks it done. Out of Valhalla takes a done mark back. Anything else snaps back: Tokentown reads the state and cannot change it</td></tr>
+        <tr><td>+N more</td><td>A column shows 25 cards and says how many more it holds. Click to show them all</td></tr>
+        <tr><td>Stopped</td><td>Ended mid-turn. In the Blocked column, with its own dashed pill, counted in that column's split under its total</td></tr>
+        <tr><td>Sand castle</td><td>Merged or marked done over 14 days ago. In the Valhalla column, with its own pill, counted in that column's split</td></tr>
+        <tr><td>Reviews</td><td>Open PRs waiting on your review, read from GitHub: those asked of you by name and those asked of a team you are on. They are PRs, not sessions, so they get no card and no column: the count is in the note under the columns. Hover the Reviews pill for how many were asked of you and how many of your teams, and click it to go to the desk they wait at</td></tr>
+        <tr><td>Visitors</td><td>Each PR waiting on your review queues at the immigration desk with a passport, in the teal that is theirs alone. One asked of a team you are on wears a sash, so one asked of you by name stands out. They carry no session details because there are none</td></tr>
+        <tr><td>Hover a visitor</td><td>How long it has waited, whether it was asked of you or of a team you are on (and which team), who opened the PR, the repo, its number and title</td></tr>
+        <tr><td>Click a visitor</td><td>Open that PR on GitHub</td></tr>
+        <tr><td>Older sessions</td><td>No activity for 7 to 30 days: a count in the note under the columns, no cards</td></tr>
+        <tr><td>The update banner</td><td>A new release of Tokentown is out. What's new shows its notes. Update now updates to it with git and restarts Tokentown, and the page reloads onto it. If git is not there or the update fails, it copies the command for Terminal instead. Later hides the banner until the next release</td></tr>
+        <tr><td>Click a character</td><td>Open it in Claude, or in its editor for a session in VS Code, VS Code Insiders or Cursor. A terminal session that has ended copies its resume command; one still running says to switch to its terminal</td></tr>
+        <tr><td>Click the cottages</td><td>Go inside: sessions quiet for 2 hours or more, or active in the past week</td></tr>
+        <tr><td>Click the sand castle</td><td>Go inside: sessions merged or marked done over 14 days ago</td></tr>
+        <tr><td>Hover the border patrol</td><td>See how many sessions wait at the Harbour to merge</td></tr>
+        <tr><td>The Porch</td><td>Blocked: waiting for you to approve, answer or review a plan. Waves under an orange light. Needs input, Errored and Stopped wait here too</td></tr>
+        <tr><td>The Cottages</td><td>Idle: quiet for 2 hours or more. Recent: active in the last 7 days. Click to look inside</td></tr>
+        <tr><td>The Harbour</td><td>PR open: a PR is still open</td></tr>
+        <tr><td>The Jail</td><td>PR closed: a PR was closed without merging</td></tr>
+        <tr><td>Valhalla island</td><td>A PR merged and none are still open, or you marked it done</td></tr>
+        <tr><td>Character colour</td><td>The repo it works in. The Repos legend shows which is which</td></tr>
+        <tr><td>Character size</td><td>Bigger means more output tokens, subagents included</td></tr>
+        <tr><td><kbd>?</kbd></td><td>Show or hide this help</td></tr>
+        <tr><td><kbd>i</kbd></td><td>Show or hide How it works</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="news" class="overlay" role="dialog" aria-modal="true" aria-labelledby="news-title" hidden>
+  <div class="overlay-box info">
+    <div class="overlay-head">
+      <h2 id="news-title">What's new</h2>
+      <button id="news-close" class="icon-btn" type="button" aria-label="Close">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+    <div id="news-body" class="news-body"></div>
+  </div>
+</div>
+
+<div id="info" class="overlay" role="dialog" aria-modal="true" aria-labelledby="info-title" hidden>
+  <div class="overlay-box info">
+    <div class="overlay-head">
+      <h2 id="info-title">How Tokentown works</h2>
+      <button id="info-close" class="icon-btn" type="button" aria-label="Close">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+    <p>Every Claude Code session on this Mac is a character in the village. Where it stands tells you what it is doing. Click a character to open its session in Claude. A session in VS Code, VS Code Insiders or Cursor, in the Claude Code chat or the editor's own terminal, opens in that editor instead: the window with its folder comes forward, and a chat you have closed there resumes in a new tab. A terminal session that has ended copies its resume command instead: paste it into a terminal.</p>
+
+    <h3>Where everyone goes</h3>
+    <table class="keys">
+      <tbody>
+        <tr><td>The Porch</td><td>Blocked sessions, waving under an orange light: they are waiting for you to approve, answer or review a plan. Sessions that finished a turn in the last 2 hours wait here too, as Needs input, with any that errored or stopped mid-turn</td></tr>
+        <tr><td>The Workshop</td><td>Sessions working right now, including any still running a background task</td></tr>
+        <tr><td>The Cottages</td><td>Idle sessions, open but quiet for 2 hours or more, and Recent ones, closed but active in the past week. Click to look inside, where they play board games</td></tr>
+        <tr><td>The Harbour</td><td>Sessions with a PR still open on GitHub, queueing behind the border patrol. When the PR merges, the guard stamps their passport and they sail</td></tr>
+        <tr><td>Valhalla island</td><td>Sessions whose PR merged, with none still open, or that you sent there. They lie on the beach for 14 days, then move into the sand castle</td></tr>
+        <tr><td>The Jail</td><td>Sessions whose PRs were all closed without merging, for 30 days</td></tr>
+        <tr><td>The Graveyard</td><td>Archived sessions, terminal and VS Code sessions that have ended, and any with no activity for 30 days</td></tr>
+        <tr><td>The immigration desk</td><td>Not sessions: PRs waiting on your review, as visitors with passports. A sash means it was asked of a team you are on. Click one to open the PR</td></tr>
+        <tr><td>Older</td><td>Sessions quiet for 7 to 30 days: counted under the pills, not drawn</td></tr>
+      </tbody>
+    </table>
+
+    <h3>How a session picks its place</h3>
+    <p>Each session goes to the first of these that fits:</p>
+    <ol>
+      <li><strong>Blocked</strong>: it is waiting for you to approve or answer</li>
+      <li><strong>Errored</strong>: it hit an error recently</li>
+      <li><strong>Running</strong>: it is working, or a background task it started is still going</li>
+      <li><strong>PR open</strong>: one of its PRs is still open, unless you sent it to Valhalla</li>
+      <li><strong>Valhalla</strong>: a PR merged and none is still open, or you sent it there</li>
+      <li><strong>Needs input</strong>: its turn ended in the last 2 hours</li>
+      <li><strong>Graveyard</strong>: it was archived, or it is a terminal or VS Code session that has ended</li>
+      <li><strong>Jail</strong>: its PRs were all closed without merging</li>
+      <li>Otherwise by how long it has been quiet: <strong>Idle</strong>, <strong>Recent</strong>, <strong>Graveyard</strong> or <strong>Older</strong></li>
+    </ol>
+    <p>The board refreshes every couple of seconds. PR states come from GitHub about once a minute, because the Claude app's own record of a PR goes out of date.</p>
+    <p>A VS Code session never says it is waiting for your approval, so Tokentown works it out: a command that has not started, or an edit not yet made, after 15 seconds is Blocked. A wait on any other tool shows as Running.</p>
+
+    <h3>Sending a session to Valhalla</h3>
+    <p>Claude never says when a piece of work is finished, so you tell Tokentown. Any of these works, even with a PR still open:</p>
+    <ul>
+      <li>Press <strong>Send to Valhalla</strong> on its card, or pick it and press <kbd>d</kbd></li>
+      <li>Drag its card onto the Valhalla column on the Board</li>
+      <li>Type <strong>go to valhalla</strong> as a message in the session. It sails once Claude has replied</li>
+    </ul>
+    <p><strong>Bring back</strong> undoes it. A session also comes back by itself the moment it does anything new.</p>
+
+    <h3>Reading a character</h3>
+    <ul>
+      <li><strong>Colour</strong>: the repo it works in. The Repos legend shows which is which</li>
+      <li><strong>Size</strong>: bigger means more output tokens, subagents included</li>
+      <li><strong>Badge</strong>: its state, in the same colours as the pills at the top</li>
+      <li><strong>Hover</strong> for its details, and <strong>click</strong> to open it in Claude or its editor</li>
+    </ul>
+
+    <h3>Views</h3>
+    <ul>
+      <li><strong>Village or Board</strong> (<kbd>v</kbd>): the map, or a board with a column per lane</li>
+      <li><strong>One village or World</strong> (<kbd>w</kbd>): every repo on one map, or an island per repo. Click an island to sail in, and press <kbd>Esc</kbd> to step back out</li>
+      <li><strong>Night</strong> is dark mode: windows light up, the lighthouse sweeps, ghosts rise over the graveyard and the sand castle has a disco</li>
+      <li>The <strong>5-hour</strong> and <strong>Weekly</strong> bars are your Claude plan usage, from the Claude app</li>
+    </ul>
+
+    <h3>What it reads and sends</h3>
+    <ul>
+      <li>It reads Claude's session files on this Mac, and never changes them: in <code>~/.claude</code>, in the folder <code>CLAUDE_CONFIG_DIR</code> names if you set it, and in the Claude app's own folder. If it finds none of them, or no sessions in them, <strong>Health</strong> says so</li>
+      <li>It asks GitHub, read-only and through your own <code>gh</code> login, for your PRs' states and the PRs waiting on your review. If <code>gh</code> is not signed in, <strong>Health</strong> says so: run <code>gh auth login</code> in Terminal</li>
+      <li>About once an hour it asks GitHub the same way whether a new release of Tokentown is out, and reads which version you have from its own git folder. When one is, a banner under the top bar offers <strong>What's new</strong>, with the release notes, and <strong>Update now</strong>: it updates with git, only ever as a fast-forward, and restarts Tokentown. It never updates without that click, and <strong>Later</strong> hides the banner until the next release. <strong>Health</strong> names your version</li>
+      <li>Nothing else leaves your Mac, and it only answers on this Mac (127.0.0.1)</li>
+      <li>The only files it writes are its own, in Application Support: a secret, your Valhalla marks and the PR links it has seen</li>
+      <li>Press <kbd>p</kbd> to hide titles before you share your screen. A <strong>Privacy on</strong> button shows in the top bar while they are hidden: click it to show them again</li>
+    </ul>
+    <p>For every key, press <kbd>?</kbd>.</p>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

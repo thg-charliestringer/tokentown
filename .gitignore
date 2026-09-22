@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.DS_Store
+# Never commit anything read from Claude session stores
+*.jsonl
+snapshot*.json
