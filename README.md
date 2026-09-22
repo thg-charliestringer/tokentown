@@ -488,4 +488,7 @@ app or a PR page, and never run `gh` or `ps`. The update check's tests build the
 `tests/test_web.py` also runs `tests/web_harness.mjs` under `node`, which drives the village and page headlessly (no
 DOM, no network, no browser). That half is skipped when `node` is not installed.
 
+GitHub runs the same tests on a Mac for every PR and every push to `main`, under Python 3.13 and 3.14, with `node`
+installed so the web half always runs (`.github/workflows/tests.yml`).
+
 For a quick live check without a browser, run `./tokentown check`.
