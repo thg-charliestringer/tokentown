@@ -36,3 +36,28 @@ jobs:
       # tests/test_web.py skips the web harness when it finds no node, which would pass here without running it.
       - run: node --version
       - run: python -m unittest discover -s tests -t .
+
+  privacy:
+    name: privacy scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history, since the scan reads every version of every file, not only the current ones.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      # The word list is a secret, never a file in the repo: publishing what you scan for publishes the words. A PR
+      # from a fork gets no secrets, so the job then checks credentials only and says so in its own output.
+      - env:
+          PRIVATE_WORDS: ${{ secrets.PRIVATE_WORDS }}
+        run: |
+          if [ -n "$PRIVATE_WORDS" ]; then
+            printf '%s\n' "$PRIVATE_WORDS" > "$RUNNER_TEMP/words"
+            python3 tools/privacy_scan.py --repo "$GITHUB_WORKSPACE" --words "$RUNNER_TEMP/words"
+          else
+            python3 tools/privacy_scan.py --repo "$GITHUB_WORKSPACE"
+          fi

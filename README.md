@@ -479,4 +479,10 @@ DOM, no network, no browser). That half is skipped when `node` is not installed.
 GitHub runs the same tests on a Mac for every PR and every push to `main`, under Python 3.13 and 3.14, with `node`
 installed so the web half always runs (`.github/workflows/tests.yml`).
 
+`tools/privacy_scan.py` says what a clone of the repo would give a stranger: credentials, anything of your own
+Mac's (session ids, titles, PR links, folder names) and any word you list in a file of your own. It reads every
+version of every file on every published ref, not just the current ones. Run it before publishing a release.
+GitHub runs the same scan on every PR, for credentials and for a word list kept in a repository secret. A runner has
+no Claude folder, so only your own Mac can check the rest.
+
 For a quick live check without a browser, run `./tokentown check`.
