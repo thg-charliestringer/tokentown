@@ -88,7 +88,7 @@ class ReportTests(unittest.TestCase):
     def test_a_clean_run_says_so(self):
         out = io.StringIO()
         self.assertEqual(privacy_scan.report({}, out), 0)
-        self.assertIn("No secrets", out.getvalue())
+        self.assertIn("Nothing found in what was scanned", out.getvalue())
 
 
 class CoverageTests(unittest.TestCase):

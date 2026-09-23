@@ -220,8 +220,8 @@ def report(found: dict[str, collections.Counter], out=sys.stdout) -> int:
         out.write(f"\n{category}: {sum(counter.values())} hits, {len(counter)} distinct\n")
         for key, count in counter.most_common(40):
             out.write(f"  {count:5d}  {key}\n")
-    out.write("\nFound something to look at.\n" if failing else
-              "\nNo secrets, nothing of this Mac's own, and none of your words.\n")
+    # "Nothing found", not "nothing is there": the line above says what this run could match against.
+    out.write("\nFound something to look at.\n" if failing else "\nNothing found in what was scanned.\n")
     return 1 if failing else 0
 
 
