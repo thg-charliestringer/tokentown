@@ -6,6 +6,7 @@ Run it before publishing a release, and after any change to the test data:
     python3 tools/privacy_scan.py                          # clone origin fresh, then scan it
     python3 tools/privacy_scan.py --repo <path or url>     # scan another clone or mirror
     python3 tools/privacy_scan.py --words ~/private-words  # also look for your own words
+    python3 tools/privacy_scan.py --range origin/main..HEAD  # only what these commits add, as the pre-push hook does
 
 It reads every blob, commit message and tag message on every published ref, branches and the `refs/pull/*` refs
 GitHub keeps for closed PRs included. Deleting a file does not unpublish it, so the current files alone would
@@ -180,28 +181,43 @@ def mirror_items(repo: str, git: str = "git"):
         yield from ref_items(mirror, git)
 
 
-def ref_items(mirror: Path, git: str = "git"):
-    def run(*args: str, stdin: bytes | None = None) -> bytes:
-        return subprocess.run([git, "-C", str(mirror), *args], input=stdin, capture_output=True,
-                              check=True).stdout
-
-    named = [line.partition(" ") for line in run("rev-list", "--objects", "--all").decode().splitlines()]
-    paths = [(sha, path) for sha, _, path in named if path]
-    kinds = run("cat-file", "--batch-check=%(objectname) %(objecttype)",
-                stdin="\n".join(sha for sha, _ in paths).encode()).decode().split("\n")
-    blobs = {row.split()[0] for row in kinds if row.strip() and row.split()[1] == "blob"}
-    seen: set[str] = set()
-    for sha, path in paths:
-        # One blob can sit at several paths and in many commits: read each version once, and name it by a path.
-        if sha in blobs and sha not in seen:
-            seen.add(sha)
-            yield path, run("cat-file", "blob", sha)
-    for sha in run("rev-list", "--all").decode().split():
-        yield f"commit {sha[:7]}", run("cat-file", "commit", sha)
+def ref_items(repo: Path, git: str = "git"):
+    """Everything on every ref, tag messages included: what a clone of `repo` holds."""
+    run = _runner(repo, git)
+    yield from _objects(run, "--all")
     for line in run("for-each-ref", "--format=%(objectname) %(objecttype) %(refname)").decode().splitlines():
         obj, kind, name = line.split()
         if kind == "tag":
             yield f"tag {name}", run("cat-file", "tag", obj)
+
+
+def range_items(repo: Path, rev_range: str, git: str = "git"):
+    """What a range of commits adds, such as `origin/main..HEAD`: what a push would publish."""
+    yield from _objects(_runner(repo, git), rev_range)
+
+
+def _runner(repo: Path, git: str):
+    def run(*args: str, stdin: bytes | None = None) -> bytes:
+        return subprocess.run([git, "-C", str(repo), *args], input=stdin, capture_output=True,
+                              check=True).stdout
+    return run
+
+
+def _objects(run, revs: str):
+    named = [line.partition(" ") for line in run("rev-list", "--objects", revs).decode().splitlines()]
+    paths = [(sha, path) for sha, _, path in named if path]
+    if paths:
+        kinds = run("cat-file", "--batch-check=%(objectname) %(objecttype)",
+                    stdin="\n".join(sha for sha, _ in paths).encode()).decode().split("\n")
+        blobs = {row.split()[0] for row in kinds if row.strip() and row.split()[1] == "blob"}
+        seen: set[str] = set()
+        for sha, path in paths:
+            # One blob can sit at several paths and in many commits: read each version once, name it by a path.
+            if sha in blobs and sha not in seen:
+                seen.add(sha)
+                yield path, run("cat-file", "blob", sha)
+    for sha in run("rev-list", revs).decode().split():
+        yield f"commit {sha[:7]}", run("cat-file", "commit", sha)
 
 
 def coverage(real: RealData, words) -> str:
@@ -229,8 +245,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="What a clone of this repo would give a stranger.")
     parser.add_argument("--repo", default=None, help="a path or URL to scan (default: this clone's origin)")
     parser.add_argument("--words", default=None, help="a file of your own words, one per line, kept out of the repo")
+    parser.add_argument("--range", dest="rev_range", default=None,
+                        help="scan only what these commits add, such as origin/main..HEAD (default: a fresh clone)")
     args = parser.parse_args(argv)
     repo = args.repo
+    if args.rev_range and repo is None:
+        repo = "."
     if repo is None:
         here = Path(__file__).resolve().parent.parent
         repo = subprocess.run(["git", "-C", str(here), "remote", "get-url", "origin"],
@@ -238,9 +258,10 @@ def main(argv: list[str] | None = None) -> int:
     words = [w for w in (Path(args.words).read_text(encoding="utf-8").splitlines() if args.words else ())
              if w.strip() and not w.strip().startswith("#")]
     real = real_data()
-    print(f"scanning {repo}")
+    print(f"scanning {args.rev_range or repo}")
     print(coverage(real, words))
-    found = scan_items(mirror_items(repo), real, words)
+    items = range_items(Path(repo), args.rev_range) if args.rev_range else mirror_items(repo)
+    found = scan_items(items, real, words)
     return report(found)
 
 

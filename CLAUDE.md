@@ -59,6 +59,9 @@ node tests/web_harness.mjs | tail -1 | python3 -c 'import json,sys; r=json.load(
 # words (employer, team and project names), kept outside the repo.
 python3 tools/privacy_scan.py --words ~/.tokentown-private-words
 
+# Only what a push would add, which is what the pre-push hook runs
+python3 tools/privacy_scan.py --range origin/main..HEAD --words ~/.tokentown-private-words
+
 # Publish a release: Charlie's call, never a session's. Merge first, then check the tag names main's commit
 gh release create v1.2.0 --target main --generate-notes
 git ls-remote origin refs/heads/main refs/tags/v1.2.0
@@ -127,7 +130,9 @@ again.
   including this Mac's own data, is `python3 tools/privacy_scan.py`, which reads every blob, commit message and tag on every
   published ref, including the `refs/pull/*` refs of closed PRs, and fails on anything that looks like a
   credential, on this Mac's own session ids, titles, PR links and folder names, and on your private word list.
-  Keep sample data in the tests made up: a real repo, team or person's name in a fixture is published too.
+  Keep sample data in the tests made up: a real repo, team or person's name in a fixture is published too, in
+  that commit and in every commit after it, so a fix later needs the branch squashed. Charlie's clone also runs
+  the scan from a pre-push hook, over `--range <what the push adds>`, so nothing reaches GitHub unscanned.
 - **Release numbers follow what people get**: PATCH (`v1.0.1`) for fixes, MINOR (`v1.1.0`) for something new, MAJOR
   (`v2.0.0`) when people must do something themselves, such as install a newer Python, which the notes then say.
   Merge first, then publish: a release on an unchanged `main` has nothing to update to. Roll forward, never back:

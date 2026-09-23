@@ -481,7 +481,7 @@ installed so the web half always runs (`.github/workflows/tests.yml`).
 
 `tools/privacy_scan.py` says what a clone of the repo would give a stranger: credentials, anything of your own
 Mac's (session ids, titles, PR links, folder names) and any word you list in a file of your own. It reads every
-version of every file on every published ref, not just the current ones. Run it before publishing a release.
+version of every file on every published ref, not just the current ones. Run it before publishing a release, or with `--range origin/main..HEAD` for only what a push would add.
 GitHub runs the same scan on every PR, for credentials and for a word list kept in a repository secret. A runner has
 no Claude folder, so only your own Mac can check the rest.
 
