@@ -369,7 +369,7 @@ class SearchParseTests(unittest.TestCase):
 
     def test_two_hundred_requests_fit_inside_the_cap(self):
         rows = [row(url=f"https://github.com/Acme-DataTeam/wonderful-things-core/pull/{n}",
-                    title="Refine the marketing explore's aggregate awareness " + "x" * 40, author="colleague")
+                    title="Retire the old loader and fold it into the new one " + "x" * 40, author="colleague")
                 for n in range(1, 201)]
         out = search_out(*rows)
         self.assertLess(len(out), reviews.SEARCH_OUTPUT_BYTES)

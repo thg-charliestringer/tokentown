@@ -35,7 +35,9 @@ tests/fixtures.py    synthetic home builder
 tests/test_*.py      unittest suites, one per module (test_status.py also covers board.py and check.py, and
                      test_updates.py covers actions.update_command)
 tests/web_harness.mjs headless node checks of village.js and app.js, run by tests/test_web.py
-.github/workflows/tests.yml  the whole suite on GitHub's macOS runner, Python 3.13 and 3.14, for every PR
+tools/privacy_scan.py  what a clone of this repo would give a stranger: run by hand, never by the server
+.github/workflows/tests.yml  for every PR: the suite on GitHub's macOS runner under Python 3.13 and 3.14, and
+                     the privacy scan (credentials and the PRIVATE_WORDS secret; a runner has no Claude folder)
 ```
 
 ## Commands
@@ -52,6 +54,10 @@ node tests/web_harness.mjs | tail -1 | python3 -c 'import json,sys; r=json.load(
 
 # Live health report without a browser, including whether a newer release is out
 ./tokentown check
+
+# What a clone would give a stranger. Run it before publishing a release. --words names a file of your own
+# words (employer, team and project names), kept outside the repo.
+python3 tools/privacy_scan.py --words ~/.tokentown-private-words
 
 # Publish a release: Charlie's call, never a session's. Merge first, then check the tag names main's commit
 gh release create v1.2.0 --target main --generate-notes
@@ -105,7 +111,6 @@ again.
 - **When inspecting real data, print field names, enum values and counts only.**
 - **Hostile text stays text.** The page builds its DOM with `textContent` only, and the CSP allows no inline script
   or style.
-- **No BigQuery or Looker queries.**
 
 ## Conventions
 
@@ -118,6 +123,11 @@ again.
   "Keep the top bar on one row"), with a body saying what changed and why.
 - **PR titles become release notes.** `gh release create --generate-notes` lists the titles of the PRs merged since
   the last release, and What's new shows them to everyone who updates. Title a PR in the same plain style, for them.
+- **Scan before you publish.** GitHub runs the credential and word-list halves on every PR. The full scan,
+  including this Mac's own data, is `python3 tools/privacy_scan.py`, which reads every blob, commit message and tag on every
+  published ref, including the `refs/pull/*` refs of closed PRs, and fails on anything that looks like a
+  credential, on this Mac's own session ids, titles, PR links and folder names, and on your private word list.
+  Keep sample data in the tests made up: a real repo, team or person's name in a fixture is published too.
 - **Release numbers follow what people get**: PATCH (`v1.0.1`) for fixes, MINOR (`v1.1.0`) for something new, MAJOR
   (`v2.0.0`) when people must do something themselves, such as install a newer Python, which the notes then say.
   Merge first, then publish: a release on an unchanged `main` has nothing to update to. Roll forward, never back:
