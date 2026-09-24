@@ -257,9 +257,9 @@ pick. Only the name painted on a board changes.
 | Place | Village | Middle-earth |
 |---|---|---|
 | The open ground | A wash of grass | **Hedged fields**, a hillside with two more holes in it, and the Misty Mountains on the horizon |
-| The Workshop | Workbenches under an awning | **The Forge**: an anvil and a lit hearth under the canopy |
-| The Cottages | A cottage on the green | **Bag End**: a green hill with a round door and round windows |
-| The Porch | A porch house with a lantern | **The Green Dragon**: thatch, and a sign hanging under the porch |
+| The Workshop | Workbenches under an awning | **The Forge**: a timber-framed smithy on a stone footing, under a tiled roof, with an anvil and a lit hearth |
+| The Cottages | A cottage on the green | **Bag End**: a green hill with a round door, leaded round windows, a paling fence and a bench by the gate |
+| The Porch | A porch house with a lantern | **The Green Dragon**: a half-timbered inn under thatch, with a sign on the gable |
 | The Harbour | A deck and a pier | **The Grey Havens** |
 | Valhalla island | Sand, dune grass, a sand castle | **The Undying Lands**, under a white tower |
 | The sea | Water, ripples, foam | Unchanged: this pack keeps its sea |
@@ -267,6 +267,7 @@ pick. Only the name painted on a board changes.
 | The lighthouse | A lighthouse sweeping its beam | A dark tower, and at night an Eye that sweeps it instead |
 | The border patrol | A guard in uniform | A grey pilgrim with a staff, who decides what passes |
 | The Jail | A stone block under a slate roof | The same block, battlemented: an older keep |
+| The windows | Glass with a glazing bar | Leaded diamond panes, on every opening in the pack |
 | The Graveyard | Headstones | Barrows, each with a standing stone at its head |
 
 In Middle-earth a session is a hobbit: curly hair, pointed ears, a waistcoat with brass buttons and big bare

@@ -3962,6 +3962,26 @@ function paintShireCountry(g, T) {
       }
     }
   });
+  // Bag End's garden: a paling fence with a gate on the door's own centre line, and the path up to the step.
+  const gateX = COTTAGE.x;
+  fillRR(g, gateX - 7, 220, 14, 26, 2, T.path, T.pathEdge, 1.5);
+  for (let fx = 754; fx < 908; fx += 13) {
+    if (Math.abs(fx - gateX) < 16) continue;
+    fillRR(g, fx, 228, 5, 20, 2, T.woodLight, T.woodDark, 1);
+  }
+  for (const rail of [232, 242]) {
+    fillRR(g, 752, rail, 62, 4, 1, T.woodDark);
+    fillRR(g, 846, rail, 64, 4, 1, T.woodDark);
+  }
+  for (const px of [gateX - 18, gateX + 14]) {
+    fillRR(g, px, 222, 7, 30, 2, T.wood, T.woodDark, 1.2);
+    fillEllipse(g, px + 3.5, 221, 5, 3.5, T.wood, T.woodDark, 1.2);
+  }
+  // A bench by the gate, which is the one thing everyone knows is outside that door.
+  fillRR(g, 928, 236, 34, 5, 1.5, T.wood, T.woodDark, 1.2);
+  fillRR(g, 930, 226, 30, 4, 1.5, T.wood, T.woodDark, 1.2);
+  for (const bx of [931, 956]) fillRR(g, bx, 240, 4, 9, 1, T.woodDark);
+
   // Two more holes in the hill, each with its door, its round window and a step.
   for (const { x, y, r } of SHIRE_HOLES) {
     fillEllipse(g, x + 5, y + 3, r * 0.95, 8, T.shadow);
@@ -4446,8 +4466,7 @@ function paintBagEnd(g, T) {
   for (const [x, y, w, h] of COTTAGE_WINDOWS) {
     const r = Math.min(w, h) / 2;
     fillRR(g, x - 4, y - 4, w + 8, h + 8, r + 4, T.wood, T.woodDark, 1.5);
-    fillRR(g, x, y, w, h, r, T.windowDark);
-    line(g, x + w / 2, y, x + w / 2, y + h, T.woodDark, 1.2);
+    paintLeadedWindow(g, T, x, y, w, h, r);
   }
   fillRR(g, bx - 22, by, 44, 8, 2, T.stone, T.stoneDark, 1);
   fillRR(g, bx + 74, 178, 22, 36, 3, T.wood, T.woodDark, 1.5);
@@ -4489,15 +4508,42 @@ function paintCottage(g, T) {
 function paintWorkshop(g, T) {
   const west = T.pack === 'west';
   fillEllipse(g, 830, 544, 356, 12, T.shadow);
-  fillRR(g, 486, 386, 672, 152, 6, T.woodLight, T.woodDark, 2);
-  g.globalAlpha = 0.45;
-  for (let x = 520; x < 1158; x += 34) line(g, x, 388, x, 536, T.plank, 1.5);
-  g.globalAlpha = 1;
+  const shire = T.pack === 'shire';
+  fillRR(g, 486, 386, 672, 152, 6, shire ? T.wallShade : T.woodLight, T.woodDark, 2);
+  if (shire) {
+    // A smithy's back wall: a stone footing, timber posts with braces between them, and a rail across the top.
+    fillRR(g, 486, 492, 672, 46, 4, T.stone, T.stoneDark, 2);
+    g.globalAlpha = 0.4;
+    for (let x = 512; x < 1150; x += 42) line(g, x, 494, x, 536, T.stoneDark, 1.2);
+    for (let y = 504; y < 536; y += 14) line(g, 490, y, 1154, y, T.stoneDark, 1.2);
+    g.globalAlpha = 1;
+    fillRR(g, 486, 386, 672, 9, 1, T.woodDark);
+    fillRR(g, 486, 440, 672, 8, 1, T.woodDark);
+    for (let x = 500; x < 1150; x += 74) {
+      fillRR(g, x, 386, 9, 106, 1, T.woodDark);
+      line(g, x + 9, 486, x + 34, 450, T.woodDark, 5);
+      line(g, x + 68, 486, x + 44, 450, T.woodDark, 5);
+    }
+  } else {
+    g.globalAlpha = 0.45;
+    for (let x = 520; x < 1158; x += 34) line(g, x, 388, x, 536, T.plank, 1.5);
+    g.globalAlpha = 1;
+  }
   g.fillStyle = 'rgba(0, 0, 0, 0.1)';
   g.fillRect(488, 386, 668, 12);
-  fillRR(g, 481, 352, 12, 190, 2, T.woodDark);
-  fillRR(g, 1151, 352, 12, 190, 2, T.woodDark);
+  fillRR(g, 481, 352, 12, 190, 2, shire ? T.stoneDark : T.woodDark);
+  fillRR(g, 1151, 352, 12, 190, 2, shire ? T.stoneDark : T.woodDark);
   fillRR(g, 472, 340, 700, 46, 6, T.roofs[1], 'rgba(0, 0, 0, 0.2)', 2);
+  if (shire) {
+    // Tiles on the canopy's own slab: three courses, each lapping the one below, and a ridge over the top.
+    g.globalAlpha = 0.55;
+    for (let row = 0; row < 3; row += 1) {
+      const ty = 350 + row * 12;
+      for (let x = 476 + (row % 2) * 9; x + 16 <= 1168; x += 18) fillRR(g, x, ty, 16, 11, 3, T.stone, T.stoneDark, 0.8);
+    }
+    g.globalAlpha = 1;
+    fillRR(g, 473, 336, 698, 9, 3, T.stoneDark);
+  }
   g.globalAlpha = 0.35;
   g.strokeStyle = 'rgba(0, 0, 0, 0.55)';
   g.lineWidth = 1.5;
@@ -4554,6 +4600,16 @@ function paintPorchHouse(g, T) {
   fillRR(g, 1188, 614, 16, 44, 2, T.stoneDark);
   fillRR(g, 1012, 684, 222, 118, 3, T.wall);
   if (T.pack === 'shire') {
+    // Timber framing over the plaster: posts, two rails and a brace each side, all inside the wall's own rect.
+    // Half-timbering is most of the difference between a cottage and an inn here.
+    fillRR(g, 1012, 684, 222, 7, 1, T.woodDark);
+    fillRR(g, 1012, 750, 222, 6, 1, T.woodDark);
+    fillRR(g, 1012, 796, 222, 6, 1, T.woodDark);
+    for (const px of [1012, 1084, 1156, 1227]) fillRR(g, px, 684, 7, 118, 1, T.woodDark);
+    line(g, 1090, 794, 1150, 758, T.woodDark, 5);
+    line(g, 1221, 794, 1162, 758, T.woodDark, 5);
+  }
+  if (T.pack === 'shire') {
     // Thatch on the pitch's own triangle, and the inn's sign hanging under the porch beam.
     fillPoly(g, [[994, 694], [1123, 604], [1252, 694]], T.thatch, T.thatchDark, 2);
     g.globalAlpha = 0.45;
@@ -4599,11 +4655,26 @@ function paintPorchHouse(g, T) {
     fillRR(g, 1040, 734, 34, 68, 3, T.windowDark);
     fillRR(g, 1040, 748, 16, 38, 2, T.wood, T.woodDark, 1.5);
     fillRR(g, 1058, 748, 16, 38, 2, T.wood, T.woodDark, 1.5);
+  } else if (T.pack === 'shire') {
+    fillRR(g, 1040, 734, 34, 68, 3, T.door, T.woodDark, 2);
+    g.globalAlpha = 0.5;
+    for (const dx of [11, 22]) line(g, 1040 + dx, 736, 1040 + dx, 800, T.woodDark, 1.4);
+    g.globalAlpha = 1;
+    for (const dy of [744, 790]) fillRR(g, 1042, dy, 30, 4, 1, T.woodDark);
+    g.beginPath();
+    g.arc(1066, 770, 4, 0, TAU);
+    g.strokeStyle = T.thatch;
+    g.lineWidth = 2;
+    g.stroke();
   } else {
     fillRR(g, 1040, 734, 34, 68, 3, T.door);
     fillEllipse(g, 1067, 770, 2, 2, T.stone);
   }
   for (const x of [1104, 1172]) {
+    if (T.pack === 'shire') {
+      paintLeadedWindow(g, T, x, 712, 42, 34, 2);
+      continue;
+    }
     fillRR(g, x, 712, 42, 34, 2, T.porchWindow, T.woodDark, 2);
     line(g, x + 21, 712, x + 21, 746, T.woodDark, 1.5);
   }
@@ -4834,6 +4905,31 @@ const CASTLE_FLAGS = [
   [CASTLE.x + 58 * CASTLE.s, CASTLE.y - 128 * CASTLE.s],
 ];
 
+// A leaded pane on an opening's own box: the glass, a diamond lattice cut to it, and the frame over the top.
+// `radius` lets a round opening (Bag End's) take the same lattice as a square one (the inn's). Windows repeat all
+// over the map, so one shape here changes the jail, the hill and the inn at once.
+function paintLeadedWindow(g, T, x, y, w, h, radius = 2) {
+  fillRR(g, x, y, w, h, radius, T.windowDark);
+  g.save();
+  g.beginPath();
+  rr(g, x, y, w, h, radius);
+  // The clip rounds the lattice off inside a round opening. Each came is cut to the box in arithmetic as well,
+  // because a clip is invisible to the painted checks: a came drawn a window's height past the frame and clipped
+  // back is, as far as they can measure, a came painted on the wall.
+  g.clip();
+  g.globalAlpha = 0.7;
+  for (let k = -h; k < w + h; k += 9) {
+    const from = Math.max(0, -k);
+    const to = Math.min(h, w - k);
+    if (to <= from) continue;
+    line(g, x + k + from, y + from, x + k + to, y + to, T.stoneDark, 1);
+    line(g, x + k + from, y + h - from, x + k + to, y + h - to, T.stoneDark, 1);
+  }
+  g.globalAlpha = 1;
+  g.restore();
+  fillRR(g, x, y, w, h, radius, null, T.woodDark, 2);
+}
+
 // One iron bar, dark-cored with a light edge so it reads on the yard, on a stone wall and across a body of any
 // repo colour.
 function paintBar(g, T, x, y0, y1) {
@@ -4881,7 +4977,8 @@ function paintJail(g, T) {
   // Barred windows: a dark recess behind three bars, under a stone lintel.
   for (const [wx, wy, ww, wh2] of JAIL.windows) {
     fillRR(g, wx - 3, wy - 5, ww + 6, 5, 1, T.stoneDark);
-    fillRR(g, wx, wy, ww, wh2, 2, T.windowDark, T.stoneDark, 2);
+    if (T.pack === 'shire') paintLeadedWindow(g, T, wx, wy, ww, wh2, 2);
+    else fillRR(g, wx, wy, ww, wh2, 2, T.windowDark, T.stoneDark, 2);
     for (let i = 1; i <= 3; i++) paintBar(g, T, wx + (ww * i) / 4, wy + 1, wy + wh2 - 1);
     line(g, wx, wy + wh2 / 2, wx + ww, wy + wh2 / 2, T.steel, 1.4);
   }
