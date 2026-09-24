@@ -3876,9 +3876,9 @@ check('every seat in the cottage room is hittable, at capacity', () => {
 // The graveyard sign as painted: the arch, the board with its badge, count and "+N more", and the two hangers,
 // which drawGraveyardSign paints in that order, arch first and hangers last. The arch is a curve, whose control
 // point geometrySpy does not see, but its feet and apex lie inside the board and the hangers' span.
-const FENCE_DARK = { day: '#6f5c47', dusk: '#3b3128' };
-function graveSignShapes(frame, theme = 'day') {
-  const dark = FENCE_DARK[theme];
+// The graveyard sign is picked out of a frame by the fence colour it hangs from, which each pack paints its own.
+function graveSignShapes(frame, theme = 'day', pack = V.DEFAULT_THEME) {
+  const dark = V.resolveTheme(pack, theme === 'dusk').fenceDark;
   const start = frame.findIndex((s) => s.kind === 'stroke' && s.style === dark && s.lw === 3);
   let hangers = 0;
   for (let i = start + 1; i < frame.length; i++) {
@@ -4052,7 +4052,11 @@ const PAINT_COUNTS = [1, 5, 13, 20, 30];
 const r2 = (n) => Math.round(n * 100) / 100;
 // Tall with a hat, round with a hat and square with a hat: the tallest and the widest a character is drawn.
 const PAINT_LOOKS = [5, 6, 7];
-const FENCE_STYLES = { day: ['#adbf98', '#a18a6c', '#6f5c47'], dusk: ['#29362d', '#5d4e3d', '#3b3128'] };
+// The graveyard's own colours, per pack and time of day: it is found by them rather than by the ground it is on.
+const fenceStyles = (pack, dark) => {
+  const T = V.resolveTheme(pack, dark);
+  return [T.graveGrass, T.fence, T.fenceDark];
+};
 // What the other places paint into the background layer, taken as the layer's shapes that lie inside the ground each
 // one is built on: the Porch's house and lantern, the Workshop's shed, the jail's plot, the cottage, the castle, and
 // the Harbour's deck, pier and lighthouse. The graveyard is taken by its fence's own colours instead.
@@ -4081,7 +4085,7 @@ const paintedBox = (s) => {
 // The frames of `seconds` of motion, each as its list of shapes. Smoke and sparks draw from Math.random, which is
 // seeded here so the figures these checks report are the same on every run. With `bg`, the offscreen background
 // layer is painted through the spy into it instead, which needs a document to create that layer.
-function paintFrames(rows, { dark = false, island = false, seconds = 2, bg = null } = {}) {
+function paintFrames(rows, { dark = false, island = false, seconds = 2, bg = null, pack = V.DEFAULT_THEME } = {}) {
   const shapes = [];
   const random = Math.random;
   const hadDocument = 'document' in globalThis;
@@ -4100,7 +4104,7 @@ function paintFrames(rows, { dark = false, island = false, seconds = 2, bg = nul
         getBoundingClientRect: () => ({ left: 0, top: 0, right: 1600, bottom: 900, width: 1600, height: 900 }),
         addEventListener() {}, removeEventListener() {},
       };
-      const village = V.createVillage(canvas, { mode: island ? 'world' : 'village' });
+      const village = V.createVillage(canvas, { mode: island ? 'world' : 'village', theme: pack });
       village.resize();
       village.start();
       village.update(board(rows), { privacy: false });
@@ -4117,7 +4121,7 @@ function paintFrames(rows, { dark = false, island = false, seconds = 2, bg = nul
     if (bg && hadDocument) globalThis.document = priorDocument;
     else if (bg) delete globalThis.document;
   }
-  const grass = GRASS_HEX[dark ? 'dusk' : 'day'];
+  const grass = V.resolveTheme(pack, dark).grass;
   const frames = [];
   for (const s of shapes) {
     if (s.kind === 'fill' && s.style === grass && s.box[0] === 0 && s.box[1] === 0 && s.box[2] === 1600 && s.box[3] === 900) frames.push([]);
@@ -4128,25 +4132,25 @@ function paintFrames(rows, { dark = false, island = false, seconds = 2, bg = nul
 // The whole-canvas orange ring the page draws while anything is blocked belongs to no place.
 const isEdgeRing = (s) => s.kind === 'stroke' && s.box[0] < 8 && s.box[1] < 8 && s.box[2] > 1592 && s.box[3] > 892;
 const paintCache = new Map();
-function paintedScene(theme, island) {
-  const at = `${theme}|${island}`;
+function paintedScene(theme, island, pack = V.DEFAULT_THEME) {
+  const at = `${pack}|${theme}|${island}`;
   if (paintCache.has(at)) return paintCache.get(at);
   const dark = theme === 'dusk';
   const bg = [];
-  paintFrames([], { dark, bg, seconds: 0.1 });
+  paintFrames([], { dark, bg, seconds: 0.1, pack });
   const roads = bg.filter((s) => s.kind === 'stroke' && s.lw === V.ROAD_BAND).map((s) => {
     const [x0, y0, x1, y1] = s.box;
     const h = s.lw / 2;
     return y0 === y1 ? [x0, y0 - h, x1 - x0, s.lw] : [x0 - h, y0, s.lw, y1 - y0];
   });
-  const fence = bg.filter((s) => FENCE_STYLES[theme].includes(s.style));
+  const fence = bg.filter((s) => fenceStyles(pack, dark).includes(s.style));
   // One baseline per anchor, as a multiset of keys per frame.
   const baselines = new Map();
   const baseline = (place) => {
     const anchor = anchorRows(place, island);
     const id = anchor.length ? anchor[0].lane : '';
     if (!baselines.has(id)) {
-      const frames = paintFrames(anchor, { dark, island });
+      const frames = paintFrames(anchor, { dark, island, pack });
       baselines.set(id, frames.map((f) => {
         const m = new Map();
         for (const s of f) m.set(paintKey(s), (m.get(paintKey(s)) || 0) + 1);
@@ -4159,7 +4163,7 @@ function paintedScene(theme, island) {
   // Footprint of `rows` over the anchor's baseline: the shapes it adds, each once.
   const footprint = (place, rows) => {
     const base = baseline(place);
-    const frames = paintFrames([...anchorRows(place, island), ...rows], { dark, island });
+    const frames = paintFrames([...anchorRows(place, island), ...rows], { dark, island, pack });
     assert(frames.length === base.frames.length, `${theme} ${island ? 'island' : 'village'} ${place}: ${frames.length} frames against ${base.frames.length}`);
     const out = new Map();
     frames.forEach((f, i) => {
@@ -4187,7 +4191,7 @@ function paintedScene(theme, island) {
     const empty = baseline(place).last;
     const within = (b, [bx, by, bw, bh]) => b[0] >= bx - 2 && b[1] >= by - 2 && b[2] <= bx + bw + 2 && b[3] <= by + bh + 2;
     if (place === 'graveyard') {
-      for (const s of graveSignShapes(empty, theme)) add(s, 0);
+      for (const s of graveSignShapes(empty, theme, pack)) add(s, 0);
       for (const s of fence) add(s, 'ground');
     } else if (V.PLACES[place]) {
       const [x, y, w, h] = V.signBox(place);
@@ -4253,12 +4257,13 @@ function nearestGap(a, b, reach = 120) {
   return best;
 }
 
-check('what a place paints stays out of every other place and off the road: 0 to 30 rows at 1.5x, both themes, one village and an island', () => {
+check('what a place paints stays out of every other place and off the road: 0 to 30 rows at 1.5x, every theme pack, both schemes, one village and an island', () => {
   const measured = {};
+  for (const pack of V.THEME_KEYS) {
   for (const theme of ['day', 'dusk']) {
     for (const island of [false, true]) {
-      const label = `${theme}, ${island ? 'inside an island' : 'one village'}`;
-      const { roads, places, footprint } = paintedScene(theme, island);
+      const label = `${pack}, ${theme}, ${island ? 'inside an island' : 'one village'}`;
+      const { roads, places, footprint } = paintedScene(theme, island, pack);
       eq(roads.length, V.ROAD_LINES.length, `${label}: every road is read off the painted layer`);
       // No rows, nothing painted: the empty board is its own baseline, so 0 rows adds no shape to any place, and a
       // place at 0 is its sign alone, which is in `places` below.
@@ -4280,7 +4285,9 @@ check('what a place paints stays out of every other place and off the road: 0 to
           const depth = Math.max(0, ...places[name].filter((p) => p.n !== 'ground').map((p) => overlapDepth(p.box, r)));
           const allowed = (ROAD_CONTACTS[name] || {})[ri] || 0;
           assert(depth <= allowed + 1e-6, `${label}: the ${name} reaches ${depth.toFixed(2)} px into the road ${JSON.stringify(V.ROAD_LINES[ri])}, ${allowed} allowed`);
-          if (allowed) measured[`${name}/road${ri}`] = Math.max(measured[`${name}/road${ri}`] || 0, +depth.toFixed(2));
+          // Recorded for the green village alone. A pack may reach less far into a road, never further, which is
+          // what the inequality above holds every pack to.
+          if (allowed && pack === V.DEFAULT_THEME) measured[`${name}/road${ri}`] = Math.max(measured[`${name}/road${ri}`] || 0, +depth.toFixed(2));
         });
       }
       // The Porch, which is where this came from: every shape it paints is below the road's lower edge.
@@ -4289,12 +4296,15 @@ check('what a place paints stays out of every other place and off the road: 0 to
       assert(top > roadFoot, `${label}: the Porch paints up to y ${top.toFixed(2)}, over the road's edge at ${roadFoot}`);
       assert(top >= V.PORCH_CEILING - 1e-6, `${label}: nothing on the Porch rises above PORCH_CEILING (${top.toFixed(2)})`);
       const gap = nearestGap(places.porch, places.graveyard);
-      measured[`${theme}|${island ? 'island' : 'village'}`] = { porchTop: +top.toFixed(2), porchToRoad: +(top - roadFoot).toFixed(2), porchToGraveyard: +gap.toFixed(2) };
+      measured[`${pack}|${theme}|${island ? 'island' : 'village'}`] = { porchTop: +top.toFixed(2), porchToRoad: +(top - roadFoot).toFixed(2), porchToGraveyard: +gap.toFixed(2) };
     }
   }
-  // Paint is geometry: the two themes and the two maps put every place in exactly the same spot.
+  }
+  // Paint is geometry, and a pack is paint: every pack, both schemes and both maps put every place in exactly
+  // the same spot. This is the whole reason a frontier town could be laid over a village with a large geometry
+  // suite without moving a single crowd, sign or clickable door.
   const figures = Object.entries(measured).filter(([k]) => k.includes('|')).map(([, v]) => JSON.stringify(v));
-  eq(new Set(figures).size, 1, `the same clearances in both themes and both maps (${figures.join(' ')})`);
+  eq(new Set(figures).size, 1, `the same clearances in every pack, both schemes and both maps (${figures.join(' ')})`);
   for (const [name, roads] of Object.entries(ROAD_CONTACTS)) {
     for (const [ri, allowed] of Object.entries(roads)) eq(measured[`${name}/road${ri}`], allowed, `the ${name} still reaches exactly as far into road ${ri} as it did`);
   }
