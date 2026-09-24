@@ -3045,6 +3045,36 @@ check('hall guests multiply the crowd scale by their token size, and still keep 
 
 // ----- theme packs -----
 
+check('a fight breaks out in the mine inside one cycle, takes in whoever is nearest, and stops dead under reduced motion', () => {
+  // Timing first, as a pure function: somewhere in every cycle there is a fight, they alternate, and reduced
+  // motion has none at all rather than a frozen punch.
+  const kinds = new Set();
+  let fights = 0;
+  for (let t = 0; t < V.WEST_FIGHT_PERIOD; t += 0.05) {
+    const f = V.fightAt(t);
+    if (!f) continue;
+    fights += 1;
+    kinds.add(f.kind);
+    assert(f.k >= 0 && f.k <= 1, `a fight at ${t.toFixed(2)} is somewhere in its own run (${f.k})`);
+  }
+  assert(fights > 0, 'a fight breaks out inside one cycle');
+  eq([...kinds], ['brawl'], 'the first cycle is a brawl');
+  eq(V.fightAt(V.WEST_FIGHT_PERIOD).kind, 'shootout', 'and the next is a shootout');
+  eq(V.fightAt(V.WEST_FIGHT_PERIOD * 2).kind, 'brawl', 'and then they turn about again');
+  eq(V.fightAt(V.WEST_FIGHT_PERIOD - 0.01), null, 'the rest of a cycle is quiet');
+  for (const t of [0, 0.5, V.WEST_FIGHT_PERIOD * 3 + 0.2]) {
+    eq(V.fightAt(t, true), null, `reduced motion: nothing at ${t}`);
+  }
+
+  // The pair: the two standing nearest each other, west first, so the cloud between them always has both inside it.
+  eq(V.fightPair([]), null, 'nobody to fight');
+  eq(V.fightPair([{ x: 0, y: 0 }]), null, 'one guest cannot brawl');
+  const far = { x: 900, y: 500 };
+  const near = [{ x: 200, y: 500 }, { x: 260, y: 500 }];
+  eq(V.fightPair([far, ...near]), near, 'the two nearest each other, not the first two');
+  eq(V.fightPair([near[1], near[0]]), near, 'and the westmost of the pair comes first');
+});
+
 check('every theme pack paints a whole village: no colour is left to chance, and both rooms are named', () => {
   const base = { day: V.resolveTheme('village', false), dusk: V.resolveTheme('village', true) };
   assert(V.THEME_KEYS.length >= 2, 'there is more than one pack to choose between');

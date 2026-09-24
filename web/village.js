@@ -3063,6 +3063,7 @@ const THEMES = {
     roomWall: '#f0e2c8', roomWallShade: '#ddcba9', roomFloor: '#c79a63', roomFloorLine: '#ab7f4b', rug: '#a8544a',
     hallSky: '#cfe3e4', hallSea: '#9fc4c7', torchIron: '#5f5244', flame: '#f4cf78', flameCore: '#fcf0c8',
     tapestry: '#c7b28a', tapestryEdge: '#8e7a55',
+    baize: '#5c8163', baizeEdge: '#3f5c46', coin: '#d8b45c', coinEdge: '#a07f32',
     patrolKhaki: PATROL_COLOURS.day.khaki, patrolKhakiShade: PATROL_COLOURS.day.khakiShade,
     patrolNavy: PATROL_COLOURS.day.navy, patrolWhite: PATROL_COLOURS.day.white,
   },
@@ -3097,6 +3098,7 @@ const THEMES = {
     roomWall: '#544c3d', roomWallShade: '#463f33', roomFloor: '#5a452e', roomFloorLine: '#493626', rug: '#6e3a35',
     hallSky: '#34475a', hallSea: '#233847', torchIron: '#2b2620', flame: '#f1c86c', flameCore: '#fbe7b0',
     tapestry: '#6b5f49', tapestryEdge: '#473d2d',
+    baize: '#38503e', baizeEdge: '#26382b', coin: '#9c8144', coinEdge: '#6d5827',
     patrolKhaki: PATROL_COLOURS.dusk.khaki, patrolKhakiShade: PATROL_COLOURS.dusk.khakiShade,
     patrolNavy: PATROL_COLOURS.dusk.navy, patrolWhite: PATROL_COLOURS.dusk.white,
   },
@@ -3146,6 +3148,7 @@ const WEST_DAY = {
   roomWall: '#e9dcc0', roomWallShade: '#d5c5a1', roomFloor: '#a97d4e', roomFloorLine: '#8b6137', rug: '#8a4a3c',
   hallSky: '#cfe1ea', hallSea: '#cbb68d',
   tapestry: '#bfa377', tapestryEdge: '#8a7047',
+  baize: '#5a7f5f', baizeEdge: '#3d5a43',
 };
 
 const WEST_DUSK = {
@@ -3176,6 +3179,7 @@ const WEST_DUSK = {
   roomWall: '#544736', roomWallShade: '#463a2c', roomFloor: '#584228', roomFloorLine: '#473421', rug: '#6e3a35',
   hallSky: '#34405a', hallSea: '#3a3227',
   tapestry: '#6a5c44', tapestryEdge: '#463c2b',
+  baize: '#36503b', baizeEdge: '#243629',
 };
 
 // Only the name painted on a board changes: the lane behind it is the same object, so nothing downstream moves.
@@ -3196,6 +3200,44 @@ export const WEST_KIT = Object.freeze({
   collar: 0.62, lapel: 0.80, belt: 0.84, beltH: 4.5, star: 0.71,
   brimRX: 0.62, brimRY: 3.6, crownW: 0.52, seat: 2, seatRound: 5,
 });
+
+// Two of the mine's crowd go at it every WEST_FIGHT_PERIOD seconds, for WEST_FIGHT_S of it, brawl and shootout
+// turn and turn about. Like the mirror ball and the lighthouse beam, it is night-only art that moves, so reduced
+// motion holds it at nothing at all rather than at a frozen punch.
+export const WEST_FIGHT_PERIOD = 5;
+export const WEST_FIGHT_S = 1.5;
+export const WEST_FIGHT_KINDS = Object.freeze(['brawl', 'shootout']);
+
+export function fightAt(t, reduced = false) {
+  if (reduced || !(t >= 0)) return null;
+  const cycle = Math.floor(t / WEST_FIGHT_PERIOD);
+  const local = t - cycle * WEST_FIGHT_PERIOD;
+  if (local >= WEST_FIGHT_S) return null;
+  return { cycle, local, k: local / WEST_FIGHT_S, kind: WEST_FIGHT_KINDS[cycle % WEST_FIGHT_KINDS.length] };
+}
+
+// The two standing nearest each other. With a thin crowd the nearest two can still be half the hall apart, which
+// is why the dust ball's width is measured off the pair rather than fixed: a cloud hanging between two figures
+// standing clear of it reads as neither of them fighting.
+export function fightPair(points) {
+  if (!Array.isArray(points) || points.length < 2) return null;
+  let best = null;
+  let bestD = Infinity;
+  for (let i = 0; i < points.length; i += 1) {
+    for (let j = i + 1; j < points.length; j += 1) {
+      const d = Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y);
+      if (d < bestD) {
+        bestD = d;
+        best = points[i].x <= points[j].x ? [points[i], points[j]] : [points[j], points[i]];
+      }
+    }
+  }
+  return best;
+}
+
+// The band on its stage, where the green hall hangs its mirror ball. Low enough that the archway still reads above
+// the players' heads.
+export const MINE_STAGE = Object.freeze({ x: 800, y: 356, w: 200, h: 22 });
 
 export const DEFAULT_THEME = 'village';
 
@@ -4315,15 +4357,20 @@ function paintGraveyard(g, T) {
 // The castle hall, a full-canvas scene of its own.
 function paintHall(g, T) {
   const rand = mulberry32(14);
+  const west = T.pack === 'west';
   g.fillStyle = T.hallWall;
   g.fillRect(-3000, -3000, W + 6000, 3360);
   for (let row = 0, y = 0; y < 352; row++, y += 34) {
     for (let x = row % 2 ? -36 : 0; x < W; x += 72) {
       g.globalAlpha = 0.5 + rand() * 0.4;
-      fillRR(g, x + 2, y + 2, 68, 30, 8, T.hallBrick, T.hallBrickEdge, 1);
+      // Timber shoring on the brick courses' own rows: a mine is boarded, not bonded.
+      if (west) fillRR(g, x + 2, y + 4, 68, 26, 2, T.hallBrick, T.hallBrickEdge, 1);
+      else fillRR(g, x + 2, y + 2, 68, 30, 8, T.hallBrick, T.hallBrickEdge, 1);
     }
   }
   g.globalAlpha = 1;
+  // The pit props between the courses, which is what makes boards read as shoring.
+  if (west) for (const x of [66, 442, 800, 1158, 1534]) fillRR(g, x - 11, -10, 22, 366, 2, T.wood, T.woodDark, 1.5);
   // Windows looking out to sea.
   for (const wx of [300, 1300]) {
     g.beginPath();
@@ -4338,8 +4385,14 @@ function paintHall(g, T) {
     g.clip();
     g.fillStyle = T.hallSea;
     g.fillRect(wx - 80, 236, 160, 70);
-    fillPoly(g, [[wx + 10, 226], [wx + 10, 196], [wx + 30, 226]], T.sailCloth);
-    fillRR(g, wx - 4, 226, 44, 7, 3, T.wood);
+    if (west) {
+      // A mesa on the flats where the green hall has a boat: same window, same band of ground.
+      fillPoly(g, [[wx - 52, 236], [wx - 40, 198], [wx + 6, 198], [wx + 18, 236]], T.castle, T.castleDark, 1.5);
+      fillPoly(g, [[wx + 14, 236], [wx + 24, 214], [wx + 48, 214], [wx + 56, 236]], T.castleShade);
+    } else {
+      fillPoly(g, [[wx + 10, 226], [wx + 10, 196], [wx + 30, 226]], T.sailCloth);
+      fillRR(g, wx - 4, 226, 44, 7, 3, T.wood);
+    }
     g.restore();
     g.lineWidth = 8;
     g.strokeStyle = T.castleDark;
@@ -4371,7 +4424,8 @@ function paintHall(g, T) {
   line(g, 570, 30, 1030, 30, T.woodDark, 6);
   // Shells and starfish set into the wall.
   for (const [x, y, r, rot] of [[120, 60, 9, -0.3], [520, 90, 8, 0.2], [1080, 70, 9, -0.1], [1480, 96, 8, 0.4], [180, 250, 7, 0.1], [1420, 240, 7, -0.2]]) {
-    paintShell(g, T, x, y, r, rot);
+    if (west) paintCrossedPicks(g, T, x, y, r, rot);
+    else paintShell(g, T, x, y, r, rot);
   }
   for (const [x, y, r, rot] of [[470, 220, 11, 0.2], [1140, 210, 12, -0.2], [60, 170, 9, 0]]) paintStarfish(g, T, x, y, r, rot);
   // Torch brackets; the flames flicker per frame.
@@ -4395,6 +4449,48 @@ function paintHall(g, T) {
     g.stroke();
   }
   g.globalAlpha = 1;
+  // Six tables dealt for poker, centred at 386. HALL.floor starts at 410, so the crowd wanders in front of them
+  // rather than through them, and none of the six stands in the door arch at 740..860.
+  if (west) for (const x of MINE_TABLES) paintPokerTable(g, T, x, 386);
+}
+
+// Six card tables along the mine's back wall, clear of the arch in the middle of it.
+const MINE_TABLES = Object.freeze([190, 400, 610, 990, 1200, 1410]);
+
+// Crossed picks, hung where the green hall sets a shell into the wall and inside the same radius.
+function paintCrossedPicks(g, T, x, y, r, rot) {
+  g.save();
+  g.translate(x, y);
+  g.rotate(rot);
+  for (const turn of [0.7, -0.7]) {
+    g.save();
+    g.rotate(turn);
+    line(g, 0, -r * 1.1, 0, r * 1.1, T.woodDark, Math.max(1.8, r * 0.26));
+    g.beginPath();
+    g.arc(0, -r * 1.05, r * 0.72, Math.PI * 1.15, Math.PI * 1.85);
+    g.strokeStyle = T.steel;
+    g.lineWidth = Math.max(1.6, r * 0.3);
+    g.stroke();
+    g.restore();
+  }
+  g.restore();
+}
+
+// A table laid for poker: baize, a hand dealt round it, the pot in the middle and a lamp at the rim.
+function paintPokerTable(g, T, x, y) {
+  const rx = 78;
+  const ry = 26;
+  fillEllipse(g, x + 4, y + ry + 8, rx * 0.9, 8, T.shadow);
+  for (const side of [-0.6, 0.6]) fillRR(g, x + side * rx - 3, y + 4, 6, ry + 16, 2, T.woodDark);
+  fillEllipse(g, x, y + 5, rx, ry, T.woodDark);
+  fillEllipse(g, x, y, rx, ry, T.baize, T.baizeEdge, 2);
+  // Four hands dealt face down, and the pot between them.
+  for (const dx of [-52, -18, 16, 50]) {
+    fillRR(g, x + dx - 7, y - 5, 9, 13, 2, T.signBoard, T.woodDark, 1);
+    fillRR(g, x + dx - 2, y - 7, 9, 13, 2, T.signBoard, T.woodDark, 1);
+  }
+  for (let i = 0; i < 3; i++) fillEllipse(g, x - 4 + i * 5, y + 9 - i * 2, 6, 2.6, T.coin, T.coinEdge, 1);
+  fillRR(g, x + rx - 18, y - 16, 10, 16, 2, T.lanternGlass, T.woodDark, 1.5);
 }
 
 const HALL_TORCHES = [[120, 190], [520, 190], [1080, 190], [1480, 190]];
@@ -4473,6 +4569,7 @@ const PIECE_COLOURS = Object.freeze(['#d64545', '#3b6fd6', '#e0b23a', '#3f9d55']
 
 function paintCottageRoom(g, T) {
   const rand = mulberry32(31);
+  const west = T.pack === 'west';
   const floorY = 392;
   g.fillStyle = T.roomWall;
   g.fillRect(-3000, -3000, W + 6000, 3000 + floorY);
@@ -4491,7 +4588,21 @@ function paintCottageRoom(g, T) {
     fillRR(g, x - 10, y - 10, w + 20, h + 20, 4, T.wood, T.woodDark, 2);
     fillRR(g, x, y, w, h, 2, T.hallSky);
     fillEllipse(g, x + w * 0.7, y + h * 0.28, 16, 16, T.lanternGlass);
-    for (let i = 0; i < 9; i++) fillEllipse(g, x + 14 + rand() * (w - 28), y + 12 + rand() * (h * 0.6), 1.4, 1.4, T.foam);
+    if (west) {
+      // Desert through the window: the flats, a mesa on them and a saguaro against it.
+      g.save();
+      g.beginPath();
+      g.rect(x, y, w, h);
+      g.clip();
+      g.fillStyle = T.hallSea;
+      g.fillRect(x, y + h * 0.62, w, h * 0.38);
+      fillPoly(g, [[x + 22, y + h * 0.62], [x + 36, y + h * 0.3], [x + 82, y + h * 0.3], [x + 96, y + h * 0.62]], T.castle, T.castleDark, 1.5);
+      fillRR(g, x + w * 0.74, y + h * 0.4, 7, h * 0.24, 3.5, T.tree);
+      fillRR(g, x + w * 0.66, y + h * 0.48, 6, h * 0.12, 3, T.treeDark);
+      g.restore();
+    } else {
+      for (let i = 0; i < 9; i++) fillEllipse(g, x + 14 + rand() * (w - 28), y + 12 + rand() * (h * 0.6), 1.4, 1.4, T.foam);
+    }
     line(g, x + w / 2, y, x + w / 2, y + h, T.wood, 5);
     line(g, x, y + h / 2, x + w, y + h / 2, T.wood, 5);
     fillRR(g, x - 16, y + h + 10, w + 32, 10, 2, T.woodLight, T.woodDark, 1.5);
@@ -4514,15 +4625,56 @@ function paintCottageRoom(g, T) {
   g.strokeStyle = T.stoneDark;
   g.lineWidth = 2;
   g.stroke();
+  if (west) {
+    // The vault, standing open in the hearth's own opening: bars of bullion stacked inside it, and the door swung
+    // back against the wall on the near side with its wheel on it.
+    for (let row = 0; row < 3; row++) {
+      for (let i = 0; i < 3 - row; i++) {
+        fillRR(g, hx - 42 + i * 30 + row * 15, hy - 34 - row * 14, 26, 12, 2, T.coin, T.coinEdge, 1);
+      }
+    }
+    fillRR(g, hx + hw / 2 - 6, hy - 150, 22, 150, 3, T.steel, T.stoneDark, 2);
+    g.beginPath();
+    g.arc(hx + hw / 2 + 5, hy - 74, 12, 0, TAU);
+    g.strokeStyle = T.stoneDark;
+    g.lineWidth = 3;
+    g.stroke();
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 4;
+      line(g, hx + hw / 2 + 5 - Math.cos(a) * 15, hy - 74 - Math.sin(a) * 15,
+        hx + hw / 2 + 5 + Math.cos(a) * 15, hy - 74 + Math.sin(a) * 15, T.stoneDark, 2.5);
+    }
+  }
   fillRR(g, hx - hw / 2 - 28, hy - 176, hw + 56, 16, 3, T.wood, T.woodDark, 2);
   for (const dx of [-46, 46]) {
     fillRR(g, hx + dx - 6, hy - 206, 12, 30, 2, T.shell, T.stoneDark, 1);
     fillEllipse(g, hx + dx, hy - 208, 3, 4, T.flame);
   }
-  fillRR(g, hx - 24, hy - 46, 48, 30, 6, T.torchIron);
-  line(g, hx, hy - 60, hx, hy - 46, T.torchIron, 2);
-  for (const [dx, dy] of [[-30, -6], [0, -2], [26, -8]]) {
-    fillRR(g, hx + dx - 14, hy + dy - 8, 28, 10, 3, T.woodDark);
+  if (!west) {
+    fillRR(g, hx - 24, hy - 46, 48, 30, 6, T.torchIron);
+    line(g, hx, hy - 60, hx, hy - 46, T.torchIron, 2);
+    for (const [dx, dy] of [[-30, -6], [0, -2], [26, -8]]) {
+      fillRR(g, hx + dx - 14, hy + dy - 8, 28, 10, 3, T.woodDark);
+    }
+  }
+  if (west) {
+    // The teller's counter and its grille, in the one stretch of wall between the two windows.
+    const cx = 880;
+    fillRR(g, cx - 78, floorY - 104, 156, 104, 2, T.wood, T.woodDark, 2);
+    fillRR(g, cx - 86, floorY - 118, 172, 16, 3, T.woodLight, T.woodDark, 2);
+    fillRR(g, cx - 60, floorY - 214, 120, 96, 2, T.windowDark, T.woodDark, 2);
+    for (let x = cx - 52; x <= cx + 52; x += 13) line(g, x, floorY - 208, x, floorY - 124, T.steel, 2);
+    line(g, cx - 58, floorY - 166, cx + 58, floorY - 166, T.steel, 2);
+    // The day's takings against the wainscot, with a hand truck beside them.
+    const sx = 1330;
+    for (const [dx, dy, r] of [[0, 0, 22], [42, 4, 20], [20, -30, 18]]) {
+      fillEllipse(g, sx + dx, floorY + dy - r * 0.5, r, r * 0.72, T.signBoard, T.woodDark, 1.5);
+      line(g, sx + dx - 5, floorY + dy - r, sx + dx + 5, floorY + dy - r, T.woodDark, 2);
+    }
+    fillRR(g, sx + 74, floorY - 108, 6, 104, 2, T.steel);
+    fillRR(g, sx + 96, floorY - 108, 6, 104, 2, T.steel);
+    fillRR(g, sx + 72, floorY - 16, 32, 8, 2, T.steel);
+    fillEllipse(g, sx + 78, floorY - 2, 8, 8, T.woodDark);
   }
 
   // Floor: boards, then a rug in the middle of the room.
@@ -4538,11 +4690,35 @@ function paintCottageRoom(g, T) {
   }
   const [rx, ry, rw, rh] = [300, 560, 1000, 280];
   g.globalAlpha = 0.9;
-  fillRR(g, rx, ry, rw, rh, 26, T.rug, T.woodDark, 2);
+  fillRR(g, rx, ry, rw, rh, 26, west ? T.roomWallShade : T.rug, T.woodDark, 2);
   g.globalAlpha = 0.35;
   fillRR(g, rx + 26, ry + 24, rw - 52, rh - 48, 18, null, T.signBoard, 3);
   g.globalAlpha = 1;
   for (const t of COTTAGE_TABLES) paintGameTable(g, T, t);
+}
+
+// A clerk's desk on the game table's own footing and radius: the seats a session sits on are tied to the table,
+// so the table cannot move. A baize cloth, an open ledger, coin in stacks and a sack at the rim.
+function paintClerkDesk(g, T, x, y, rx, ry) {
+  fillEllipse(g, x + 4, y + ry + 14, rx * 0.92, 11, T.shadow);
+  for (const side of [-0.55, 0.55]) fillRR(g, x + side * rx - 4, y + 6, 8, ry + 12, 2, T.woodDark);
+  fillEllipse(g, x, y + 6, rx, ry, T.woodDark);
+  fillEllipse(g, x, y, rx, ry, T.wood, T.woodDark, 2);
+  fillEllipse(g, x, y, rx * 0.82, ry * 0.76, T.baize, T.baizeEdge, 1.5);
+  // The ledger, open at the middle, with its two pages ruled.
+  fillRR(g, x - 30, y - 13, 28, 24, 2, T.signBoard, T.woodDark, 1.5);
+  fillRR(g, x - 2, y - 13, 28, 24, 2, T.signBoard, T.woodDark, 1.5);
+  line(g, x - 2, y - 13, x - 2, y + 11, T.woodDark, 1.5);
+  for (let i = 1; i < 4; i++) {
+    line(g, x - 26, y - 13 + i * 6, x - 6, y - 13 + i * 6, T.signMuted, 1);
+    line(g, x + 2, y - 13 + i * 6, x + 22, y - 13 + i * 6, T.signMuted, 1);
+  }
+  for (let i = 0; i < 3; i++) {
+    const h = 4 + i * 3;
+    fillRR(g, x + 32 + i * 11, y + 4 - h, 9, h, 1.5, T.coin, T.coinEdge, 1);
+  }
+  fillEllipse(g, x - rx * 0.78, y + ry * 0.3, 13, 10, T.signBoard, T.woodDark, 1.5);
+  line(g, x - rx * 0.78 - 4, y + ry * 0.3 - 9, x - rx * 0.78 + 4, y + ry * 0.3 - 9, T.woodDark, 2);
 }
 
 // One table per COTTAGE_TABLES entry, its game drawn large enough to read across the room. Static, like the rug and
@@ -4551,6 +4727,10 @@ function paintGameTable(g, T, t) {
   const { x, y, game } = t;
   const rx = COTTAGE_TABLE_RX;
   const ry = COTTAGE_TABLE_RY;
+  if (T.pack === 'west') {
+    paintClerkDesk(g, T, x, y, rx, ry);
+    return;
+  }
   fillEllipse(g, x + 4, y + ry + 14, rx * 0.92, 11, T.shadow);
   for (const side of [-0.55, 0.55]) fillRR(g, x + side * rx - 4, y + 6, 8, ry + 12, 2, T.woodDark);
   fillEllipse(g, x, y + 6, rx, ry, T.woodDark);
@@ -5862,6 +6042,16 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   }
 
   // The fire in the cottage room's hearth, on the ambient clock like the hall's torches.
+  // The counting room's lamp, where the cottage has its fire: the same warm pool of light, and no flame.
+  function drawCountingRoomLamp() {
+    const { x, y } = HEARTH;
+    const glow = ctx.createRadialGradient(x, y - 70, 6, x, y - 70, 210);
+    glow.addColorStop(0, 'rgba(246, 214, 140, 0.34)');
+    glow.addColorStop(1, 'rgba(246, 214, 140, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - 220, y - 280, 440, 440);
+  }
+
   function drawHearthFire(env) {
     const T = env.theme;
     const { x, y } = HEARTH;
@@ -7213,8 +7403,112 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
 
   function drawDisco(env) {
     if (!env.night) return;
+    if (env.west) {
+      drawMineBand(env);
+      return;
+    }
     drawDiscoLights(env);
     drawDiscoBall(env);
+  }
+
+  // A fiddle, an upright and a banjo on the stage, swaying on the beat with notes rising off them. All of it rides
+  // the hall's own ambient tick, and all of it holds still under reduced motion, as the mirror ball does.
+  function drawMineBand(env) {
+    const T = env.theme;
+    const { x, y, w, h } = MINE_STAGE;
+    fillRR(ctx, x - w / 2, y, w, h, 3, T.wood, T.woodDark, 2);
+    fillRR(ctx, x - w / 2, y + h, w, 6, 2, T.woodDark);
+    const players = [[-62, 'fiddle'], [0, 'bass'], [62, 'banjo']];
+    players.forEach(([dx, kind], i) => {
+      const sway = env.reduced ? 0 : Math.sin(env.t * 3.2 + i * 1.1) * 3;
+      const px = x + dx + sway;
+      ctx.save();
+      fillEllipse(ctx, px, y - 44, 13, 15, T.wallShade, T.woodDark, 1.5);
+      fillEllipse(ctx, px, y - 62, 9, 9, T.wallShade, T.woodDark, 1.5);
+      // Everyone on the stage is hatted too.
+      fillEllipse(ctx, px, y - 68, 14, 3, T.woodDark);
+      fillRR(ctx, px - 6, y - 78, 12, 11, 3, T.woodDark);
+      if (kind === 'bass') {
+        fillEllipse(ctx, px + 15, y - 30, 12, 18, T.wood, T.woodDark, 1.5);
+        line(ctx, px + 15, y - 48, px + 15, y - 74, T.woodDark, 3);
+      } else if (kind === 'fiddle') {
+        fillEllipse(ctx, px + 13, y - 50, 8, 6, T.wood, T.woodDark, 1.5);
+        line(ctx, px + 18, y - 52, px + 34, y - 58, T.woodDark, 2);
+      } else {
+        fillEllipse(ctx, px + 14, y - 44, 8, 8, T.signBoard, T.woodDark, 1.5);
+        line(ctx, px + 20, y - 48, px + 34, y - 58, T.woodDark, 2.5);
+      }
+      ctx.restore();
+      // Notes rising off each player, on the same beat.
+      if (env.reduced) return;
+      for (let n = 0; n < 2; n += 1) {
+        const rise = ((env.t * 0.5 + i * 0.3 + n * 0.5) % 1);
+        ctx.globalAlpha = 0.75 * (1 - rise);
+        const nx = px + 22 + Math.sin(rise * 6 + i) * 8;
+        const ny = y - 84 - rise * 54;
+        fillEllipse(ctx, nx, ny, 4, 3.2, T.signBoard);
+        line(ctx, nx + 4, ny, nx + 4, ny - 11, T.signBoard, 1.8);
+        ctx.globalAlpha = 1;
+      }
+    });
+  }
+
+  // A brawl or a shootout between the two of the crowd standing nearest each other.
+  function drawMineFight(env) {
+    if (!env.west || !env.night || scene !== 'castle') return;
+    const fight = fightAt(env.t, env.reduced);
+    if (!fight) return;
+    const inside = guestsOf(scene);
+    if (!inside) return;
+    const pair = fightPair([...inside.values()].map((c) => ({ x: c.px, y: c.py })));
+    if (!pair) return;
+    const T = env.theme;
+    const [a, b] = pair;
+    const midX = (a.x + b.x) / 2;
+    const midY = (a.y + b.y) / 2 - 26;
+    const fade = Math.sin(Math.min(1, fight.k) * Math.PI);
+    ctx.save();
+    ctx.globalAlpha = fade;
+    if (fight.kind === 'brawl') {
+      // Wide enough to take both of them in, whatever the crowd left between them.
+      const half = Math.max(34, Math.abs(a.x - b.x) / 2 + 22);
+      for (let i = 0; i < 7; i += 1) {
+        const ang = (i / 7) * TAU + fight.k * 2;
+        fillEllipse(ctx, midX + Math.cos(ang) * half * 0.6, midY + Math.sin(ang) * 20,
+          half * 0.5, 19, `rgba(${T.smoke}, 0.5)`);
+      }
+      // A fist and a boot coming out of it.
+      fillEllipse(ctx, midX + half * 0.7, midY - 16, 8, 7, T.wallShade, T.woodDark, 1.5);
+      fillRR(ctx, midX - half * 0.85, midY + 8, 16, 8, 3, T.woodDark);
+      shoutText(ctx, T, 'POW!', midX, midY - 46, fade);
+    } else {
+      const from = a;
+      const to = b;
+      const dir = Math.sign(to.x - from.x) || 1;
+      const gx = from.x + dir * 20;
+      const gy = from.y - 30;
+      fillPoly(ctx, [[gx, gy - 6], [gx + dir * 26, gy], [gx, gy + 6]], T.flame, T.flameCore, 1.5);
+      for (let i = 0; i < 5; i += 1) {
+        fillEllipse(ctx, gx + dir * (10 + i * 9), gy - 4 - i * 3, 9 - i, 7 - i, `rgba(${T.smoke}, 0.45)`);
+      }
+      shoutText(ctx, T, 'BANG!', gx + dir * 30, gy - 40, fade);
+    }
+    ctx.restore();
+  }
+
+  // The shout over a fight: painted, never a title, so privacy mode has nothing to hide here.
+  function shoutText(g, T, word, x, y, alpha) {
+    g.save();
+    g.globalAlpha = alpha;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `800 26px ${FONT}`;
+    g.lineWidth = 4;
+    g.strokeStyle = T.signText;
+    g.strokeText(word, x, y);
+    g.fillStyle = T.signBoard;
+    g.fillText(word, x, y);
+    g.restore();
   }
 
   // A board-game piece hopping between two squares on each cottage table now and then, on the room's own ambient
@@ -7591,6 +7885,8 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
         fillEllipse(ctx, x, y - 10, 4, 7, T.flameCore);
       }
       drawDisco(env);
+    } else if (env.west) {
+      drawCountingRoomLamp();
     } else {
       drawHearthFire(env);
       drawGamePieces(env);
@@ -7631,6 +7927,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       if (c === selected) drawSelection(c, T);
       drawScaled(c, env);
     }
+    drawMineFight(env);
     drawBadges(ordered);
     if (selected && selected !== hovered && selected.inside) drawPlate(selected, env, true);
     if (hovered && hovered.inside) drawPlate(hovered, env, true);
