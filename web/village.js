@@ -52,6 +52,10 @@ export const HULL = Object.freeze({ l: -60, r: 60, t: -10, b: 17, drop: 4, bob: 
 // The mast, sail and flag reach local y -96 under sail (see drawRowboat), 86 above the hull's own top, so a box that
 // asks what is drawn is not the box that asks what water the hull needs.
 export const BOAT_TOP = -96;
+// What the locomotive reaches, in the boat's own local units: its back sheet, its nose, its chimney cap, its wheel
+// bottoms and the top of its plume. The draw reads these for its extremes, and `theme packs` checks them against
+// the hull the boat declares, so a locomotive cannot grow past the footing it stands on.
+export const LOCO = Object.freeze({ back: -58, nose: 60, cap: -62, wheels: 16, plume: -92 });
 function boatExtent(x, y, top) {
   let x0 = Infinity;
   let y0 = Infinity;
@@ -2471,6 +2475,17 @@ export const JETTY_FOOT = Object.freeze({ x: JETTY.x, y: JETTY.foot - 2 });
 // planBoats already keeps opposite directions off the lane at the same time, so a second lane would only have put
 // two boats closer together than one lane does.
 export const RETURN_WAYPOINTS = Object.freeze([...SAIL_WAYPOINTS].reverse());
+// The frontier's crossing is a rail line, and four straight legs meeting at angles no rail could take is not one.
+// Sweeping the corners into arcs would have fixed the kinks but not the shape: the sail waypoints go the long way
+// round on purpose, since that is what makes a crossing a voyage rather than a hop. So the line runs straight from
+// the berth to the jetty instead, about a third of the voyage's length. Everything downstream is already generic
+// over whatever journey it is handed, so the gate windows, the lane keeping and the berths needed no touching.
+export const STRAIGHT_LANE = Object.freeze([]);
+
+// Which waypoints a pack crosses by. SAIL_WAYPOINTS is still the default, so every other pack keeps the voyage.
+export function sailLane(pack = DEFAULT_THEME) {
+  return pack === 'west' ? STRAIGHT_LANE : SAIL_WAYPOINTS;
+}
 const BERTH_NEAR = 4;
 // Hulls are 84 wide; boats are planned to stay at least this far apart, centre to centre.
 export const BOAT_CLEAR = 96;
@@ -2504,12 +2519,12 @@ function pastBarrier(p) {
 // Returns legs [{ kind: 'walk' | 'gate' | 'sail', area, pts, dur, ... }]. Walk legs shorter than a pixel are dropped.
 // With stamp (a session whose PR merged, leaving the harbour queue), a voyage from land stops at the barrier: the guard
 // stamps its passport, then lifts the barrier (a 'gate' leg). Everyone else is waved through without stopping.
-export function planJourney(from, to, { stamp = false } = {}) {
+export function planJourney(from, to, { stamp = false, lane = SAIL_WAYPOINTS } = {}) {
   const a = { x: px(from), y: py(from) };
   const b = { x: px(to), y: py(to) };
   const fromArea = from.area === 'island' || from.area === 'water' ? from.area : 'land';
   const toArea = to.area === 'island' ? 'island' : 'land';
-  const outward = [BOAT_BERTH, ...SAIL_WAYPOINTS, JETTY_BERTH].map((p) => ({ x: p.x, y: p.y }));
+  const outward = [BOAT_BERTH, ...lane, JETTY_BERTH].map((p) => ({ x: p.x, y: p.y }));
   const legs = [];
   if (fromArea === 'water') {
     const berth = toArea === 'island' ? JETTY_BERTH : BOAT_BERTH;
@@ -2695,8 +2710,9 @@ export function holdForGate(journey, others) {
 // pier, and before a passenger leaves the island a boat sails out to fetch it. A fetch that cannot reach the jetty in
 // time (the walk there is shorter than the sail) makes the passenger wait at the jetty end, so the journey is changed
 // in place. Returns [{ kind: 'return' | 'fetch', pts, route, t0, dur }].
-export function scheduleFerries(journey, now) {
+export function scheduleFerries(journey, now, lane = SAIL_WAYPOINTS) {
   const trips = [];
+  const back10 = [...lane].reverse();
   const legs = journey.legs;
   const trip = (kind, pts) => ({ kind, pts, route: makeRoute(pts), t0: 0, dur: sailDuration(routeLength(pts)) });
   for (let i = 0; i < legs.length; i++) {
@@ -2704,11 +2720,11 @@ export function scheduleFerries(journey, now) {
     if (leg.kind !== 'sail') continue;
     if (leg.toArea === 'island') {
       const end = leg.pts[leg.pts.length - 1];
-      const back = trip('return', [xy(end), ...RETURN_WAYPOINTS.map(xy), xy(BOAT_BERTH)]);
+      const back = trip('return', [xy(end), ...back10.map(xy), xy(BOAT_BERTH)]);
       back.t0 = leg.t0 + leg.dur;
       trips.push(back);
     } else if (leg.fromArea === 'island' && leg.board) {
-      const fetch = trip('fetch', [xy(BOAT_BERTH), ...[...RETURN_WAYPOINTS].reverse().map(xy), xy(leg.pts[0])]);
+      const fetch = trip('fetch', [xy(BOAT_BERTH), ...lane.map(xy), xy(leg.pts[0])]);
       const late = now - (leg.t0 - fetch.dur);
       if (late > 1e-9) {
         const wait = { kind: 'wait', area: leg.fromArea, pts: [xy(leg.board)], dur: late, t0: leg.t0 };
@@ -2934,7 +2950,7 @@ export function boatsKeepClear(journeys, mine, ferries, t) {
 // it finishes its crossing instead: `pending` is where to go once it has landed.
 // others: [{ id, journey }] for every other character with a journey; ferries: owner-tagged trips. Other journeys and
 // trips may be changed. Returns { journey, pending, ferries }.
-export function turnBack({ id, boat, journey: was, to, opts = {} }, others, ferries, t) {
+export function turnBack({ id, boat, journey: was, to, opts = {}, lane = SAIL_WAYPOINTS }, others, ferries, t) {
   const withOthers = others.filter((o) => o.id !== id && o.journey);
   const boarding = (j) => j.legs.find((l) => l.kind === 'sail' && l.board);
   const waiting = withOthers
@@ -2959,12 +2975,12 @@ export function turnBack({ id, boat, journey: was, to, opts = {} }, others, ferr
 
   for (const hold of TURN_HOLDS) {
     let fleet = cancelTrips(restore(), id, t);
-    const journey = scheduleJourney(planJourney({ x: boat.x, y: boat.y, area: 'water' }, to), t + hold, opts);
-    const trips = scheduleFerries(journey, t).map((trip) => ({ owner: id, ...trip }));
+    const journey = scheduleJourney(planJourney({ x: boat.x, y: boat.y, area: 'water' }, to, { lane }), t + hold, opts);
+    const trips = scheduleFerries(journey, t, lane).map((trip) => ({ owner: id, ...trip }));
     const mineLanes = laneWindows(journey);
     for (const f of fleet) {
-      const lane = f.t0 > t ? laneWindows(null, [f])[0] : null;
-      if (lane && mineLanes.some((m) => crossing(m, lane))) keepAtJetty(f);
+      const window = f.t0 > t ? laneWindows(null, [f])[0] : null;
+      if (window && mineLanes.some((m) => crossing(m, window))) keepAtJetty(f);
     }
     const theirLanes = [...withOthers.flatMap((o) => laneWindows(o.journey)), ...laneWindows(null, fleet)];
     for (const f of trips) {
@@ -3507,11 +3523,56 @@ function drawMargarita(g, T, x, y, tilt = 0, s = 1) {
   g.restore();
 }
 
+// The frontier's crossing runs on rails, so the boat is a locomotive on the boat's own footing: the passenger
+// stands on the footplate between the tender behind and the boiler in front, exactly as a passenger sits between a
+// boat's two gunwales, and the plume goes up for the long haul where a boat raises its sail. Everything it paints
+// stays inside BOAT_TOP and the hull's own length.
+function drawLocomotive(g, T, { sail, part }) {
+  const wheel = (wx, r) => {
+    fillEllipse(g, wx, LOCO.wheels - r, r, r, T.steel, T.woodDark, 2);
+    fillEllipse(g, wx, LOCO.wheels - r, r * 0.32, r * 0.32, T.woodDark);
+  };
+  if (part !== 'front') {
+    // The tender: a coal box on two wheels, its back sheet where the boat's stern is.
+    fillRR(g, LOCO.back, -36, 42, 48, 3, T.plank, T.woodDark, 2);
+    fillRR(g, LOCO.back, -40, 42, 7, 2, T.woodDark);
+    wheel(-48, 7.5);
+    wheel(-24, 7.5);
+    fillRR(g, -20, -30, 8, 42, 2, T.woodDark);
+  }
+  if (part !== 'back') {
+    // The boiler, the smokebox and the chimney, and the frame they all stand on.
+    fillRR(g, 6, -34, 46, 42, 18, T.steel, T.woodDark, 2);
+    for (const bx of [20, 36]) fillRR(g, bx, -34, 5, 42, 2, T.woodDark);
+    fillRR(g, 46, -38, 12, 50, 4, T.woodDark);
+    fillRR(g, 34, -58, 15, 24, 2, T.woodDark);
+    fillRR(g, 31, LOCO.cap, 21, 7, 3, T.woodDark);
+    fillRR(g, 2, -14, 54, 22, 2, T.woodDark);
+    wheel(18, 8.5);
+    wheel(42, 8.5);
+    // The cowcatcher, on the bow's own line.
+    fillPoly(g, [[LOCO.nose, -8], [LOCO.nose, LOCO.wheels], [44, LOCO.wheels]], T.steel, T.woodDark, 1.5);
+  }
+  if (sail && part !== 'front') {
+    // The plume, rising to where a sail's flag flies and no higher.
+    for (let i = 0; i < 4; i += 1) {
+      const r = 9 + i * 3.5;
+      const cy = LOCO.cap - 8 - i * 7;
+      fillEllipse(g, 40 - i * 5, Math.max(LOCO.plume + r, cy), r, r * 0.8, `rgba(${T.smoke}, ${0.5 - i * 0.08})`);
+    }
+  }
+}
+
 function drawRowboat(g, T, x, y, { tilt = 0, s = 1, dir = 1, sail = false, part = 'all' } = {}) {
   g.save();
   g.translate(x, y);
   g.rotate(tilt);
   g.scale(s * (dir < 0 ? -1 : 1), s);
+  if (T.pack === 'west') {
+    drawLocomotive(g, T, { sail, part });
+    g.restore();
+    return;
+  }
   const hull = () => {
     g.beginPath();
     g.moveTo(-60, -10);
@@ -5202,7 +5263,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
 
   function travel(c, to, t0, opts = {}) {
     const from = { x: c.px, y: c.py, area: c.area };
-    const legs = planJourney(from, to, { stamp: !!opts.stamp });
+    const legs = planJourney(from, to, { stamp: !!opts.stamp, lane: sailLane(pack) });
     const journey = scheduleJourney(legs, t0, opts);
     if (!journey.legs.length && opts.fade) {
       // Already at the door or gate: without a leg to end on, nothing would ever fade it out.
@@ -5216,7 +5277,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     cancelFerries(c.id, t0);
     const journeys = [...chars.values()].filter((o) => o !== c && o.journey).map((o) => o.journey);
     holdForGate(journey, journeys);
-    const trips = scheduleFerries(journey, t0);
+    const trips = scheduleFerries(journey, t0, sailLane(pack));
     planBoats(journey, trips, { journeys, ferries }, t0);
     for (const trip of trips) ferries.push({ owner: c.id, ...trip });
     c.journey = journey;
@@ -5262,7 +5323,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       return;
     }
     const others = [...chars.values()].filter((o) => o !== c && o.journey).map((o) => ({ id: o.id, journey: o.journey }));
-    const plan = turnBack({ id: c.id, boat, journey: was, to, opts }, others, ferries, t);
+    const plan = turnBack({ id: c.id, boat, journey: was, to, opts, lane: sailLane(pack) }, others, ferries, t);
     ferries = plan.ferries;
     c.journey = plan.journey;
     c.pending = plan.pending;
@@ -8411,7 +8472,9 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     if (canvas.style) canvas.style.cursor = '';
   }
 
-  // A pack is paint alone, so nothing is re-laid out: the layers are repainted and the next frame is drawn.
+  // A pack is paint alone, so nothing is re-laid out: the layers are repainted and the next frame is drawn. The one
+  // thing a pack does decide is which line the crossing takes, and a journey already under way keeps the line it
+  // was planned on: retargeting a boat mid-channel onto a line it is not on would put it across the water sideways.
   function setTheme(next) {
     if (destroyed || !THEME_KEYS.includes(next) || next === pack) return;
     pack = next;

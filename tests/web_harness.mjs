@@ -3045,6 +3045,71 @@ check('hall guests multiply the crowd scale by their token size, and still keep 
 
 // ----- theme packs -----
 
+check('the frontier line runs straight from the berth to the jetty, over water all the way, and every other pack keeps the voyage', () => {
+  const xy = (p) => ({ x: p.x, y: p.y });
+  eq(V.sailLane(), V.SAIL_WAYPOINTS, 'the default is the voyage');
+  eq(V.sailLane('village'), V.SAIL_WAYPOINTS, 'and so is the green village');
+  eq(V.sailLane('nope'), V.SAIL_WAYPOINTS, 'and so is a pack nobody has heard of');
+  const straight = V.sailLane('west');
+  assert(straight !== V.SAIL_WAYPOINTS, 'the frontier runs its own line');
+
+  const routeOf = (lane) => [xy(V.BOAT_BERTH), ...lane.map(xy), xy(V.JETTY_BERTH)];
+  const voyage = V.routeLength(routeOf(V.SAIL_WAYPOINTS));
+  const run = V.routeLength(routeOf(straight));
+  assert(run < voyage * 0.4 && run > voyage * 0.25,
+    `the frontier run is about a third of the voyage (${run.toFixed(0)} against ${voyage.toFixed(0)})`);
+
+  // Same rules the voyage is held to: open water all along it, a hull clear of the coast, and never over the sand.
+  for (const lane of [routeOf(straight), [...routeOf(straight)].reverse()]) {
+    for (let i = 1; i < lane.length; i += 1) {
+      for (let k = 0; k <= 200; k += 1) {
+        const q = {
+          x: lane[i - 1].x + (lane[i].x - lane[i - 1].x) * (k / 200),
+          y: lane[i - 1].y + (lane[i].y - lane[i - 1].y) * (k / 200),
+        };
+        assert(q.x > V.shoreX(q.y) && !V.onIsland(q.x, q.y), `the frontier line stays on the water at ${JSON.stringify(q)}`);
+        const box = V.hullBox(q.x, q.y);
+        for (let y = box[1]; y <= box[1] + box[3] + 1e-9; y += 1) {
+          assert(box[0] > V.shoreX(y), `a locomotive at ${JSON.stringify(q)} crosses the waterline at y ${y.toFixed(0)}`);
+        }
+        for (const cx of [box[0], box[0] + box[2] / 2, box[0] + box[2]]) {
+          for (const cy of [box[1], box[1] + box[3] / 2, box[1] + box[3]]) {
+            assert(!V.onIsland(cx, cy, 6), `a locomotive at ${JSON.stringify(q)} covers the island`);
+          }
+        }
+      }
+    }
+  }
+
+  // The outward run, the engine that comes back for the next passenger and the one that goes to fetch one all take
+  // the line the pack is given, not the default.
+  const from = { x: 700, y: 700, area: 'land' };
+  const to = { x: V.ISLAND.cx, y: V.ISLAND.cy, area: 'island' };
+  const legs = V.planJourney(from, to, { lane: straight });
+  const sail = legs.find((l) => l.kind === 'sail');
+  assert(sail, 'the journey still crosses');
+  eq(sail.pts.length, 2, 'the crossing is one straight leg');
+  const journey = V.scheduleJourney(legs, 0);
+  const trips = V.scheduleFerries(journey, 0, straight);
+  assert(trips.length > 0, 'an engine comes back for the next passenger');
+  for (const trip of trips) eq(trip.pts.length, 2, `the ${trip.kind} run takes the same straight line`);
+  // And the voyage is untouched: its crossing still goes the long way round.
+  const long = V.planJourney(from, to).find((l) => l.kind === 'sail');
+  eq(long.pts.length, V.SAIL_WAYPOINTS.length + 2, 'the green village still sails the whole voyage');
+});
+
+check('the locomotive stands on the boat\'s own footing: inside the hull it replaces and under BOAT_TOP', () => {
+  const L = V.LOCO;
+  assert(L.back >= V.HULL.l, `the tender's back sheet (${L.back}) is inside the hull's stern (${V.HULL.l})`);
+  assert(L.nose <= V.HULL.r, `the cowcatcher (${L.nose}) is inside the hull's bow (${V.HULL.r})`);
+  assert(L.wheels <= V.HULL.b, `the wheels (${L.wheels}) stand on the hull's own waterline (${V.HULL.b})`);
+  // The chimney and its plume rise where a boat's mast and flag do, and no higher: every box the boat declares,
+  // and the lighthouse beam's reckoning of what it falls on, is built from BOAT_TOP.
+  assert(L.plume >= V.BOAT_TOP, `the plume (${L.plume}) stays under BOAT_TOP (${V.BOAT_TOP})`);
+  assert(L.cap > L.plume, 'the chimney cap is below the top of its own plume');
+  assert(L.cap < V.HULL.t, 'and above the hull it stands on');
+});
+
 check('a fight breaks out in the mine inside one cycle, takes in whoever is nearest, and stops dead under reduced motion', () => {
   // Timing first, as a pure function: somewhere in every cycle there is a fight, they alternate, and reduced
   // motion has none at all rather than a frozen punch.
