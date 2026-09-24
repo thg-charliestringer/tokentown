@@ -185,7 +185,7 @@ Cursor you have installed.
 | **The Workshop** | **Running**: busy, or idle while a task it started in the background still runs (`background task · N min`) |
 | **The Cottages** | **Idle** (live, quiet for 2 hours or more) and **Recent** (active in the last 7 days). One cottage with lit windows and a count on its sign. Click it to go inside, where the sessions wander and sit down to chess, ludo, snakes and ladders or cards. In the Wild West it is **The Bank**, and the room behind it is the counting room |
 | **The Harbour** | **PR open**. Sessions queue behind the border patrol. When a PR merges, the guard stamps that character's passport, the barrier lifts, and it walks down the pier to a boat |
-| **Valhalla island** | A PR merged with none still open, or you sent it there. For 14 days they lounge on the beach with margaritas, then move into the **sand castle**. Click the castle to go inside. In the Wild West the island is a mesa and the castle is a mine |
+| **Valhalla island** | A PR merged with none still open, or you sent it there. For 14 days they lounge on the beach with margaritas, then move into the **sand castle**. Click the castle to go inside. In the Wild West the island is a mesa, the castle is a mine, and they lounge under a brush ramada with whiskey |
 | **The Jail** | Every PR was closed without merging. They stand in a barred yard. A merge always beats a closure |
 | **The Graveyard** | Archived, a terminal or VS Code session that has ended, or no activity for 30+ days. One headstone per session, newest first, with friendly ghosts floating over them: two from the first grave, up to twelve in a full graveyard |
 | **The immigration desk** | Not sessions: PRs waiting on your review, as visitors (see below) |

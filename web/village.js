@@ -6381,15 +6381,28 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     if (c.index % 2 === 0 && (c.slotDx || 0) >= 60 * k && umbrellaFits(x, y, k)) {
       const ux = x + 30;
       const uy = y - 84;
-      line(ctx, ux, y + 4, ux + 3, uy, T.woodDark, 2.5);
-      const segs = 6;
-      for (let i = 0; i < segs; i++) {
-        const a0 = Math.PI + (i / segs) * Math.PI;
-        const a1 = Math.PI + ((i + 1) / segs) * Math.PI;
-        fillPoly(ctx, [[ux + 3, uy - 16], [ux + 3 + Math.cos(a0) * 38, uy + 3 + Math.sin(a0) * 4], [ux + 3 + Math.cos(a1) * 38, uy + 3 + Math.sin(a1) * 4]],
-          i % 2 ? colors[1] : T.stripeBase, T.woodDark, 0.8);
+      if (T.pack === 'west') {
+        // A brush ramada in place of the parasol, on the parasol's own reach: the same 76 px of shade between
+        // ux - 35 and ux + 41, which is what `umbrellaBox` declares and every beach check is laid out around.
+        // Flat rather than domed, and posted on the right so the roof shades the lounger without standing in it.
+        const roof = uy - 12;
+        for (const px of [ux - 2, ux + 38]) fillRR(ctx, px - 2, roof + 13, 4, y + 4 - roof - 13, 1.5, T.woodDark);
+        line(ctx, ux - 2, roof + 20, ux - 30, roof + 13, T.woodDark, 2);
+        for (let i = 0; i < 9; i++) {
+          fillRR(ctx, ux - 35 + i * 8.4, roof, 6.5, 8, 2, i % 2 ? T.thatch : T.thatchDark);
+        }
+        fillRR(ctx, ux - 35, roof + 7, 76, 6, 2, T.wood, T.woodDark, 1.2);
+      } else {
+        line(ctx, ux, y + 4, ux + 3, uy, T.woodDark, 2.5);
+        const segs = 6;
+        for (let i = 0; i < segs; i++) {
+          const a0 = Math.PI + (i / segs) * Math.PI;
+          const a1 = Math.PI + ((i + 1) / segs) * Math.PI;
+          fillPoly(ctx, [[ux + 3, uy - 16], [ux + 3 + Math.cos(a0) * 38, uy + 3 + Math.sin(a0) * 4], [ux + 3 + Math.cos(a1) * 38, uy + 3 + Math.sin(a1) * 4]],
+            i % 2 ? colors[1] : T.stripeBase, T.woodDark, 0.8);
+        }
+        fillEllipse(ctx, ux + 3, uy - 17, 2.5, 2.5, T.woodDark);
       }
-      fillEllipse(ctx, ux + 3, uy - 17, 2.5, 2.5, T.woodDark);
     }
     fillEllipse(ctx, x + 3, y + 3, 24, 4.5, T.shadow);
     line(ctx, x - 16, y - 36, x - 20, y + 3, T.woodDark, 2.5);
@@ -6583,8 +6596,11 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.strokeStyle = edge;
     ctx.stroke();
     fillEllipse(ctx, x, top + m.h * 0.7, m.w * 0.26, m.h * 0.15, 'rgba(255, 255, 255, 0.3)');
-    // Nobody in the boat or on a lounger wears the belt: both cut the body off where it would sit.
-    const westKit = env.west && !inBoat && !lounging;
+    // Everyone in the frontier town is hatted, which is what `headroom` lifts every badge by: a look left
+    // bare-headed here would hang its badge over a gap. The waistcoat and the belt are the part a deck chair or a
+    // boat's gunwale cuts through, so those two alone are what a lounger and a passenger go without.
+    const westHat = env.west;
+    const westKit = westHat && !inBoat && !lounging;
     if (westKit) drawWestKit(x, top, m, f.shape, tint, edge, T);
 
     const shY = top + m.h * 0.56;
@@ -6711,9 +6727,9 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     }
 
     const accent = accentFor(colour, f.hue);
-    if (westKit) {
-      // Everyone is hatted here, so the five looks tell five sessions of one repo apart as trimmings instead: the
-      // star above, a bandana, a feather in the hatband, glasses (drawn with the face), or the hat alone.
+    if (westHat) {
+      // The five looks tell five sessions of one repo apart as trimmings instead: the star (with the kit, above),
+      // a bandana, a feather in the hatband, glasses (drawn with the face), or the hat alone.
       const K = WEST_KIT;
       const seat = top + (f.shape === 'round' ? K.seatRound : K.seat);
       // The crown's top is one HAT_LIFT plus the brim's own thickness above the body, whatever the brim sits on, so
@@ -6726,7 +6742,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       fillRR(ctx, x - crownW / 2, seat - 5.5, crownW, 4, 1.5, edge);
       if (f.accessory === 'hat') {
         fillPoly(ctx, [[x - crownW / 2 + 1, seat - 4], [x - crownW / 2 - 5, crownY + 1], [x - crownW / 2 + 4, seat - 5]], tint, edge, 1);
-      } else if (f.accessory === 'scarf') {
+      } else if (f.accessory === 'scarf' && westKit) {
         fillRR(ctx, x - m.w / 2 - 1, top + m.h * 0.56, m.w + 2, 5, 2.5, accent);
         fillPoly(ctx, [[x - 7, top + m.h * 0.60], [x + 7, top + m.h * 0.60], [x, top + m.h * 0.74]], accent, edge, 1);
       }

@@ -3253,11 +3253,14 @@ check('the frontier kit is the Wild West\'s alone, and its hat lifts the painted
   // One look per accessory. look also picks the shape (look % 3), so this covers round, square and tall as well.
   const LOOKS = [[0, 'none'], [4, 'hat'], [8, 'scarf'], [12, 'antenna'], [16, 'glasses']];
   const ID = 'local_abababab-0000-4000-8000-00000000c0c0';
-  const LANE = 'errored';
+  // Two lanes: one standing, and one lounging on Valhalla. A lounger wears no waistcoat, because a deck chair
+  // cuts across where it would sit, but it is hatted like everyone else: `headroom` lifts every badge in this
+  // pack by one hat, so a look left bare-headed here would hang its badge over a gap.
+  const LANES = ['errored', 'valhalla'];
 
   // The badge's height above the character's feet, as painted and as hit tested. A body's height varies with its
   // shape, so the two packs are compared look for look rather than look against look.
-  const badgeLift = (look, packKey) => {
+  const badgeLift = (look, packKey, LANE) => {
     const rows = [row(ID, LANE, { look })];
     const slot = V.layoutVillage(rows).get(ID);
     const frame = lastFrame(paintedShapes(rows, { theme: packKey }).shapes, 'day', V.resolveTheme(packKey, false).grass);
@@ -3267,18 +3270,31 @@ check('the frontier kit is the Wild West\'s alone, and its hat lifts the painted
     // Steel on this character alone: the village paints plenty elsewhere (the jail's bars, the harbour barrier).
     const steel = frame.filter((sh) => sh.kind === 'fill' && sh.style === V.resolveTheme(packKey, false).steel
       && Math.abs((sh.box[0] + sh.box[2]) / 2 - slot.x) < 26 && sh.box[1] > slot.y - 60 && sh.box[3] < slot.y + 4);
+    // The highest thing this character paints below its own badge: its hat if it wears one, else its head. The
+    // badge is lifted by `headroom` whether or not a hat is drawn, so this is the only way to tell that one is.
+    const badgeBottom = (discs[0].box[1] + discs[0].box[3]) / 2 + 14;
+    // An errored session puffs smoke over its own head, in both packs alike, so it would mask the hat underneath.
+    const smoke = V.resolveTheme(packKey, false).smoke;
+    const onBody = frame.filter((sh) => Math.abs((sh.box[0] + sh.box[2]) / 2 - slot.x) < 30
+      && sh.box[1] >= badgeBottom - 0.5 && sh.box[1] < slot.y && !String(sh.style).includes(smoke));
+    const crown = onBody.length ? Math.min(...onBody.map((sh) => sh.box[1])) : slot.y;
     const v = makeVillage({ theme: packKey });
     v.village.start();
     v.village.update(board(rows), { privacy: false });
     // The village reports its hover point at the badge's centre, which is where a click has to land.
     const at = v.aim(rows, ID);
     v.village.destroy();
-    return { painted: slot.y - (discs[0].box[1] + discs[0].box[3]) / 2, clickable: slot.y - at.y, steel };
+    return {
+      painted: slot.y - (discs[0].box[1] + discs[0].box[3]) / 2, clickable: slot.y - at.y, steel,
+      // How far the badge's underside sits above the highest thing this character paints below it.
+      gap: crown - badgeBottom,
+    };
   };
 
+  for (const LANE of LANES) {
   for (const [look, accessory] of LOOKS) {
-    const green = badgeLift(look, 'village');
-    const west = badgeLift(look, 'west');
+    const green = badgeLift(look, 'village', LANE);
+    const west = badgeLift(look, 'west', LANE);
     // Dom's first bug: the lift was written out twice, so a taller hat raised the painted badge and left the
     // clickable one behind. Both packs are checked, because only one of them changes the hat.
     near(green.painted, green.clickable, 0.01, `village/${accessory}: the painted badge is where the click lands`);
@@ -3289,16 +3305,29 @@ check('the frontier kit is the Wild West\'s alone, and its hat lifts the painted
     near(west.painted - green.painted, alreadyHatted ? 0 : V.HAT_LIFT, 0.01,
       `${accessory}: what the frontier hat adds over the green village`);
 
-    // The buckle and the revolver's butt are the kit's only steel, and this lane paints no hammer, so steel in the
-    // frame is the gun belt and nothing else. It says the kit is worn here and nowhere else.
-    eq(green.steel.length, 0, `village/${accessory}: no gun belt in the green village`);
-    assert(west.steel.length >= 2, `west/${accessory}: the belt's buckle and the revolver's butt are painted`);
-    // Clipped to the body, so nothing hangs off the side of the narrowest one (a tall body is 26 wide).
-    const slotX = V.layoutVillage([row(ID, LANE, { look })]).get(ID).x;
-    for (const sh of west.steel) {
-      assert(sh.box[0] >= slotX - 13 && sh.box[2] <= slotX + 13,
-        `west/${accessory}: the gun belt stays inside the narrowest body (${sh.box[0]}..${sh.box[2]} around ${slotX})`);
+    // A badge never floats: whatever a look wears, the top of its head or its hat comes up to meet it. This is what
+    // a lift and a hat disagreeing looks like from outside, and it held in both packs at once. In the frontier town
+    // `headroom` lifts every badge by one hat, so a look left bare-headed there opens a gap the width of the hat,
+    // which is exactly what the loungers had: hatless, and their badges hanging over nothing.
+    for (const [packName, m] of [['village', green], ['west', west]]) {
+      assert(m.gap <= 6, `${packName}/${LANE}/${accessory}: the badge floats ${m.gap.toFixed(2)} px over the head under it`);
     }
+
+    // The buckle and the revolver's butt are the kit's only steel, and neither lane paints a hammer, so steel in
+    // the frame is the gun belt and nothing else. It says the kit is worn here and nowhere else.
+    eq(green.steel.length, 0, `village/${LANE}/${accessory}: no gun belt in the green village`);
+    if (LANE === 'valhalla') {
+      eq(west.steel.length, 0, `west/${accessory}: a lounger wears no gun belt, since its chair cuts across it`);
+    } else {
+      assert(west.steel.length >= 2, `west/${accessory}: the belt's buckle and the revolver's butt are painted`);
+      // Clipped to the body, so nothing hangs off the side of the narrowest one (a tall body is 26 wide).
+      const slotX = V.layoutVillage([row(ID, LANE, { look })]).get(ID).x;
+      for (const sh of west.steel) {
+        assert(sh.box[0] >= slotX - 13 && sh.box[2] <= slotX + 13,
+          `west/${accessory}: the gun belt stays inside the narrowest body (${sh.box[0]}..${sh.box[2]} around ${slotX})`);
+      }
+    }
+  }
   }
 });
 
