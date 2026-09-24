@@ -191,6 +191,23 @@ button.brand:hover { background: var(--surface-2); }
 .health-btn.bad { border-color: var(--danger); color: var(--errored-text); font-weight: 600; }
 .health-btn.bad .health-dot { background: var(--danger); }
 
+/* The theme picker: a chip that holds a native select, so the list is the platform's and needs no script to open. */
+.theme-pick {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 36px; padding: 4px 6px 4px 12px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); cursor: pointer; font-size: 15px;
+}
+.theme-pick:hover { background: var(--surface-2); }
+.theme-pick:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.theme-pick-word { color: var(--muted); font-weight: 600; font-size: 14px; }
+.theme-select {
+  min-height: 28px; padding: 2px 6px;
+  border: 0; border-radius: 999px; background: transparent;
+  color: inherit; font: inherit; cursor: pointer;
+}
+.theme-select:focus { outline: none; }
+
 .view-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .view-switch button {
   min-height: 36px; padding: 4px 16px; border: 0; background: var(--surface); cursor: pointer; font-size: 15px;

@@ -3102,6 +3102,144 @@ const THEMES = {
   },
 };
 
+// ---------------------------------------------------------------------------------------------
+// Theme packs
+// ---------------------------------------------------------------------------------------------
+
+// A pack is a name, a set of colours laid over the base day and dusk themes, and the words painted on the place
+// boards and over an interior's door. It changes paint and lettering only. Lanes, spots, footings, hit boxes and
+// journeys are the same objects in every pack, which is why the Board's columns, the Repos legend and the count
+// pills read the same whichever one is picked. A pack that leaves a colour out keeps the base theme's.
+//
+// Adding a pack: give it a key, a name, the two override maps, and any board names it renames. `themeChecks` in
+// tests/web_harness.mjs then holds it to the same contrast and containment rules as the others, so a pack cannot
+// ship a board nobody can read or a saguaro hanging off its island.
+
+// The frontier town. Its ground colours point at dry ground and its sea colours at cracked flats, which is what
+// repaints the water, the island and both interiors without a line of drawing code. Only what stayed nautical is
+// branched on `env.west`: the shells, the starfish, the ripples, the palm and the lighthouse.
+const WEST_DAY = {
+  grass: '#d9c49a', grassLight: '#e3d1ab', grassDark: '#c6ad80', tuft: '#b49a70',
+  path: '#e9ddc0', pathEdge: '#cbb894', pebble: '#cdba96',
+  sand: '#e4d2a8', sandLight: '#eee0bb', sandWet: '#d2bc90', sandDot: '#dccaa2', dune: '#c6b083',
+  water: '#cbb68d', waterDeep: '#bca57a', ripple: '#dbc99f', shallow: '#d3bf94', foam: 'rgba(255, 249, 233, 0.6)',
+  wood: '#a8835f', woodDark: '#77593d', woodLight: '#c9ad86', plank: '#b08c66',
+  wall: '#e8d7b6', wallShade: '#d2be98', roofs: ['#9c6f57', '#8c7c6a', '#a8855f', '#7f6b57'],
+  windowDark: '#8d8477', porchWindow: '#8d8477', door: '#7c5a3f',
+  stone: '#c6b699', stoneDark: '#9d8d72',
+  tree: '#7f9a6b', treeDark: '#67805a', treeLight: '#96ae7e', trunk: '#8b6c50',
+  flowers: ['#e0b2bf', '#f4eedc', '#dcab79', '#c7b0d4'],
+  lighthouse: '#d9c6a4', slate: '#8a7b66', cat: '#8f8176',
+  shadow: 'rgba(84, 62, 36, 0.18)',
+  signBoard: '#e7d7b4', signBorder: '#7d5a38', signText: '#3a2f22', signMuted: '#6a5a45',
+  castle: '#c98f62', castleShade: '#ae7850', castleDark: '#875a3a', castleDoor: '#4a3526',
+  shell: '#e0cbb0', shellEdge: '#b89878', starfish: '#cf8f63',
+  stripeBase: '#f2e6cd', stripes: ['#a4785a', '#c4a06a', '#8d8d72', '#b5673f'],
+  palm: '#7f9a6b', palmDark: '#67805a', palmTrunk: '#8f7450', palmRing: '#74593c', coconut: '#6b512f',
+  thatch: '#c9a468', thatchDark: '#a1803f', bamboo: '#c2ac78',
+  drink: '#c9923f',
+  flag: '#b5673f', flagAlt: '#efe3c6', sailCloth: '#efe0c2',
+  graveGrass: '#c3ad84', graveMound: '#b49b72', moss: '#9a8f66',
+  graveStone: '#c0b39d', graveStoneLight: '#d3c7b2', graveEdge: '#8b8070',
+  fence: '#a8875f', fenceDark: '#735a3c', yew: '#7c8f66', yewDark: '#64764f',
+  hallWall: '#c9a577', hallBrick: '#bb9668', hallBrickEdge: '#a17d52', hallFloor: '#b08d63', hallFloorLine: '#977650',
+  roomWall: '#e9dcc0', roomWallShade: '#d5c5a1', roomFloor: '#a97d4e', roomFloorLine: '#8b6137', rug: '#8a4a3c',
+  hallSky: '#cfe1ea', hallSea: '#cbb68d',
+  tapestry: '#bfa377', tapestryEdge: '#8a7047',
+};
+
+const WEST_DUSK = {
+  grass: '#3a3227', grassLight: '#443b2e', grassDark: '#322b21', tuft: '#4a4032',
+  path: '#4f4739', pathEdge: '#3f382d', pebble: '#5a5142',
+  sand: '#4b4234', sandLight: '#584e3d', sandWet: '#443c30', sandDot: '#4e4536', dune: '#463f31',
+  water: '#3a3227', waterDeep: '#2e2820', ripple: '#4a4133', shallow: '#413930', foam: 'rgba(226, 214, 190, 0.28)',
+  wood: '#6f5742', woodDark: '#4b3a2c', woodLight: '#8b7056', plank: '#7b624b',
+  wall: '#5e5344', wallShade: '#4f4639', roofs: ['#5a4238', '#4c453b', '#5b4b36', '#4a3f33'],
+  windowDark: '#332c24', porchWindow: '#e8c985', door: '#40301f',
+  stone: '#625849', stoneDark: '#4b4337',
+  tree: '#38492f', treeDark: '#2d3b27', treeLight: '#44583a', trunk: '#4e3e30',
+  flowers: ['#8e7480', '#b9b3a2', '#93765a', '#7f7391'],
+  lighthouse: '#968a76', slate: '#5e5344', cat: '#6f655d',
+  shadow: 'rgba(0, 0, 0, 0.32)',
+  signBoard: '#d9caab', signBorder: '#54402a', signText: '#2e261e', signMuted: '#5c5144',
+  castle: '#6d5340', castleShade: '#5b4534', castleDark: '#402f23', castleDoor: '#201913',
+  shell: '#857363', shellEdge: '#5a4c3f', starfish: '#84644b',
+  stripeBase: '#726752', stripes: ['#5b4436', '#6b573b', '#54513f', '#6a4030'],
+  palm: '#3f5033', palmDark: '#32412b', palmTrunk: '#5a4632', palmRing: '#433527', coconut: '#3c2e21',
+  thatch: '#6c5a39', thatchDark: '#52442b', bamboo: '#6a5c40',
+  drink: '#8a6631',
+  flag: '#78452f', flagAlt: '#a39b87', sailCloth: '#b3a68d',
+  graveGrass: '#372f24', graveMound: '#322b21', moss: '#4c4630',
+  graveStone: '#675e50', graveStoneLight: '#796f60', graveEdge: '#443d33',
+  fence: '#5b4836', fenceDark: '#392e22', yew: '#33412c', yewDark: '#273323',
+  hallWall: '#5d4c38', hallBrick: '#534331', hallBrickEdge: '#453729', hallFloor: '#4d3f2e', hallFloorLine: '#413526',
+  roomWall: '#544736', roomWallShade: '#463a2c', roomFloor: '#584228', roomFloorLine: '#473421', rug: '#6e3a35',
+  hallSky: '#34405a', hallSea: '#3a3227',
+  tapestry: '#6a5c44', tapestryEdge: '#463c2b',
+};
+
+// Only the name painted on a board changes: the lane behind it is the same object, so nothing downstream moves.
+const WEST_NAMES = Object.freeze({
+  workshop: 'The Depot', cottages: 'The Bank', porch: 'The Saloon',
+  harbour: 'The Rail Yard', beach: 'Valhalla mesa',
+});
+const WEST_ROOMS = Object.freeze({ castle: 'Valhalla mine', cottages: 'The Counting Room' });
+
+export const DEFAULT_THEME = 'village';
+
+export const THEME_PACKS = Object.freeze([
+  Object.freeze({
+    key: DEFAULT_THEME, name: 'Village', note: 'The green village',
+    day: Object.freeze({}), dusk: Object.freeze({}),
+    names: Object.freeze({}), rooms: Object.freeze({}),
+  }),
+  Object.freeze({
+    key: 'west', name: 'Wild West', note: 'A frontier town on the dry flats',
+    day: Object.freeze(WEST_DAY), dusk: Object.freeze(WEST_DUSK),
+    names: WEST_NAMES, rooms: WEST_ROOMS,
+  }),
+]);
+
+export const THEME_KEYS = Object.freeze(THEME_PACKS.map((p) => p.key));
+
+export function themePack(key) {
+  return THEME_PACKS.find((p) => p.key === key) || THEME_PACKS[0];
+}
+
+// Resolved themes are cached: there are only two per pack, and every frame reads one.
+const themeCache = new Map();
+
+// The base theme with the pack's colours over it. `pack` and `night` ride on the object itself, so nothing has to
+// compare it against THEMES.dusk by identity: a merged theme is a new object and every such test would be false.
+export function resolveTheme(key, night) {
+  const pack = themePack(key);
+  const id = `${pack.key}|${night ? 'dusk' : 'day'}`;
+  let out = themeCache.get(id);
+  if (out) return out;
+  out = Object.freeze({
+    ...(night ? THEMES.dusk : THEMES.day),
+    ...(night ? pack.dusk : pack.day),
+    pack: pack.key, night: !!night,
+  });
+  themeCache.set(id, out);
+  return out;
+}
+
+// The word on a place's board, and the one over an interior's door. The place and the scene keep their own keys.
+export function placeName(place, pack = DEFAULT_THEME) {
+  const spec = hasOwn(PLACES, place) ? PLACES[place] : null;
+  if (!spec) return '';
+  const named = themePack(pack).names;
+  return hasOwn(named, place) ? named[place] : spec.name;
+}
+
+export function roomName(scene, pack = DEFAULT_THEME) {
+  const spec = hasOwn(SCENE_ART, scene) ? SCENE_ART[scene] : null;
+  if (!spec) return '';
+  const named = themePack(pack).rooms;
+  return hasOwn(named, scene) ? named[scene] : spec.title;
+}
+
 const BODY = {
   round: { w: 36, h: 34 },
   square: { w: 32, h: 34 },
@@ -4352,7 +4490,7 @@ const lookPhase = (look) => (Math.floor(Math.abs(Number(look) || 0)) % 997) / 99
 
 // `onIsland` is taken locally as `islandChanged`: the module already exports an `onIsland(x, y)` for the Valhalla
 // islet's shape, and a parameter of that name would shadow it inside every function drawn here.
-export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIsland: islandChanged, mode: initialMode, island: initialIsland } = {}) {
+export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIsland: islandChanged, mode: initialMode, island: initialIsland, theme: initialTheme } = {}) {
   const win = typeof window !== 'undefined' ? window : globalThis;
   const doc = typeof document !== 'undefined' ? document : null;
   const ctx = canvas.getContext('2d');
@@ -4424,7 +4562,10 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   const mqDark = media('(prefers-color-scheme: dark)');
   const mqReduce = media('(prefers-reduced-motion: reduce)');
   let reduced = !!(mqReduce && mqReduce.matches);
-  let theme = mqDark && mqDark.matches ? THEMES.dusk : THEMES.day;
+  let pack = THEME_KEYS.includes(initialTheme) ? initialTheme : DEFAULT_THEME;
+  let theme = resolveTheme(pack, !!(mqDark && mqDark.matches));
+  // What every cached layer is keyed by: a pack and a time of day each repaint the lot.
+  const themeKey = () => `${theme.pack}|${theme.night ? 'dusk' : 'day'}`;
 
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -4504,7 +4645,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   function ensureSceneLayer() {
     const art = SCENE_ART[scene];
     if (!art) return;
-    const key = `${scene}|${bgKey}|${theme === THEMES.dusk ? 'dusk' : 'day'}`;
+    const key = `${scene}|${bgKey}|${themeKey()}`;
     if (sceneBg && sceneBgKey === key) return;
     sceneBg = paintLayer(sceneBg, art.paint);
     sceneBgKey = sceneBg ? key : '';
@@ -4512,7 +4653,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
 
   // The sea alone, so a board that changes its islands costs no repaint: the islands themselves are drawn per frame.
   function ensureWorldLayer() {
-    const key = `world|${bgKey}|${theme === THEMES.dusk ? 'dusk' : 'day'}`;
+    const key = `world|${bgKey}|${themeKey()}`;
     if (worldBg && worldBgKey === key) return;
     worldBg = paintLayer(worldBg, paintWorldSea);
     worldBgKey = worldBg ? key : '';
@@ -5784,7 +5925,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     const bottom = y - baseLift(c) + lift;
     const top = bottom - m.h;
     const colour = c.colour || NO_REPO_COLOUR;
-    const dusk = T === THEMES.dusk;
+    const dusk = T.night;
     const tint = dusk ? colour.dark : colour.light;
     const edge = dusk ? colour.darkEdge : colour.lightEdge;
     const ink = colour.ink || T.ink;
@@ -6256,7 +6397,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   // plate, no repo colour and no state of any kind, because it is a PR and has none.
   function drawVisitor(v, env) {
     const T = env.theme;
-    const dusk = T === THEMES.dusk;
+    const dusk = T.night;
     const colour = v.colour || VISITOR_COATS[0];
     const tint = dusk ? colour.dark : colour.light;
     const edge = dusk ? colour.darkEdge : colour.lightEdge;
@@ -6532,7 +6673,8 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     const p = PLACES[key];
     const [cx, cy] = p.sign;
     drawSignBoard(env, {
-      name: p.name, lanes: p.lanes, cx, cy, words: !!p.words, post: p.post !== false, box: p.signW ? signBox(key) : null,
+      name: placeName(key, env.pack), lanes: p.lanes, cx, cy,
+      words: !!p.words, post: p.post !== false, box: p.signW ? signBox(key) : null,
     });
   }
 
@@ -7190,7 +7332,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.textBaseline = 'middle';
     ctx.font = `700 26px ${FONT}`;
     ctx.fillStyle = T.signText;
-    ctx.fillText(fitText(art.title, 340, ctx.font), 800, 68);
+    ctx.fillText(fitText(roomName(scene, theme.pack), 340, ctx.font), 800, 68);
     ctx.font = `15px ${FONT}`;
     ctx.fillStyle = T.signMuted;
     ctx.fillText(fitText(art.note, 340, ctx.font), 800, 136);
@@ -7263,7 +7405,10 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     }
     const k = view.dpr * view.scale;
     ctx.setTransform(k, 0, 0, k, view.dpr * view.offX, view.dpr * view.offY);
-    const env = { t, epoch: Date.now(), theme, reduced, privacy, scale: view.scale, night: theme === THEMES.dusk };
+    const env = {
+      t, epoch: Date.now(), theme, reduced, privacy, scale: view.scale,
+      night: theme.night, pack: theme.pack, west: theme.pack === 'west',
+    };
 
     if (scene === 'village') drawVillage(env);
     else if (scene === 'world') drawWorld(env);
@@ -7514,7 +7659,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     }
   });
   listen(mqDark, 'change', () => {
-    theme = mqDark.matches ? THEMES.dusk : THEMES.day;
+    theme = resolveTheme(pack, !!mqDark.matches);
     paintLayers();
     needsDraw = true;
     schedule();
@@ -7699,13 +7844,24 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     if (canvas.style) canvas.style.cursor = '';
   }
 
+  // A pack is paint alone, so nothing is re-laid out: the layers are repainted and the next frame is drawn.
+  function setTheme(next) {
+    if (destroyed || !THEME_KEYS.includes(next) || next === pack) return;
+    pack = next;
+    theme = resolveTheme(pack, theme.night);
+    paintLayers();
+    needsDraw = true;
+    schedule();
+  }
+
   return {
-    update, setSelected, resize, start, stop, destroy,
+    update, setSelected, resize, start, stop, destroy, setTheme,
     enterCastle, enterCottages, leaveScene, leaveCastle: leaveScene, leaveCottages: leaveScene,
     setMode, openIsland, leaveIsland, showVisitor,
     // What is queueing at the desk on screen, and the whole board's total behind it.
     visitors: () => ({ shown: visitors.size, waiting: visitorTotal, hidden: visitorHidden, board: boardReviews() }),
     getMode: () => mode,
+    getTheme: () => pack,
     getScene: () => scene,
     // The open island's repo, '' for the no-repo island, or null on the world map and in one village mode.
     getIsland: () => island,
