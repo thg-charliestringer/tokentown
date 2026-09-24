@@ -3185,11 +3185,23 @@ const WEST_NAMES = Object.freeze({
 });
 const WEST_ROOMS = Object.freeze({ castle: 'Valhalla mine', cottages: 'The Counting Room' });
 
+// The frontier kit. Everyone in the Wild West wears a hat, so the crown stands where the plain village hat's
+// does and one lift serves every look: see `headroom`, which the draw and hit testing both read.
+export const HAT_LIFT = 9;
+// Read off the body box, as fractions of its height. A body here is mostly face: the lowest thing the face paints
+// is the mouth, at 0.63 of a round or square body and 0.50 of a tall one, so the waistcoat's collar sits at 0.62
+// and clears all three. The lapels meet low, at 0.80. Converging any higher reads as a bib rather than a
+// waistcoat, which only shows at magnification.
+export const WEST_KIT = Object.freeze({
+  collar: 0.62, lapel: 0.80, belt: 0.84, beltH: 4.5, star: 0.71,
+  brimRX: 0.62, brimRY: 3.6, crownW: 0.52, seat: 2, seatRound: 5,
+});
+
 export const DEFAULT_THEME = 'village';
 
 export const THEME_PACKS = Object.freeze([
   Object.freeze({
-    key: DEFAULT_THEME, name: 'Village', note: 'The green village',
+    key: 'village', name: 'Village', note: 'The green village',
     day: Object.freeze({}), dusk: Object.freeze({}),
     names: Object.freeze({}), rooms: Object.freeze({}),
   }),
@@ -5897,6 +5909,55 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     return poseOf(lane).sits ? 3 : LEG;
   }
 
+  // How far a hat pushes the badge above the body. Written once: drawCharacter paints the badge there and
+  // restingGeometry puts the clickable one in the same place, so a change of hat cannot move only one of them.
+  function headroom(feat, pack) {
+    if (pack === 'west') return HAT_LIFT;
+    return feat.accessory === 'hat' || feat.accessory === 'antenna' ? HAT_LIFT : 0;
+  }
+
+  // The waistcoat, the gun belt and the holster, clipped to whatever silhouette the body has: one set of numbers
+  // dresses a round, a square and a tall body without a waistcoat hanging off the side of a circle. The waistcoat
+  // takes the body's own edge colour and the hat the look's accent, both of which the palette already holds clear
+  // of every body, so the kit adds no colour that would have to be cleared against twelve of them.
+  function drawWestKit(x, top, m, shape, tint, edge, T) {
+    const K = WEST_KIT;
+    const bottom = top + m.h;
+    ctx.save();
+    ctx.beginPath();
+    if (shape === 'round') ctx.ellipse(x, top + m.h / 2, m.w / 2, m.h / 2, 0, 0, TAU);
+    else rr(ctx, x - m.w / 2, top, m.w, m.h, shape === 'tall' ? m.w / 2 : 9);
+    ctx.clip();
+    const collarY = top + m.h * K.collar;
+    ctx.fillStyle = edge;
+    ctx.fillRect(x - m.w / 2, collarY, m.w, bottom - collarY);
+    // The opening down the front, in the body's own colour, meeting at the lapel point.
+    fillPoly(ctx, [
+      [x - m.w * 0.30, collarY], [x + m.w * 0.30, collarY], [x, top + m.h * K.lapel],
+    ], tint);
+    const beltY = top + m.h * K.belt;
+    ctx.fillStyle = T.woodDark;
+    ctx.fillRect(x - m.w / 2, beltY, m.w, K.beltH);
+    fillRR(ctx, x - 4, beltY - 0.5, 8, K.beltH + 1, 1.5, T.steel);
+    // The holster on the near hip, and the revolver's butt above the belt where nothing trims it.
+    const hx = x + m.w * 0.26;
+    fillRR(ctx, hx - 3.5, beltY + K.beltH - 0.5, 7, 8, 2, T.woodDark);
+    fillRR(ctx, hx - 2.2, beltY - 4.5, 4.4, 5, 1.5, T.steel);
+    ctx.restore();
+  }
+
+  // Pinned on the waistcoat, and painted after the arms: the near arm swings straight through the lapel it sits on.
+  // Body colour inside the body's own edge colour, the one pair the palette guarantees reads, whatever the repo.
+  function drawSheriffStar(cx, cy, r, tint, edge) {
+    const pts = [];
+    for (let i = 0; i < 10; i += 1) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const d = i % 2 ? r * 0.44 : r;
+      pts.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d]);
+    }
+    fillPoly(ctx, pts, tint, edge, 1.2);
+  }
+
   function drawCharacter(c, env) {
     const { t, theme: T, reduced } = env;
     const s = c.session;
@@ -5969,6 +6030,9 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.strokeStyle = edge;
     ctx.stroke();
     fillEllipse(ctx, x, top + m.h * 0.7, m.w * 0.26, m.h * 0.15, 'rgba(255, 255, 255, 0.3)');
+    // Nobody in the boat or on a lounger wears the belt: both cut the body off where it would sit.
+    const westKit = env.west && !inBoat && !lounging;
+    if (westKit) drawWestKit(x, top, m, f.shape, tint, edge, T);
 
     const shY = top + m.h * 0.56;
     const leftX = x - m.w / 2 + 1;
@@ -6023,6 +6087,9 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     } else {
       const a = Math.PI * 0.36 - swing * 0.45;
       armTo(rightX, shY, rightX + Math.cos(a) * 9, shY + Math.sin(a) * 9, tint, edge);
+    }
+    if (westKit && f.accessory === 'antenna') {
+      drawSheriffStar(x - m.w * 0.17, top + m.h * WEST_KIT.star, 4.2, tint, edge);
     }
 
     const eyeY = top + m.h * (f.shape === 'tall' ? 0.3 : 0.4);
@@ -6091,7 +6158,26 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     }
 
     const accent = accentFor(colour, f.hue);
-    if (f.accessory === 'hat') {
+    if (westKit) {
+      // Everyone is hatted here, so the five looks tell five sessions of one repo apart as trimmings instead: the
+      // star above, a bandana, a feather in the hatband, glasses (drawn with the face), or the hat alone.
+      const K = WEST_KIT;
+      const seat = top + (f.shape === 'round' ? K.seatRound : K.seat);
+      // The crown's top is one HAT_LIFT plus the brim's own thickness above the body, whatever the brim sits on, so
+      // every shape lifts its badge by the same amount. A round body is a point at its top edge, which is why the
+      // brim sits lower there and the crown grows to meet it rather than hovering over the gap.
+      const crownY = top - HAT_LIFT - 2;
+      const crownW = m.w * K.crownW;
+      fillRR(ctx, x - crownW / 2, crownY, crownW, seat - crownY, 4, accent);
+      fillEllipse(ctx, x, seat, m.w * K.brimRX, K.brimRY, accent);
+      fillRR(ctx, x - crownW / 2, seat - 5.5, crownW, 4, 1.5, edge);
+      if (f.accessory === 'hat') {
+        fillPoly(ctx, [[x - crownW / 2 + 1, seat - 4], [x - crownW / 2 - 5, crownY + 1], [x - crownW / 2 + 4, seat - 5]], tint, edge, 1);
+      } else if (f.accessory === 'scarf') {
+        fillRR(ctx, x - m.w / 2 - 1, top + m.h * 0.56, m.w + 2, 5, 2.5, accent);
+        fillPoly(ctx, [[x - 7, top + m.h * 0.60], [x + 7, top + m.h * 0.60], [x, top + m.h * 0.74]], accent, edge, 1);
+      }
+    } else if (f.accessory === 'hat') {
       fillEllipse(ctx, x, top + 2, m.w * 0.56, 3.8, accent);
       fillRR(ctx, x - m.w * 0.3, top - 11, m.w * 0.6, 13, 5, accent);
       line(ctx, x - m.w * 0.3 + 1, top - 1.5, x + m.w * 0.3 - 1, top - 1.5, 'rgba(255, 255, 255, 0.35)', 2);
@@ -6103,7 +6189,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       fillEllipse(ctx, x + 4, top - 11, 3.4, 3.4, accent);
     }
 
-    c.badgeY = top - 19 - (f.accessory === 'hat' || f.accessory === 'antenna' ? 9 : 0);
+    c.badgeY = top - 19 - headroom(f, env.pack);
     if (glass) drawMargarita(ctx, T, glass.x, glass.y, glass.tilt);
     if (passport) drawPassport(passport, T);
 
@@ -7461,8 +7547,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     const m = BODY[c.feat.shape];
     const k = scaleOf(c);
     const top = c.py - (baseLift(c) + m.h) * k;
-    const hatLift = c.feat.accessory === 'hat' || c.feat.accessory === 'antenna' ? 9 : 0;
-    return { m, k, top, badgeY: top - (19 + hatLift) * k, badgeR: badgeRadius(c) };
+    return { m, k, top, badgeY: top - (19 + headroom(c.feat, pack)) * k, badgeR: badgeRadius(c) };
   }
 
   // The nearest character under p, unless `prefer` (the one the tooltip names) is still under it too: a guest walking

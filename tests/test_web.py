@@ -136,6 +136,62 @@ class HealthContractTests(unittest.TestCase):
         self.assertEqual(set(re.findall(r"^\s*'([^']+)':", literal.group(1), re.M)), reasons)
 
 
+class ThemeContractTests(unittest.TestCase):
+    """village.js paints the themes; app.js offers them and names the two rooms outside the canvas.
+
+    The page has to work before village.js arrives, so it keeps its own copy of the list and of the words a crumb
+    and a hover use. A theme added to one file and not the other would give a picker that paints nothing, or a
+    village nobody can reach.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = (WEB / "app.js").read_text(encoding="utf-8")
+        cls.village = (WEB / "village.js").read_text(encoding="utf-8")
+
+    def _packs(self) -> list[str]:
+        return [m.group(1) for m in re.finditer(r"key: '([a-z]+)'", _strip(_body(self.village, "THEME_PACKS")[1]))]
+
+    def test_the_page_offers_exactly_the_villages_themes(self):
+        page = [m.group(1) for m in re.finditer(r"key: '([a-z]+)'", _strip(_body(self.app, "THEMES")[1]))]
+        self.assertEqual(page, self._packs())
+
+    def test_the_default_theme_is_the_same_in_both_files(self):
+        for name, text in (("village.js", self.village), ("app.js", self.app)):
+            found = re.search(r"const DEFAULT_THEME = '([a-z]+)'", text)
+            self.assertIsNotNone(found, f"{name} has no DEFAULT_THEME")
+            self.assertEqual(found.group(1), "village", name)
+        self.assertEqual(self._packs()[0], "village", "and it is the first one offered")
+
+    def test_every_theme_names_both_rooms_on_the_page(self):
+        rooms = _keys(self.app, "THEME_ROOMS")
+        self.assertEqual(sorted(rooms), sorted(self._packs()), "one row per theme")
+        body = _strip(_body(self.app, "THEME_ROOMS")[1])
+        for pack in self._packs():
+            named = re.search(pack + r": Object\.freeze\(\{([^}]*)\}", body)
+            self.assertIsNotNone(named, f"{pack} names its rooms")
+            self.assertEqual(sorted(re.findall(r"([a-z]+):", named.group(1))), ["castle", "cottages"], pack)
+
+    def test_the_page_never_hard_codes_a_room_name_the_theme_owns(self):
+        # A literal left behind outside THEME_ROOMS is a crumb or a tooltip that stays green in the frontier town.
+        for word in ("'Valhalla sand castle'", "'The Cottages'"):
+            found = [m.start() for m in re.finditer(re.escape(word), self.app)]
+            rooms = _body(self.app, "THEME_ROOMS")[1]
+            at = self.app.index(rooms)
+            inside = [i for i in found if at <= i < at + len(rooms)]
+            self.assertEqual(len(found), len(inside), f"{word} is named outside THEME_ROOMS")
+
+    def test_a_theme_renames_places_and_rooms_and_never_a_lane(self):
+        # A theme repaints and renames. Touching a lane would move the Board's columns and the count pills with it.
+        places = _keys(self.village, "PLACES")
+        for key in _keys(self.village, "WEST_NAMES"):
+            self.assertIn(key, places, f"WEST_NAMES renames {key}, which is not a place")
+        # The two rooms are scenes. 'castle' is a lane's name as well, which is why these are kept apart from the
+        # board names above rather than checked against LANE_ORDER with them.
+        self.assertEqual(sorted(_keys(self.village, "WEST_ROOMS")), ["castle", "cottages"])
+        self.assertEqual(sorted(_keys(self.village, "SCENE_ART")), ["castle", "cottages"])
+
+
 class LaneContractTests(unittest.TestCase):
     """The lane contract the three files share. Nothing at runtime notices a drift: the page drops a row whose lane
     has no word, and the village silently gives it no place, so a renamed or reordered lane would just make sessions

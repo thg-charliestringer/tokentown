@@ -187,7 +187,7 @@ function withFrameLoop(fn) {
   }
 }
 
-function makeVillage({ reduce = true, texts = null, measure = false, perChar = 8.5, spy = null, boats = null, mode, island } = {}) {
+function makeVillage({ reduce = true, texts = null, measure = false, perChar = 8.5, spy = null, boats = null, mode, island, theme } = {}) {
   reduceMotion = reduce;
   const listeners = new Map();
   const canvas = {
@@ -211,6 +211,7 @@ function makeVillage({ reduce = true, texts = null, measure = false, perChar = 8
     onIsland: (repo) => log.islands.push(repo),
     mode,
     island,
+    theme,
   });
   village.resize();
   const fire = (type, x, y, extra = {}) => {
@@ -3007,6 +3008,122 @@ check('hall guests multiply the crowd scale by their token size, and still keep 
 
 // ---------- the border patrol ----------
 
+// ----- theme packs -----
+
+check('every theme pack paints a whole village: no colour is left to chance, and both rooms are named', () => {
+  const base = { day: V.resolveTheme('village', false), dusk: V.resolveTheme('village', true) };
+  assert(V.THEME_KEYS.length >= 2, 'there is more than one pack to choose between');
+  eq(V.THEME_KEYS[0], V.DEFAULT_THEME, 'the green village is the default and comes first');
+  for (const packKey of V.THEME_KEYS) {
+    for (const night of [false, true]) {
+      const scheme = night ? 'dusk' : 'day';
+      const T = V.resolveTheme(packKey, night);
+      eq(T.pack, packKey, `${packKey} ${scheme}: the theme knows its pack`);
+      eq(T.night, night, `${packKey} ${scheme}: the theme knows the time of day`);
+      // A pack that left a colour out would paint `undefined`, which a canvas silently ignores: the shape
+      // vanishes rather than erroring, so nothing downstream would ever say so.
+      const missing = Object.keys(base[scheme]).filter((k) => T[k] === undefined);
+      eq(missing, [], `${packKey} ${scheme}: colours the pack dropped`);
+      // And a pack that misspells one does nothing at all: the base colour is kept and the new one is never read.
+      const pack = V.THEME_PACKS.find((q) => q.key === packKey);
+      const unknown = Object.keys(night ? pack.dusk : pack.day).filter((k) => !(k in base[scheme]));
+      eq(unknown, [], `${packKey} ${scheme}: colours the pack names that the village has no use for`);
+      // The floor a scene falls back to has to be the pack's own, or the margins either side of a themed room
+      // keep the last pack's floor.
+      for (const floor of ['hallFloor', 'roomFloor', 'grass']) {
+        assert(typeof T[floor] === 'string' && T[floor].length > 0, `${packKey} ${scheme}: ${floor} is a colour`);
+      }
+    }
+    // Every board a pack renames is a board the village has, and both rooms are named whatever the pack.
+    for (const place of V.PLACE_KEYS) {
+      const word = V.placeName(place, packKey);
+      assert(typeof word === 'string' && word.length > 0 && word.length <= 20, `${packKey}: ${place} has a board name (${word})`);
+    }
+    for (const room of ['castle', 'cottages']) {
+      assert(V.roomName(room, packKey).length > 0, `${packKey}: ${room} is named`);
+    }
+  }
+  // An unknown pack is the green village rather than a village with no colours at all.
+  eq(V.resolveTheme('nope', false), V.resolveTheme(V.DEFAULT_THEME, false), 'an unknown pack falls back');
+  eq(V.placeName('harbour', 'nope'), V.placeName('harbour'), 'and so do its board names');
+});
+
+check('a name board stays readable in every pack, and no board colour can be read as a state badge', () => {
+  for (const packKey of V.THEME_KEYS) {
+    for (const night of [false, true]) {
+      const scheme = `${packKey} ${night ? 'dusk' : 'day'}`;
+      const T = V.resolveTheme(packKey, night);
+      assert(contrast(T.signText, T.signBoard) >= 4.5,
+        `${scheme}: board lettering is ${contrast(T.signText, T.signBoard).toFixed(2)}:1 on the board`);
+      assert(contrast(T.signMuted, T.signBoard) >= 4.5,
+        `${scheme}: the board's second line is ${contrast(T.signMuted, T.signBoard).toFixed(2)}:1`);
+      // The badges are painted on the board, so a board that drifted towards one of them would swallow it. A pale
+      // badge (Idle, Recent) is told from the board by its border instead, which is why either will do.
+      for (const st of Object.values(V.STATE)) {
+        const best = Math.max(de00(T.signBoard, st.color), de00(T.signBoard, st.border));
+        assert(best >= 20, `${scheme}: the ${st.word} badge is only ${best.toFixed(1)} from the board it sits on`);
+      }
+      // The ground a character stands on is not a state colour either, in any pack.
+      for (const [name, hex] of Object.entries(RESERVED)) {
+        assert(de00(T.grass, hex) >= 12, `${scheme}: the ground is only ${de00(T.grass, hex).toFixed(1)} from ${name}`);
+      }
+    }
+  }
+});
+
+check('the frontier kit is the Wild West\'s alone, and its hat lifts the painted badge and the clickable one together', () => {
+  // One look per accessory. look also picks the shape (look % 3), so this covers round, square and tall as well.
+  const LOOKS = [[0, 'none'], [4, 'hat'], [8, 'scarf'], [12, 'antenna'], [16, 'glasses']];
+  const ID = 'local_abababab-0000-4000-8000-00000000c0c0';
+  const LANE = 'errored';
+
+  // The badge's height above the character's feet, as painted and as hit tested. A body's height varies with its
+  // shape, so the two packs are compared look for look rather than look against look.
+  const badgeLift = (look, packKey) => {
+    const rows = [row(ID, LANE, { look })];
+    const slot = V.layoutVillage(rows).get(ID);
+    const frame = lastFrame(paintedShapes(rows, { theme: packKey }).shapes, 'day', V.resolveTheme(packKey, false).grass);
+    const discs = frame.filter((sh) => sh.kind === 'fill' && sh.style === V.STATE[LANE].color
+      && sh.radii.some((r) => Math.abs(r - 14) < 0.01));
+    eq(discs.length, 1, `${packKey}/${look}: one painted state badge`);
+    // Steel on this character alone: the village paints plenty elsewhere (the jail's bars, the harbour barrier).
+    const steel = frame.filter((sh) => sh.kind === 'fill' && sh.style === V.resolveTheme(packKey, false).steel
+      && Math.abs((sh.box[0] + sh.box[2]) / 2 - slot.x) < 26 && sh.box[1] > slot.y - 60 && sh.box[3] < slot.y + 4);
+    const v = makeVillage({ theme: packKey });
+    v.village.start();
+    v.village.update(board(rows), { privacy: false });
+    // The village reports its hover point at the badge's centre, which is where a click has to land.
+    const at = v.aim(rows, ID);
+    v.village.destroy();
+    return { painted: slot.y - (discs[0].box[1] + discs[0].box[3]) / 2, clickable: slot.y - at.y, steel };
+  };
+
+  for (const [look, accessory] of LOOKS) {
+    const green = badgeLift(look, 'village');
+    const west = badgeLift(look, 'west');
+    // Dom's first bug: the lift was written out twice, so a taller hat raised the painted badge and left the
+    // clickable one behind. Both packs are checked, because only one of them changes the hat.
+    near(green.painted, green.clickable, 0.01, `village/${accessory}: the painted badge is where the click lands`);
+    near(west.painted, west.clickable, 0.01, `west/${accessory}: the painted badge is where the click lands`);
+    // In the frontier town everyone is hatted. A look already wearing one in the green village keeps its lift;
+    // every other look gains exactly one hat. That difference is the kit, and it is the Wild West's alone.
+    const alreadyHatted = accessory === 'hat' || accessory === 'antenna';
+    near(west.painted - green.painted, alreadyHatted ? 0 : V.HAT_LIFT, 0.01,
+      `${accessory}: what the frontier hat adds over the green village`);
+
+    // The buckle and the revolver's butt are the kit's only steel, and this lane paints no hammer, so steel in the
+    // frame is the gun belt and nothing else. It says the kit is worn here and nowhere else.
+    eq(green.steel.length, 0, `village/${accessory}: no gun belt in the green village`);
+    assert(west.steel.length >= 2, `west/${accessory}: the belt's buckle and the revolver's butt are painted`);
+    // Clipped to the body, so nothing hangs off the side of the narrowest one (a tall body is 26 wide).
+    const slotX = V.layoutVillage([row(ID, LANE, { look })]).get(ID).x;
+    for (const sh of west.steel) {
+      assert(sh.box[0] >= slotX - 13 && sh.box[2] <= slotX + 13,
+        `west/${accessory}: the gun belt stays inside the narrowest body (${sh.box[0]}..${sh.box[2]} around ${slotX})`);
+    }
+  }
+});
+
 const INK_ON_KHAKI = '#1d2125';
 
 check('the border patrol: booth, barrier and guard sit clear of the harbour, the queue, the boats and the walkways', () => {
@@ -3591,7 +3708,7 @@ check('a row sent to the jail walks there, at full rate while it walks and ambie
 
 // The graveyard's ghosts and the night lighting are drawn through geometrySpy, so a check reads what is painted
 // rather than what the constants promise.
-function paintedShapes(rows, { reduce = true, dark = false, seconds = 1, settle = 0.3, mode, island, open, visitors = null, hover = null, privacy = false, select = null, aim = null } = {}) {
+function paintedShapes(rows, { reduce = true, dark = false, seconds = 1, settle = 0.3, mode, island, open, visitors = null, hover = null, privacy = false, select = null, aim = null, theme } = {}) {
   const shapes = [];
   const state = { frames: 0, texts: [], islands: [], scenes: [], hovered: null };
   try {
@@ -3605,7 +3722,7 @@ function paintedShapes(rows, { reduce = true, dark = false, seconds = 1, settle 
         addEventListener(type, fn) { listeners.set(type, fn); }, removeEventListener() {},
       };
       const village = V.createVillage(canvas, {
-        mode, island, onIsland: (r) => state.islands.push(r), onScene: (s) => state.scenes.push(s),
+        mode, island, theme, onIsland: (r) => state.islands.push(r), onScene: (s) => state.scenes.push(s),
         onHover: (id) => { state.hovered = id; },
       });
       village.resize();
