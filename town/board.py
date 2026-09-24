@@ -362,9 +362,33 @@ def _turn_ended_at(verdict: st.Verdict, last_activity_at: int, now: int) -> int:
     return last_activity_at
 
 
+def _pr_or_done_lane(pr: PrVerdict, done_at: int | None, last_activity_at: int, now: int) -> _Lane | None:
+    """The harbour or the island when a PR or a done mark places the row, else None."""
+    if pr.open:
+        return _done_lane(done_at, now) if done_at is not None else _open_pr_lane(last_activity_at)
+    if pr.merged_at is not None:
+        return _island_lane(pr.merged_at, now)
+    if done_at is not None:
+        return _done_lane(done_at, now)
+    return None
+
+
+def _archived_lane(pr: PrVerdict, done_at: int | None, last_activity_at: int, now: int) -> _Lane:
+    """Where an archived chat rests. Unfinished business still places it first: a PR still open holds it in the
+    harbour, and a merge or a done mark sails it."""
+    placed = _pr_or_done_lane(pr, done_at, last_activity_at, now)
+    if placed is not None:
+        return placed
+    return _Lane("graveyard", "Archived", last_activity_at, rest_reason="archived")
+
+
 def _live_lane(*, entry: RegistryEntry, verdict: st.Verdict, rec: DesktopRecord | None, pr: PrVerdict,
                last_activity_at: int, newest_mtime: int | None, now: int, background: BackgroundWork | None = None,
                done_at: int | None = None) -> _Lane:
+    # Archiving is how a chat is put away, so it rests whatever its session is still doing. It rests in the lane it
+    # would land in once the process goes, so an archived chat never walks the village twice.
+    if rec is not None and rec.is_archived:
+        return _archived_lane(pr, done_at, last_activity_at, now)
     status = entry.status
     if status_unreported(entry):
         # The tail stands in for the missing status. A question or a plan review is a pending tool the checks below
@@ -419,12 +443,9 @@ def _live_lane(*, entry: RegistryEntry, verdict: st.Verdict, rec: DesktopRecord 
     if has_background(background):
         # The turn ended, so the registry says idle, but a background task the session launched is still going.
         return _background_lane(background, verdict, last_activity_at, now)
-    if pr.open:
-        return _done_lane(done_at, now) if done_at is not None else _open_pr_lane(last_activity_at)
-    if pr.merged_at is not None:
-        return _island_lane(pr.merged_at, now)
-    if done_at is not None:
-        return _done_lane(done_at, now)
+    placed = _pr_or_done_lane(pr, done_at, last_activity_at, now)
+    if placed is not None:
+        return placed
     if (verdict.kind in (st.ENDED, st.NONE)
             and now - _turn_ended_at(verdict, last_activity_at, now) <= NEEDS_INPUT_MS):
         started = entry.started_at or 0
@@ -462,14 +483,11 @@ def _dead_lane(*, verdict: st.Verdict, rec: DesktopRecord | None, pr: PrVerdict,
         if (rec is not None and rec.error_at is not None and _within_d7(rec.error_at, now)
                 and rec.error_at >= rec.last_activity_at - ERROR_AT_SLACK_MS):
             return _Lane("errored", "Error", rec.error_at)
-    if pr.open:
-        return _done_lane(done_at, now) if done_at is not None else _open_pr_lane(last_activity_at)
-    if pr.merged_at is not None:
-        return _island_lane(pr.merged_at, now)
-    if done_at is not None:
-        return _done_lane(done_at, now)
     if archived:
-        return _Lane("graveyard", "Archived", last_activity_at, rest_reason="archived")
+        return _archived_lane(pr, done_at, last_activity_at, now)
+    placed = _pr_or_done_lane(pr, done_at, last_activity_at, now)
+    if placed is not None:
+        return placed
     if verdict.kind in (st.MODEL_NEXT, st.TOOL_PENDING) and recent:
         return _Lane("stopped", "Stopped mid-turn", last_activity_at)
     # A terminal or editor session has no archive: ending it is how it is put away, as archiving is on the desktop.

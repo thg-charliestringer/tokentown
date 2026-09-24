@@ -451,9 +451,14 @@ class LiveLaneTests(unittest.TestCase):
                 lane, row, _ = one(entry_kw=dict(status_updated_at=NOW - 4 * MIN), tail_=t)
                 self.assertEqual((lane, row["label"], row["since"]), ("idle", "Idle", NOW - 4 * MIN))
 
-    def test_live_archived_session_uses_live_rules(self):
-        lane, _, _ = one(rec_kw=dict(is_archived=True), tail_=tail(text()))
-        self.assertEqual(lane, "your_turn")
+    def test_archiving_a_live_session_puts_it_away(self):
+        # Whatever the session is still doing: the turn it just ended, a busy one, and one waiting on an approval.
+        for entry_kw, t in ((dict(), tail(text())), (dict(status="busy"), tail(use("a", "Bash"))),
+                            (dict(status="waiting", waiting_for="permission prompt"), tail(use("a", "Bash")))):
+            with self.subTest(entry=entry_kw):
+                lane, row, _ = one(rec_kw=dict(is_archived=True), entry_kw=entry_kw, tail_=t)
+                self.assertEqual((lane, row["label"], row["restReason"], row["live"]),
+                                 ("graveyard", "Archived", "archived", True))
 
     # Precedence collisions
     def test_waiting_beats_api_error(self):
@@ -1433,10 +1438,15 @@ class GraveyardLaneTests(unittest.TestCase):
                 lane, row, _ = one(rec_kw=dict(last_activity_at=old, **kw), live=False, tail_=t)
                 self.assertEqual((lane, row["restReason"]), ("graveyard", "inactive"))
 
-    def test_live_sessions_never_rest(self):
-        lane, row, _ = one(rec_kw=dict(is_archived=True, last_activity_at=NOW - 90 * DAY, last_focused_at=NOW),
-                           entry_kw=dict(status_updated_at=NOW - 90 * DAY), tail_=tail(text(ts=NOW - 90 * DAY)))
+    def test_live_sessions_never_rest_unless_archived(self):
+        kw = dict(rec_kw=dict(last_activity_at=NOW - 90 * DAY, last_focused_at=NOW),
+                  entry_kw=dict(status_updated_at=NOW - 90 * DAY), tail_=tail(text(ts=NOW - 90 * DAY)))
+        lane, row, _ = one(**kw)
         self.assertEqual((lane, row["restReason"]), ("idle", None))
+        # Archiving is the one thing that rests a live session, and it rests as archived, not as inactive.
+        kw["rec_kw"]["is_archived"] = True
+        lane, row, _ = one(**kw)
+        self.assertEqual((lane, row["restReason"], row["since"]), ("graveyard", "archived", NOW - 90 * DAY))
 
     def test_rest_reason_null_outside_the_graveyard(self):
         b = bd.build_board(full_snapshot(), NOW)
@@ -2421,6 +2431,11 @@ class PrecedenceTests(unittest.TestCase):
             # jail > idle
             (dict(rec_kw=dict(prs=self.CLOSED), tail_=quiet), "jail"),
             (dict(tail_=quiet), "idle"),
+            # archived > every live lane, and only an open PR, a merge or a done mark still places it
+            (dict(rec_kw=dict(is_archived=True), entry_kw=dict(status="busy"), tail_=ended), "graveyard"),
+            (dict(rec_kw=dict(is_archived=True, prs=self.OPEN), entry_kw=dict(status="busy")), "open_pr"),
+            (dict(rec_kw=dict(is_archived=True, prs=self.MERGED), entry_kw=dict(status="busy")), "valhalla"),
+            (dict(rec_kw=dict(is_archived=True), entry_kw=dict(status="busy"), done=NOW - MIN), "valhalla"),
         ]
         for i, (kw, expected) in enumerate(steps):
             with self.subTest(i=i, expected=expected):

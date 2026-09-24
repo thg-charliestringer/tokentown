@@ -215,7 +215,7 @@
         <tr><td>The Harbour</td><td>Sessions with a PR still open on GitHub, queueing behind the border patrol. When the PR merges, the guard stamps their passport and they sail</td></tr>
         <tr><td>Valhalla island</td><td>Sessions whose PR merged, with none still open, or that you sent there. They lie on the beach for 14 days, then move into the sand castle</td></tr>
         <tr><td>The Jail</td><td>Sessions whose PRs were all closed without merging, for 30 days</td></tr>
-        <tr><td>The Graveyard</td><td>Archived sessions, terminal and VS Code sessions that have ended, and any with no activity for 30 days</td></tr>
+        <tr><td>The Graveyard</td><td>Archived chats, terminal and VS Code sessions that have ended, and any with no activity for 30 days</td></tr>
         <tr><td>The immigration desk</td><td>Not sessions: PRs waiting on your review, as visitors with passports. A sash means it was asked of a team you are on. Click one to open the PR</td></tr>
         <tr><td>Older</td><td>Sessions quiet for 7 to 30 days: counted under the pills, not drawn</td></tr>
       </tbody>
@@ -224,13 +224,14 @@
     <h3>How a session picks its place</h3>
     <p>Each session goes to the first of these that fits:</p>
     <ol>
+      <li><strong>Archived</strong>: you put it away, so it rests whatever it was doing, in the Graveyard unless it has a PR still open, or a merge or a done mark to sail on</li>
       <li><strong>Blocked</strong>: it is waiting for you to approve or answer</li>
       <li><strong>Errored</strong>: it hit an error recently</li>
       <li><strong>Running</strong>: it is working, or a background task it started is still going</li>
       <li><strong>PR open</strong>: one of its PRs is still open, unless you sent it to Valhalla</li>
       <li><strong>Valhalla</strong>: a PR merged and none is still open, or you sent it there</li>
       <li><strong>Needs input</strong>: its turn ended in the last 2 hours</li>
-      <li><strong>Graveyard</strong>: it was archived, or it is a terminal or VS Code session that has ended</li>
+      <li><strong>Graveyard</strong>: it is a terminal or VS Code session that has ended</li>
       <li><strong>Jail</strong>: its PRs were all closed without merging</li>
       <li>Otherwise by how long it has been quiet: <strong>Idle</strong>, <strong>Recent</strong>, <strong>Graveyard</strong> or <strong>Older</strong></li>
     </ol>
