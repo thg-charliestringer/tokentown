@@ -3290,18 +3290,89 @@ export function horseAt(t, reduced = false) {
   return { x: HORSE_CIRCUIT[0].x, y: HORSE_CIRCUIT[0].y, dir: 1, axis: 'x' };
 }
 
+// A green country: the Shire's own hills and hedgerows, oak and thatch, and a road west to the sea. The sea stays
+// a sea here, which is the point of a pack being colours rather than a rewrite: nothing nautical needed branching.
+// The trees are mallorns, silver-trunked and gold-crowned, which one palette line does across all eight of them.
+const SHIRE_DAY = {
+  grass: '#9db884', grassLight: '#aec795', grassDark: '#88a570', tuft: '#7b9467',
+  path: '#dcc9a5', pathEdge: '#bda87e', pebble: '#c7b493',
+  sand: '#e6dcc2', sandLight: '#f0e8d2', sandWet: '#d3c6a6', sandDot: '#dbd0b4', dune: '#aebb8c',
+  water: '#8fb9c4', waterDeep: '#79a3b0', ripple: '#c6e0e6', shallow: '#a7ccd3',
+  wood: '#9c7b52', woodDark: '#68512f', woodLight: '#c3a678', plank: '#a98b60',
+  wall: '#ece4d0', wallShade: '#d6cbb0', roofs: ['#c19a5e', '#6f7a80', '#ad8a52', '#7b6a50'],
+  windowDark: '#7e8a90', porchWindow: '#7e8a90', door: '#5f7d4e',
+  stone: '#bcc0b2', stoneDark: '#8f9486',
+  tree: '#d9c06a', treeDark: '#bda152', treeLight: '#eddf96', trunk: '#cdc7b8',
+  flowers: ['#e6c6dc', '#f6f0e0', '#d6dfa6', '#c6d0ea'],
+  lighthouse: '#f0ece0', slate: '#8a93a0', lanternGlass: '#e4dcc4', cat: '#8a7f70',
+  shadow: 'rgba(40, 52, 34, 0.18)',
+  signBoard: '#eee3c6', signBorder: '#7a6238', signText: '#33301f', signMuted: '#5f5a42',
+  castle: '#e9e6dc', castleShade: '#d3cfc0', castleDark: '#a09a88', castleDoor: '#5c5647',
+  shell: '#f2dcd3', shellEdge: '#c7a296', starfish: '#dca58a',
+  stripeBase: '#f4eedc', stripes: ['#7f9fb4', '#b0894f', '#9aa478', '#c0a86a'],
+  palm: '#a8bb7a', palmDark: '#879c5e', palmTrunk: '#cdc7b8', palmRing: '#a49d8c', coconut: '#6f5f42',
+  thatch: '#cfae6f', thatchDark: '#a98a55', bamboo: '#c6b17c',
+  flag: '#5a7fa8', flagAlt: '#efe8d2', sailCloth: '#eceadf',
+  graveGrass: '#8fa87a', graveMound: '#7f9a6c', moss: '#7d9463',
+  fence: '#9c8058', fenceDark: '#6b5238', yew: '#5f7d5c', yewDark: '#4a6649',
+  hallWall: '#ded8c6', hallBrick: '#d1cab5', hallBrickEdge: '#b9b198', hallFloor: '#e6e0cd', hallFloorLine: '#cfc7ae',
+  roomWall: '#ecdfc2', roomWallShade: '#d8c9a6', roomFloor: '#a9814f', roomFloorLine: '#8a6539', rug: '#7a4a52',
+  hallSky: '#cfe3ea', hallSea: '#8fb9c4',
+  tapestry: '#b9a06a', tapestryEdge: '#8a7448',
+};
+
+const SHIRE_DUSK = {
+  grass: '#26332a', grassLight: '#2e3d31', grassDark: '#1f2b24', tuft: '#35463a',
+  path: '#463f33', pathEdge: '#383227', pebble: '#524a3c',
+  sand: '#443f34', sandLight: '#504a3d', sandWet: '#3d382e', sandDot: '#474234', dune: '#333d2e',
+  water: '#1f3642', waterDeep: '#182c37', ripple: '#375260', shallow: '#28414c',
+  wood: '#65502f', woodDark: '#42351f', woodLight: '#8a7050', plank: '#75603f',
+  wall: '#565244', wallShade: '#48453a', roofs: ['#5e4a34', '#454e55', '#544330', '#4b4335'],
+  windowDark: '#2b3238', porchWindow: '#e8c985', door: '#33452b',
+  stone: '#5c6057', stoneDark: '#464a43',
+  tree: '#6b5c2f', treeDark: '#564a26', treeLight: '#877443', trunk: '#5e5b52',
+  flowers: ['#8a6f82', '#b9b3a2', '#7e8558', '#71789a'],
+  lighthouse: '#9b968a', slate: '#565e69', lanternGlass: '#6a665b', cat: '#6b6157',
+  shadow: 'rgba(0, 0, 0, 0.32)',
+  signBoard: '#ded0ad', signBorder: '#54442a', signText: '#2c2718', signMuted: '#5a5340',
+  castle: '#6d6a60', castleShade: '#5b584f', castleDark: '#403e37', castleDoor: '#22201a',
+  shell: '#8a7a74', shellEdge: '#5e524d', starfish: '#86695a',
+  stripeBase: '#74705f', stripes: ['#42586a', '#6a533a', '#5d6350', '#6f6446'],
+  palm: '#3d4d33', palmDark: '#303f2a', palmTrunk: '#5e5b52', palmRing: '#45423a', coconut: '#3a3226',
+  thatch: '#6f5e3e', thatchDark: '#54472f', bamboo: '#6a5d42',
+  flag: '#33506d', flagAlt: '#a39b87', sailCloth: '#b7b5a9',
+  graveGrass: '#24302a', graveMound: '#1f2b24', moss: '#3f523a',
+  fence: '#5b4a34', fenceDark: '#392e20', yew: '#2b3d2a', yewDark: '#213021',
+  hallWall: '#5a5648', hallBrick: '#514d40', hallBrickEdge: '#454236', hallFloor: '#4d4a3d', hallFloorLine: '#413e33',
+  roomWall: '#544b38', roomWallShade: '#463e2e', roomFloor: '#584228', roomFloorLine: '#473421', rug: '#5c3339',
+  hallSky: '#2c3f52', hallSea: '#1f3642',
+  tapestry: '#665a41', tapestryEdge: '#443b2a',
+};
+
+// The Jail and the Graveyard keep their names in every pack: a cell is a cell and a grave is a grave.
+const SHIRE_NAMES = Object.freeze({
+  workshop: 'The Forge', cottages: 'Bag End', porch: 'The Green Dragon',
+  harbour: 'The Grey Havens', beach: 'Undying Lands',
+});
+const SHIRE_ROOMS = Object.freeze({ castle: 'The White Halls', cottages: 'The Parlour' });
+
 export const DEFAULT_THEME = 'village';
 
 export const THEME_PACKS = Object.freeze([
   Object.freeze({
     key: 'village', name: 'Village', note: 'The green village',
     day: Object.freeze({}), dusk: Object.freeze({}),
-    names: Object.freeze({}), rooms: Object.freeze({}),
+    names: Object.freeze({}), rooms: Object.freeze({}), hatted: false,
   }),
   Object.freeze({
     key: 'west', name: 'Wild West', note: 'A frontier town on the dry flats',
     day: Object.freeze(WEST_DAY), dusk: Object.freeze(WEST_DUSK),
-    names: WEST_NAMES, rooms: WEST_ROOMS,
+    names: WEST_NAMES, rooms: WEST_ROOMS, hatted: true,
+  }),
+  Object.freeze({
+    key: 'shire', name: 'Middle-earth', note: 'A green country, and a grey ship west',
+    day: Object.freeze(SHIRE_DAY), dusk: Object.freeze(SHIRE_DUSK),
+    names: SHIRE_NAMES, rooms: SHIRE_ROOMS, hatted: false,
   }),
 ]);
 
@@ -6478,7 +6549,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   // How far a hat pushes the badge above the body. Written once: drawCharacter paints the badge there and
   // restingGeometry puts the clickable one in the same place, so a change of hat cannot move only one of them.
   function headroom(feat, pack) {
-    if (pack === 'west') return HAT_LIFT;
+    if (themePack(pack).hatted) return HAT_LIFT;
     return feat.accessory === 'hat' || feat.accessory === 'antenna' ? HAT_LIFT : 0;
   }
 

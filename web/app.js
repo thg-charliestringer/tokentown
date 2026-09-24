@@ -117,12 +117,14 @@ export const DEFAULT_THEME = 'village';
 export const THEMES = Object.freeze([
   Object.freeze({ key: 'village', name: 'Village', note: 'The green village' }),
   Object.freeze({ key: 'west', name: 'Wild West', note: 'A frontier town on the dry flats' }),
+  Object.freeze({ key: 'shire', name: 'Middle-earth', note: 'A green country, and a grey ship west' }),
 ]);
 export const THEME_KEYS = Object.freeze(THEMES.map((t) => t.key));
 // Both rooms, spelled out per theme rather than as overrides, so a reader can see what every theme calls them.
 export const THEME_ROOMS = Object.freeze({
   village: Object.freeze({ castle: 'Valhalla sand castle', cottages: 'The Cottages' }),
   west: Object.freeze({ castle: 'Valhalla mine', cottages: 'The Counting Room' }),
+  shire: Object.freeze({ castle: 'The White Halls', cottages: 'The Parlour' }),
 });
 
 export function themeFrom(key) {
