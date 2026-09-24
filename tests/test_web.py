@@ -354,13 +354,15 @@ class LaneContractTests(unittest.TestCase):
         self.assertIn("if (via === 'team') fillPoly(ctx, visitorSash(x, bottom), VISITOR_SASH);", drawn)
         self.assertIn("const [pl, pt, pr, pb] = VISITOR_PASSPORT[via];", drawn)
 
-    def test_the_night_lighting_never_reaches_the_motion_planner(self):
-        # The two functions that decide the frame rate. A beam or a ghost named in either would hold the canvas at
-        # full rate for as long as the page is open, which is the one thing the whole village is paced around, and
-        # the harness can only catch it by counting frames in a case somebody remembered to write.
+    def test_the_scenery_never_reaches_the_motion_planner(self):
+        # The two functions that decide the frame rate. A beam, a ghost, the frontier's horse or its fights named in
+        # either would hold the canvas at full rate for as long as the page is open, which is the one thing the whole
+        # village is paced around, and the harness can only catch it by counting frames in a case somebody remembered
+        # to write. All of them are scenery: they move, but nothing is going anywhere.
         for name in ("anyMotion", "nextMotionAt"):
             body = _fn(self.village, name)
-            for banned in ("beam", "Beam", "ghost", "Ghost", "GHOST", "LIGHTHOUSE", "night"):
+            for banned in ("beam", "Beam", "ghost", "Ghost", "GHOST", "LIGHTHOUSE", "night",
+                           "horse", "Horse", "HORSE", "fight", "Fight", "west", "West"):
                 self.assertNotIn(banned, body, f"{name} reads {banned}")
 
     def test_the_lit_castle_pane_takes_the_shape_of_the_opening_it_fills(self):

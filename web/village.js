@@ -3255,6 +3255,41 @@ export function fightPair(points) {
 // the players' heads.
 export const MINE_STAGE = Object.freeze({ x: 800, y: 356, w: 200, h: 22 });
 
+// A horse trots the circuit the four roads make, clockwise from the south west corner. It rides the village's own
+// ambient tick, like the lighthouse beam: a stray on the road is scenery, not a session going anywhere, and
+// nothing that only moves the scenery is allowed to hold the canvas at full rate.
+export const HORSE_CIRCUIT = Object.freeze([
+  Object.freeze({ x: 460, y: 560 }), Object.freeze({ x: 1174, y: 560 }),
+  Object.freeze({ x: 1174, y: 320 }), Object.freeze({ x: 460, y: 320 }),
+]);
+export const HORSE_SPEED = 55;
+// Half of what the horse paints, measured across the leg it is on. The road band is 38 wide, so this has to stay
+// under 19 or a hoof lands on the grass, and it is why the horse's head is carried forward rather than up.
+export const HORSE_REACH = 15;
+
+// Where the horse is at t, which way it faces, and which axis it is running along, so a check knows which way to
+// measure its width. Reduced motion holds it at the corner it starts from.
+export function horseAt(t, reduced = false) {
+  const legs = HORSE_CIRCUIT.map((a, i) => {
+    const b = HORSE_CIRCUIT[(i + 1) % HORSE_CIRCUIT.length];
+    return { a, b, len: Math.hypot(b.x - a.x, b.y - a.y) };
+  });
+  const loop = legs.reduce((sum, l) => sum + l.len, 0);
+  let d = reduced ? 0 : ((t * HORSE_SPEED) % loop + loop) % loop;
+  for (const l of legs) {
+    if (d > l.len) {
+      d -= l.len;
+      continue;
+    }
+    const k = l.len ? d / l.len : 0;
+    return {
+      x: l.a.x + (l.b.x - l.a.x) * k, y: l.a.y + (l.b.y - l.a.y) * k,
+      dir: l.b.x < l.a.x ? -1 : 1, axis: Math.abs(l.b.x - l.a.x) >= Math.abs(l.b.y - l.a.y) ? 'x' : 'y',
+    };
+  }
+  return { x: HORSE_CIRCUIT[0].x, y: HORSE_CIRCUIT[0].y, dir: 1, axis: 'x' };
+}
+
 export const DEFAULT_THEME = 'village';
 
 export const THEME_PACKS = Object.freeze([
@@ -3658,6 +3693,7 @@ function paintBackground(g, T) {
     fillEllipse(g, x, y, rx, rx * (0.3 + rand() * 0.3), rand() < 0.5 ? T.grassLight : T.grassDark);
   }
   g.globalAlpha = 1;
+  if (T.pack === 'west') paintHorizonRange(g, T);
 
   paintWater(g, T, rand);
   paintIsland(g, T, rand);
@@ -3673,6 +3709,34 @@ function paintBackground(g, T) {
   paintSandCastle(g, T);
   paintTrees(g, T);
   paintFlowers(g, T, rand);
+}
+
+// A range along the top of the map with a tunnel driven through it, painted before the sea so the water covers
+// its eastern end rather than the range running out over the flats.
+function paintHorizonRange(g, T) {
+  const peaks = [[-40, 58], [90, 6], [220, 46], [330, 2], [470, 52], [610, 12], [760, 48], [900, 4], [1040, 44],
+    [1180, 14], [1320, 50], [1460, 18], [1640, 56]];
+  const pts = [[-60, 62], ...peaks, [1660, 62]];
+  fillPoly(g, pts, T.castleShade, T.castleDark, 2);
+  // The snow, or what passes for it up there: the lit western face of each peak.
+  for (const [x, y] of peaks) {
+    if (y > 20) continue;
+    fillPoly(g, [[x, y], [x - 16, y + 18], [x + 16, y + 18]], T.wallShade);
+  }
+  // The tunnel, clear of every tree and of the cottage.
+  const tx = 300;
+  g.beginPath();
+  g.moveTo(tx - 20, 62);
+  g.lineTo(tx - 20, 40);
+  g.arc(tx, 40, 20, Math.PI, TAU);
+  g.lineTo(tx + 20, 62);
+  g.closePath();
+  g.fillStyle = T.castleDoor;
+  g.fill();
+  g.strokeStyle = T.woodDark;
+  g.lineWidth = 4;
+  g.stroke();
+  for (const dx of [-26, 26]) fillRR(g, tx + dx - 4, 26, 8, 36, 2, T.wood, T.woodDark, 1.5);
 }
 
 function paintWater(g, T, rand) {
@@ -5878,6 +5942,30 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     line(ctx, x, y + h / 2, x + w, y + h / 2, T.woodDark, 1.5);
   }
 
+  // The stray on the roads. Everything it paints stays within HORSE_REACH of the line it is on, which is what
+  // keeps a hoof off the grass at a corner.
+  function drawHorse(env) {
+    const T = env.theme;
+    const { x, y, dir } = horseAt(env.t, env.reduced);
+    const gait = env.reduced ? 0 : Math.sin(env.t * 7);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(dir < 0 ? -1 : 1, 1);
+    fillEllipse(ctx, 1, 12, 14, 3.5, T.shadow);
+    // Legs first, so the body covers where they meet it.
+    for (const [lx, phase] of [[-8, 0], [-5, 1.6], [7, 3.1], [10, 4.7]]) {
+      const swing = gait * Math.sin(phase) * 3;
+      line(ctx, lx, -1, lx + swing, 11, T.woodDark, 2.6);
+    }
+    fillRR(ctx, -11, -10, 22, 11, 5, T.cat, T.woodDark, 1.5);
+    // Neck, head and muzzle, carried forward: nothing here is more than HORSE_REACH off the line it runs on.
+    fillRR(ctx, 7, -13, 6, 8, 3, T.cat, T.woodDark, 1.5);
+    fillRR(ctx, 6, -13, 9, 6, 3, T.cat, T.woodDark, 1.5);
+    fillPoly(ctx, [[8, -13], [10, -15], [12, -12]], T.woodDark);
+    line(ctx, -11, -9, -14, -3, T.woodDark, 2.4);
+    ctx.restore();
+  }
+
   function drawAmbient(env) {
     const { t, theme: T } = env;
     // Lit by whoever is in the room, idle or recent alike: dark windows with guests inside read as a bug.
@@ -7843,6 +7931,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   function drawVillage(env) {
     const T = env.theme;
     drawAmbient(env);
+    if (env.west) drawHorse(env);
     for (const key of PLACE_KEYS) drawSign(key, env);
     drawGraveyardSign(env);
     drawRoomBadge(env, { id: CASTLE_ID, at: CASTLE.badge, lanes: SCENE_ART.castle.lanes });

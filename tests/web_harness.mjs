@@ -3045,6 +3045,54 @@ check('hall guests multiply the crowd scale by their token size, and still keep 
 
 // ----- theme packs -----
 
+check('the horse keeps to the roads all the way round, and holds still when asked', () => {
+  // Every node of the circuit is a road junction the village already has, so the horse cannot be trotting a line
+  // nobody paints.
+  for (const node of V.HORSE_CIRCUIT) {
+    assert(V.ROAD_NODES.some(([x, y]) => x === node.x && y === node.y),
+      `the circuit turns at ${JSON.stringify(node)}, which is a road junction`);
+  }
+  assert(V.HORSE_REACH * 2 < V.ROAD_BAND, `the horse (${V.HORSE_REACH * 2} wide) fits the road band (${V.ROAD_BAND})`);
+
+  // Two things, measured apart. Where the horse stands is on a road's centreline; how wide it paints is measured
+  // across the leg it is running, which is the direction the band is only 38 px wide in. Measuring its width along
+  // the leg instead would fail at every corner for a horse of any size at all, since two bands meeting at a right
+  // angle leave the outer corner uncovered.
+  const half = V.ROAD_BAND / 2;
+  const onRoad = (x, y) => V.ROAD_LINES.some(([[x0, y0], [x1, y1]]) => {
+    const vx = x1 - x0;
+    const vy = y1 - y0;
+    const k = Math.max(0, Math.min(1, ((x - x0) * vx + (y - y0) * vy) / (vx * vx + vy * vy)));
+    return Math.hypot(x - (x0 + vx * k), y - (y0 + vy * k)) <= half;
+  });
+  const loop = V.HORSE_CIRCUIT.reduce((sum, a, i) => {
+    const b = V.HORSE_CIRCUIT[(i + 1) % V.HORSE_CIRCUIT.length];
+    return sum + Math.hypot(b.x - a.x, b.y - a.y);
+  }, 0);
+  const period = loop / V.HORSE_SPEED;
+  let seen = 0;
+  for (let t = 0; t <= period * 2; t += period / 900) {
+    const h = V.horseAt(t);
+    assert(Math.abs(h.dir) === 1, `the horse faces one way or the other at t ${t.toFixed(2)}`);
+    assert(onRoad(h.x, h.y), `the horse stands off the road at t ${t.toFixed(2)}: ${h.x.toFixed(1)},${h.y.toFixed(1)}`);
+    for (const d of [-V.HORSE_REACH, V.HORSE_REACH]) {
+      const p2 = h.axis === 'x' ? { x: h.x, y: h.y + d } : { x: h.x + d, y: h.y };
+      assert(onRoad(p2.x, p2.y),
+        `the horse paints off the road at t ${t.toFixed(2)}: ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`);
+    }
+    seen += 1;
+  }
+  assert(seen > 1000, 'the whole circuit was walked');
+
+  // It goes somewhere over a lap, and nowhere at all under reduced motion.
+  const places = new Set();
+  for (let t = 0; t <= period; t += period / 40) places.add(`${V.horseAt(t).x.toFixed(0)},${V.horseAt(t).y.toFixed(0)}`);
+  assert(places.size > 30, `the horse gets round the circuit (${places.size} places)`);
+  const still = new Set();
+  for (let t = 0; t <= period; t += period / 40) still.add(`${V.horseAt(t, true).x},${V.horseAt(t, true).y}`);
+  eq(still.size, 1, 'reduced motion holds it at one place');
+});
+
 check('the frontier line runs straight from the berth to the jetty, over water all the way, and every other pack keeps the voyage', () => {
   const xy = (p) => ({ x: p.x, y: p.y });
   eq(V.sailLane(), V.SAIL_WAYPOINTS, 'the default is the voyage');
