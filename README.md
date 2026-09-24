@@ -320,21 +320,26 @@ and merged sessions are already there.
 | Needs input | Claude finished its turn in the last 2 hours (lane id `your_turn`) |
 | Running | Busy; or idle while a background task it started still runs (a background shell, agent or workflow with no report back yet, a monitor until its first event, or a scheduled wake-up) |
 | Stopped | Ended mid-turn (running only local commands such as `/context` does not count) |
-| Idle | Live and quiet for 2 hours or more |
+| Idle | Live, not archived, and quiet for 2 hours or more |
 | PR open | Any PR is still open, live or not |
 | Recent | A desktop session active in the last 7 days |
 | Valhalla beach | A PR merged with none still open, or sent there, in the last 14 days |
 | Valhalla sand castle | The same, more than 14 days ago |
 | Jail | Every PR was closed without merging: none open, none merged, none still unknown. Live sessions stay as long as they are live; desktop sessions for 30 days after the closure or the last activity, whichever is later |
-| Graveyard | Archived with no open or merged PR and no done mark, a terminal or VS Code session that has ended (a terminal has no archive: ending a session is how you put it away), or no activity for 30+ days with no open or merged PR |
+| Graveyard | Archived, live or not, with no open or merged PR and no done mark, a terminal or VS Code session that has ended (a terminal has no archive: ending a session is how you put it away), or no activity for 30+ days with no open or merged PR |
 | Older | No activity for 7 to 30 days and nothing else applies. Count only |
 
 The first matching rule wins:
 
 | Session | Order |
 |---|---|
-| Live | Blocked > errored > running > open PR > a merge that sails > a done mark > needs input > jail > idle |
+| Live, archived | Open PR > a merge that sails > a done mark > the Graveyard |
+| Live, not archived | Blocked > errored > running > open PR > a merge that sails > a done mark > needs input > jail > idle |
 | Not live | Errored (recent, not archived, not done) > open PR > a merge that sails > a done mark > archived > stopped > ended (a terminal or VS Code session) > jail > recent > inactive over 30 days > older |
+
+**Archiving puts a chat away at once**, whatever its session is still doing. It goes straight to the place it would
+rest in once its session had gone, so it walks there once and stays: the Graveyard, unless a PR of its own is still
+open (the Harbour) or one merged, or you marked it done (Valhalla).
 
 **Every PR counts, not just the newest.** An open PR anywhere keeps a session in the Harbour. A merge sails only when
 nothing is open and nothing is still unresolved, so a merged PR beats a closed one. The jail takes a session only
