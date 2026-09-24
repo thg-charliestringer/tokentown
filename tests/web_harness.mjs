@@ -4537,11 +4537,15 @@ check('what a place paints into the background stays on the ground it declares, 
       }
     }
   }
-  // Per pack, so a reskin that crept further off its ground than the green village does is caught even though it
-  // is still inside the allowance the green village earned.
-  for (const pack of V.THEME_KEYS) {
-    for (const [place, allowed] of Object.entries(GROUND_ESCAPES)) {
-      eq(measured[`${pack}/${place}`], allowed, `${pack}: the ${place} still reaches exactly as far off its ground as it did`);
+  // The green village is held to exactly what it measured, so its own figures cannot drift unnoticed. Every other
+  // pack is held to no further than that: a reskin that reaches less far off its ground than the shape it replaces
+  // is strictly safer, and a white tower that stops short of a sand castle's spill should not have to be widened
+  // to satisfy a check.
+  for (const [place, allowed] of Object.entries(GROUND_ESCAPES)) {
+    eq(measured[`${V.DEFAULT_THEME}/${place}`], allowed, `the ${place} still reaches exactly as far off its ground as it did`);
+    for (const pack of V.THEME_KEYS) {
+      const got = measured[`${pack}/${place}`] || 0;
+      assert(got <= allowed + 1e-6, `${pack}: the ${place} reaches ${got} px off its ground, past the ${allowed} the green village does`);
     }
   }
 });

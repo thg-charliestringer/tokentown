@@ -3298,7 +3298,7 @@ export function horseAt(t, reduced = false) {
 // a sea here, which is the point of a pack being colours rather than a rewrite: nothing nautical needed branching.
 // The trees are mallorns, silver-trunked and gold-crowned, which one palette line does across all eight of them.
 const SHIRE_DAY = {
-  grass: '#9db884', grassLight: '#aec795', grassDark: '#88a570', tuft: '#7b9467',
+  grass: '#8fae74', grassLight: '#a4c188', grassDark: '#77985e', tuft: '#5f8049',
   path: '#dcc9a5', pathEdge: '#bda87e', pebble: '#c7b493',
   sand: '#e6dcc2', sandLight: '#f0e8d2', sandWet: '#d3c6a6', sandDot: '#dbd0b4', dune: '#aebb8c',
   water: '#8fb9c4', waterDeep: '#79a3b0', ripple: '#c6e0e6', shallow: '#a7ccd3',
@@ -3328,7 +3328,7 @@ const SHIRE_DAY = {
 };
 
 const SHIRE_DUSK = {
-  grass: '#26332a', grassLight: '#2e3d31', grassDark: '#1f2b24', tuft: '#35463a',
+  grass: '#212e23', grassLight: '#2a3a2c', grassDark: '#1a251c', tuft: '#31422f',
   path: '#463f33', pathEdge: '#383227', pebble: '#524a3c',
   sand: '#443f34', sandLight: '#504a3d', sandWet: '#3d382e', sandDot: '#474234', dune: '#333d2e',
   water: '#1f3642', waterDeep: '#182c37', ripple: '#375260', shallow: '#28414c',
@@ -3864,7 +3864,9 @@ function paintBackground(g, T) {
     fillEllipse(g, x, y, rx, rx * (0.3 + rand() * 0.3), rand() < 0.5 ? T.grassLight : T.grassDark);
   }
   g.globalAlpha = 1;
+  if (T.pack === 'shire') paintShireCountry(g, T);
   if (T.pack === 'west') paintHorizonRange(g, T);
+  if (T.pack === 'shire') paintMistyMountains(g, T);
 
   paintWater(g, T, rand);
   paintIsland(g, T, rand);
@@ -3908,6 +3910,98 @@ function paintHorizonRange(g, T) {
   g.lineWidth = 4;
   g.stroke();
   for (const dx of [-26, 26]) fillRR(g, tx + dx - 4, 26, 8, 36, 2, T.wood, T.woodDark, 1.5);
+}
+
+// The open ground between the places, which is most of the map and which a wash of ellipses leaves saying
+// nothing. Hedged fields, a hillside with doors in it and a lane's own verges say where this is. Every patch is
+// hand-placed in ground no place declares and no road band crosses, so none of it is any place's to answer for.
+const SHIRE_FIELDS = Object.freeze([
+  // Top left, under the jail's own ground, which ends at y 250, and above the y 320 road.
+  Object.freeze([[10, 266], [210, 262], [222, 298], [16, 302]]),
+  Object.freeze([[232, 262], [430, 266], [430, 300], [240, 298]]),
+  // West of the jail's ground, which starts at x 70.
+  Object.freeze([[10, 120], [50, 112], [56, 210], [14, 216]]),
+  // Top middle, west of Bag End.
+  Object.freeze([[500, 20], [700, 14], [710, 120], [506, 126]]),
+  Object.freeze([[506, 134], [712, 128], [718, 250], [512, 252]]),
+  // Top right, east of Bag End and short of the coast.
+  Object.freeze([[944, 18], [1140, 26], [1132, 130], [938, 122]]),
+  Object.freeze([[938, 140], [1130, 146], [1122, 254], [932, 248]]),
+  // Bottom left, below the graveyard and west of the Porch's rows.
+  Object.freeze([[8, 600], [200, 596], [206, 700], [12, 706]]),
+  Object.freeze([[214, 598], [424, 604], [420, 702], [218, 700]]),
+  Object.freeze([[10, 760], [180, 756], [186, 862], [14, 866]]),
+  Object.freeze([[196, 758], [418, 764], [412, 864], [192, 860]]),
+]);
+
+// Hillsides with a door in them, in open ground away from every place: Bag End is not the only hole in the hill.
+const SHIRE_HOLES = Object.freeze([
+  Object.freeze({ x: 300, y: 742, r: 54 }),
+  Object.freeze({ x: 372, y: 236, r: 42 }),
+]);
+
+function paintShireCountry(g, T) {
+  // Fields: a lighter or darker green inside a hedge, which is what makes country read as farmed rather than wild.
+  SHIRE_FIELDS.forEach((field, i) => {
+    g.globalAlpha = 0.55;
+    fillPoly(g, field, i % 2 ? T.grassLight : T.grassDark);
+    g.globalAlpha = 1;
+    // The hedge itself: a run of small dark clumps around the field's edge rather than a drawn line.
+    for (let e = 0; e < field.length; e += 1) {
+      const [ax, ay] = field[e];
+      const [bx, by] = field[(e + 1) % field.length];
+      const len = Math.hypot(bx - ax, by - ay);
+      const n = Math.max(2, Math.round(len / 13));
+      for (let k = 0; k <= n; k += 1) {
+        const t = k / n;
+        const hx = ax + (bx - ax) * t;
+        const hy = ay + (by - ay) * t;
+        fillEllipse(g, hx, hy + 1.5, 7.5, 4.2, T.yewDark);
+        fillEllipse(g, hx, hy, 7, 4, T.yew);
+        fillEllipse(g, hx - 1.6, hy - 1.4, 3, 1.8, T.tuft);
+      }
+    }
+  });
+  // Two more holes in the hill, each with its door, its round window and a step.
+  for (const { x, y, r } of SHIRE_HOLES) {
+    fillEllipse(g, x + 5, y + 3, r * 0.95, 8, T.shadow);
+    g.beginPath();
+    g.ellipse(x, y, r, r * 0.86, 0, Math.PI, TAU);
+    g.closePath();
+    g.fillStyle = T.grassDark;
+    g.fill();
+    g.beginPath();
+    g.ellipse(x, y, r - 4, r * 0.86 - 6, 0, Math.PI, TAU);
+    g.closePath();
+    g.fillStyle = T.grass;
+    g.fill();
+    g.globalAlpha = 0.5;
+    fillEllipse(g, x - r * 0.3, y - r * 0.5, r * 0.34, r * 0.12, T.grassLight);
+    g.globalAlpha = 1;
+    const dr = r * 0.3;
+    fillEllipse(g, x, y - dr * 0.9, dr + 3, dr + 3, T.wood);
+    fillEllipse(g, x, y - dr * 0.9, dr, dr, T.door, T.woodDark, 1.4);
+    fillEllipse(g, x, y - dr * 0.9, 2.2, 2.2, T.thatch);
+    fillRR(g, x + r * 0.46, y - r * 0.5, 15, 13, 6.5, T.wood, T.woodDark, 1.2);
+    fillRR(g, x - r * 0.62, y - r * 0.44, 13, 12, 6, T.wood, T.woodDark, 1.2);
+    fillRR(g, x - dr - 4, y - 2, (dr + 4) * 2, 6, 2, T.stone, T.stoneDark, 1);
+  }
+}
+
+// The mountains east of here, along the top of the map, painted before the sea so the water takes their far end.
+// The same band the frontier's range uses, so nothing above the buildings has to move.
+function paintMistyMountains(g, T) {
+  const peaks = [[-40, 64], [110, 10], [250, 52], [400, 4], [540, 46], [690, 14], [830, 50], [980, 2],
+    [1120, 44], [1270, 16], [1420, 52], [1560, 20], [1660, 62]];
+  fillPoly(g, [[-60, 68], ...peaks, [1680, 68]], T.stoneDark, T.castleDark, 2);
+  for (const [x, y] of peaks) {
+    if (y > 22) continue;
+    fillPoly(g, [[x, y], [x - 17, y + 20], [x - 6, y + 15], [x + 3, y + 21], [x + 17, y + 20]], T.wall);
+  }
+  // A second, paler line behind the first: distance, which one row of peaks cannot say on its own.
+  g.globalAlpha = 0.45;
+  fillPoly(g, [[-60, 40], [180, 4], [420, 34], [680, 0], [930, 30], [1180, 2], [1430, 32], [1680, 8], [1680, 44], [-60, 44]], T.stone);
+  g.globalAlpha = 1;
 }
 
 function paintWater(g, T, rand) {
@@ -4468,12 +4562,24 @@ function paintPorchHouse(g, T) {
       line(g, 994 + (1123 - 994) * k, 694 - (694 - 604) * k, 1252 - (1252 - 1123) * k, 694 - (694 - 604) * k, T.thatchDark, 2);
     }
     g.globalAlpha = 1;
-    line(g, 1150, 778, 1150, 762, T.woodDark, 2.5);
-    line(g, 1190, 778, 1190, 762, T.woodDark, 2.5);
-    fillRR(g, 1138, 738, 64, 26, 3, T.signBoard, T.signBorder, 2);
-    // A dragon on the board: a long body, a wing and a tail, small enough to read as a painted sign.
-    fillPoly(g, [[1146, 756], [1158, 746], [1172, 750], [1186, 742], [1194, 750], [1180, 756], [1160, 758]], T.door);
-    fillPoly(g, [[1166, 748], [1174, 738], [1180, 748]], T.door);
+    // The sign on the gable, where a dark board reads against thatch. On the wall below it was cream on cream.
+    fillRR(g, 1086, 650, 76, 38, 3, T.woodDark, T.signBoard, 2);
+    // A dragon: tail, body, a long neck and a snout, with one wing over it. Drawn as a curve rather than a row of
+    // points, because straight edges at this size read as a mountain, which is what the first attempt looked like.
+    g.beginPath();
+    g.moveTo(1092, 682);
+    g.quadraticCurveTo(1108, 678, 1120, 679);
+    g.quadraticCurveTo(1134, 679, 1137, 668);
+    g.quadraticCurveTo(1140, 657, 1150, 657);
+    g.lineTo(1157, 661);
+    g.lineTo(1148, 663);
+    g.quadraticCurveTo(1143, 665, 1141, 673);
+    g.quadraticCurveTo(1130, 670, 1119, 672);
+    g.quadraticCurveTo(1105, 671, 1092, 682);
+    g.closePath();
+    g.fillStyle = T.signBoard;
+    g.fill();
+    fillPoly(g, [[1118, 673], [1127, 654], [1137, 671]], T.signBoard);
   } else if (west) {
     // A false front where the pitch was, inside the same triangle: flat to the roof's own apex at 604, so nothing
     // here rises any nearer the road than the porch house already did.
@@ -4625,6 +4731,7 @@ function paintSandCastle(g, T) {
   const cx = CASTLE.x;
   const by = CASTLE.y;
   const west = T.pack === 'west';
+  const shire = T.pack === 'shire';
   g.save();
   g.translate(cx, by);
   g.scale(CASTLE.s, CASTLE.s);
@@ -4636,6 +4743,11 @@ function paintSandCastle(g, T) {
   const merlons = (x0, x1, y, w = 10, gap = 6) => {
     const n = Math.max(1, Math.floor((x1 - x0 + gap) / (w + gap)));
     const start = x0 + (x1 - x0 - (n * w + (n - 1) * gap)) / 2;
+    // A white tower caps each run once rather than toothing it, so the same merlon numbers raise a spire.
+    if (shire) {
+      fillPoly(g, [[x0 - 3, y + 2], [(x0 + x1) / 2, y - 24], [x1 + 3, y + 2]], T.castle, T.castleDark, 1.4);
+      return;
+    }
     for (let i = 0; i < n; i++) {
       const x = start + i * (w + gap);
       if (!west) {
@@ -4700,10 +4812,18 @@ function paintSandCastle(g, T) {
     g.lineWidth = 2;
     g.stroke();
   }
-  for (const [x, y, r, rot] of [[cx - 34, by - 34, 5, -0.2], [cx + 32, by - 40, 4.5, 0.3], [cx - 58, by - 46, 4, 0], [cx + 58, by - 14, 4, 0.2]]) {
-    paintShell(g, T, x, y, r, rot);
+  if (shire) {
+    // A banner down the keep's face, which is what a white tower has where a sand castle has shells.
+    fillPoly(g, [
+      [cx - 9, by - 116], [cx + 9, by - 116], [cx + 9, by - 74], [cx, by - 82], [cx - 9, by - 74],
+    ], T.flag, T.castleDark, 1.2);
+    for (const tx of [cx - 58, cx + 58]) fillEllipse(g, tx, by - 98, 3.5, 3.5, T.flagAlt);
+  } else {
+    for (const [x, y, r, rot] of [[cx - 34, by - 34, 5, -0.2], [cx + 32, by - 40, 4.5, 0.3], [cx - 58, by - 46, 4, 0], [cx + 58, by - 14, 4, 0.2]]) {
+      paintShell(g, T, x, y, r, rot);
+    }
+    paintStarfish(g, T, cx + 22, by - 106, 5.5, 0.3);
   }
-  paintStarfish(g, T, cx + 22, by - 106, 5.5, 0.3);
   g.restore();
   // Flag poles; the flags wave per frame, outside the scaled block, so they follow CASTLE_FLAGS.
   for (const [x, top] of CASTLE_FLAGS) line(g, x, top + 30 * CASTLE.s, x, top, T.woodDark, 2);
@@ -4749,8 +4869,15 @@ function paintJail(g, T) {
     course += 1;
   }
   g.globalAlpha = 1;
-  fillPoly(g, [[bx - 6, wallY + 2], [bx + 28, by], [bx + bw - 28, by], [bx + bw + 6, wallY + 2]], T.slate, T.stoneDark, 2);
-  line(g, bx + 28, by + 1.5, bx + bw - 28, by + 1.5, T.stoneDark, 1.5);
+  if (T.pack === 'shire') {
+    // A flat crown of merlons on the block's own roof line, rather than a pitched slate roof: an older keep.
+    fillRR(g, bx - 6, wallY - 4, bw + 12, 10, 1, T.stoneDark);
+    for (let mx = bx - 2; mx < bx + bw - 2; mx += 26) fillRR(g, mx, by + 2, 15, wallY - by - 2, 1, T.stone, T.stoneDark, 1.5);
+    fillRR(g, bx - 6, by - 2, bw + 12, 6, 1, T.stoneDark);
+  } else {
+    fillPoly(g, [[bx - 6, wallY + 2], [bx + 28, by], [bx + bw - 28, by], [bx + bw + 6, wallY + 2]], T.slate, T.stoneDark, 2);
+    line(g, bx + 28, by + 1.5, bx + bw - 28, by + 1.5, T.stoneDark, 1.5);
+  }
   // Barred windows: a dark recess behind three bars, under a stone lintel.
   for (const [wx, wy, ww, wh2] of JAIL.windows) {
     fillRR(g, wx - 3, wy - 5, ww + 6, 5, 1, T.stoneDark);
@@ -7814,6 +7941,26 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.clip();
     ctx.translate(0, (1 - ease) * (h + 4));
     fillEllipse(ctx, x + 4, y - 1, w * 0.55, 3, T.shadow);
+    if (env.pack === 'shire') {
+      // A barrow on the headstone's own footing: a turfed mound with a standing stone at its head, inside the
+      // same box the stone is clipped to, so the ghosts and the crowd keep the clearances they had.
+      ctx.beginPath();
+      ctx.ellipse(x, y, w * 0.78, h * 0.62, 0, Math.PI, TAU);
+      ctx.closePath();
+      ctx.fillStyle = T.graveGrass;
+      ctx.fill();
+      ctx.strokeStyle = T.graveEdge;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.globalAlpha = 0.5;
+      fillEllipse(ctx, x - w * 0.2, y - h * 0.3, w * 0.26, h * 0.1, T.moss);
+      ctx.globalAlpha = 1;
+      fillPoly(ctx, [
+        [x - 4.5, y - h * 0.5], [x - 3, y - h - 2], [x + 3.5, y - h - 1], [x + 5, y - h * 0.5],
+      ], T.graveStone, T.graveEdge, 1.5);
+      ctx.restore();
+      return;
+    }
     ctx.beginPath();
     if (variant === 0) {
       ctx.moveTo(x - w / 2, y);

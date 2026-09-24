@@ -256,6 +256,7 @@ pick. Only the name painted on a board changes.
 
 | Place | Village | Middle-earth |
 |---|---|---|
+| The open ground | A wash of grass | **Hedged fields**, a hillside with two more holes in it, and the Misty Mountains on the horizon |
 | The Workshop | Workbenches under an awning | **The Forge**: an anvil and a lit hearth under the canopy |
 | The Cottages | A cottage on the green | **Bag End**: a green hill with a round door and round windows |
 | The Porch | A porch house with a lantern | **The Green Dragon**: thatch, and a sign hanging under the porch |
@@ -265,7 +266,8 @@ pick. Only the name painted on a board changes.
 | The trees | Eight trees | Eight ents, each leaning its own way |
 | The lighthouse | A lighthouse sweeping its beam | A dark tower, and at night an Eye that sweeps it instead |
 | The border patrol | A guard in uniform | A grey pilgrim with a staff, who decides what passes |
-| The Jail, the Graveyard | Unchanged | Unchanged |
+| The Jail | A stone block under a slate roof | The same block, battlemented: an older keep |
+| The Graveyard | Headstones | Barrows, each with a standing stone at its head |
 
 In Middle-earth a session is a hobbit: curly hair, pointed ears, a waistcoat with brass buttons and big bare
 feet. It keeps the green village's five looks. Merged sessions cross to the Undying Lands in a grey ship with a
