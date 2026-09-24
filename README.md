@@ -235,6 +235,8 @@ The **Theme** dropdown in the top bar picks how the village is painted. Your cho
 - **Village**: the green village, as it has always been.
 - **Wild West**: a frontier town. Its sessions wear cowboy kit, its village is desert, its two rooms are a bank's
   counting room and a mine, and a locomotive hauls merged PRs across the flats.
+- **Middle-earth**: a green country. Its sessions are hobbits, its trees are ents, the cottage is a hobbit hole,
+  the guard at the border is a grey pilgrim, and a dark tower watches the coast with a burning eye.
 
 A theme is paint and lettering only. Every building stands on the footing it replaces, so nothing moves: the
 Board's columns, the Repos legend, the count pills and every clickable door read the same whichever theme you
@@ -252,6 +254,23 @@ pick. Only the name painted on a board changes.
 | The trees | Eight trees | Eight saguaros |
 | The Jail, the Graveyard | Unchanged | Unchanged |
 
+| Place | Village | Middle-earth |
+|---|---|---|
+| The Workshop | Workbenches under an awning | **The Forge**: an anvil and a lit hearth under the canopy |
+| The Cottages | A cottage on the green | **Bag End**: a green hill with a round door and round windows |
+| The Porch | A porch house with a lantern | **The Green Dragon**: thatch, and a sign hanging under the porch |
+| The Harbour | A deck and a pier | **The Grey Havens** |
+| Valhalla island | Sand, dune grass, a sand castle | **The Undying Lands**, under a white tower |
+| The sea | Water, ripples, foam | Unchanged: this pack keeps its sea |
+| The trees | Eight trees | Eight ents, each leaning its own way |
+| The lighthouse | A lighthouse sweeping its beam | A dark tower, and at night an Eye that sweeps it instead |
+| The border patrol | A guard in uniform | A grey pilgrim with a staff, who decides what passes |
+| The Jail, the Graveyard | Unchanged | Unchanged |
+
+In Middle-earth a session is a hobbit: curly hair, pointed ears, a waistcoat with brass buttons and big bare
+feet. It keeps the green village's five looks. Merged sessions cross to the Undying Lands in a grey ship with a
+star on its sail, the flower beds are mushrooms, and a lounger smokes a pipe rather than drinking.
+
 In the Wild West a session wears a hat, a waistcoat, a gun belt and a holstered revolver, with a sheriff's star,
 a bandana, a feather in the hatband, glasses or the hat alone to tell five sessions of one repo apart. Its
 colour, size, badge and lane are untouched. A horse trots the circuit the roads make, a range on the horizon has
@@ -263,8 +282,9 @@ voyage's long way round.
 Night means dark mode, not the clock: the scene follows your Mac's appearance setting. At night the sand castle's
 windows glow, the lighthouse sweeps its beam round, and the sand castle hall has a disco with a mirror ball and
 coloured spotlights. In the Wild West the mine has a band instead, and every five seconds two of the crowd go at
-it: a brawl with a **POW!**, then a shootout with a **BANG!**. The beam, the disco, the band, the fights, the
-horse and the ghosts all hold still when your Mac is set to reduce motion.
+it: a brawl with a **POW!**, then a shootout with a **BANG!**. In Middle-earth the hall has starlight, and the
+dark tower's Eye sweeps where the lighthouse beam did. The beam, the disco, the band, the fights, the starlight,
+the horse and the ghosts all hold still when your Mac is set to reduce motion.
 
 ### Visitors: PRs waiting on your review
 

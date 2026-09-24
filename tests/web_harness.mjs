@@ -3388,7 +3388,23 @@ check('the border patrol: booth, barrier and guard sit clear of the harbour, the
       for (const part of V.avatarBoxes('open_pr', V.PIER.x, y, k)) for (const name of ['guard', 'booth', 'platform']) assert(!V.boxesOverlap(part, patrol[name]), `a walker at ${k} on the pier at ${y} covers the ${name}`);
     }
   }
-  // Uniform, barrier and booth: khaki, navy-black and white, never a reserved state colour, in either theme.
+  // Whoever stands at the barrier, in every pack: three colours, never a reserved state colour, in either scheme.
+  // A pack may dress them how it likes (the frontier's khaki, the Shire's grey), but a guard that could be read as
+  // a state badge would say a session was blocked when it was only being waved through.
+  for (const pack of V.THEME_KEYS) {
+    for (const night of [false, true]) {
+      const scheme = `${pack} ${night ? 'dusk' : 'day'}`;
+      const R = V.resolveTheme(pack, night);
+      const T = { khaki: R.patrolKhaki, khakiShade: R.patrolKhakiShade, navy: R.patrolNavy, white: R.patrolWhite };
+      for (const [name, hex] of Object.entries(T)) {
+        for (const [state, r] of Object.entries(RESERVED)) {
+          assert(de00(hex, r) >= 12, `${scheme} ${name} ${hex} is too close to ${state} (${de00(hex, r).toFixed(1)})`);
+        }
+      }
+      assert(contrast(T.navy, T.white) >= 4.5 && contrast(INK_ON_KHAKI, T.khaki) >= 4.5,
+        `${scheme}: stripes and the guard's face read`);
+    }
+  }
   for (const theme of ['day', 'dusk']) {
     const T = V.PATROL_COLOURS[theme];
     eq(Object.keys(T).sort(), ['khaki', 'khakiShade', 'navy', 'white'], `${theme}: the patrol colours`);
@@ -4915,8 +4931,11 @@ check('the alpha the beam is measured at is the alpha it is drawn with', () => {
 check('the beam never washes out an avatar, the harbour, the border patrol or a boat', () => {
   const blend = (top, base, a) => `#${hexRgb(top).map((c, i) => Math.round(c * a + hexRgb(base)[i] * (1 - a)))
     .map((c) => Math.min(255, Math.max(0, c)).toString(16).padStart(2, '0')).join('')}`;
-  // WARM_LIGHT in the village: the one warm colour the windows, the lantern and the beam are all made of.
-  const WARM = '#f6dea0';
+  // The light a pack sweeps: the green village's and the frontier's warm lantern, and Middle-earth's red Eye.
+  // The beam's alphas are the same in every pack, so the colour is the only thing that changes what it does to
+  // what it falls on, and a redder light shifts a body further than a warm one at the same alpha.
+  const lightOf = (pack) => `#${V.resolveTheme(pack, true).beamLight.split(',')
+    .map((n) => Number(n.trim()).toString(16).padStart(2, '0')).join('')}`;
   // The most of the beam that can fall anywhere in a box, whatever the beam's angle.
   const peakOver = ([x, y, w, h]) => {
     let out = 0;
@@ -4966,28 +4985,42 @@ check('the beam never washes out an avatar, the harbour, the border patrol or a 
 
   // A body under the beam has to stay its own repo's colour. The palette's closest pair is 21.5 apart, so a lit
   // body that stays 18 from every other entry cannot be read as another repo.
-  let shift = { d: 0 };
-  let other = { d: Infinity };
-  let ink = { c: Infinity };
-  for (const e of V.REPO_PALETTE) {
-    const body = blend(WARM, e.dark, avatar.a);
-    const face = blend(WARM, e.ink, avatar.a);
-    if (de00(e.dark, body) > shift.d) shift = { d: de00(e.dark, body), e: e.name };
-    if (contrast(face, body) < ink.c) ink = { c: contrast(face, body), e: e.name };
-    for (const o of V.REPO_PALETTE) {
-      if (o !== e && de00(body, o.dark) < other.d) other = { d: de00(body, o.dark), e: e.name, o: o.name };
-    }
-  }
   assert(avatar.a <= 0.09, `the most beam a body ever sits in is low (${avatar.a.toFixed(4)} at the ${avatar.spot})`);
-  assert(shift.d <= 6, `a lit body barely shifts (${shift.d.toFixed(2)} on ${shift.e})`);
-  assert(other.d >= 18, `and stays ${other.d.toFixed(2)} from every other repo colour (${other.e} against ${other.o})`);
-  assert(ink.c >= 3, `its face still reads on it (${ink.c.toFixed(2)}:1 on ${ink.e})`);
+  // The worst any pack does, which is what the recorded figures below hold.
+  const worst = { shift: 0, other: Infinity, ink: Infinity };
+  for (const pack of V.THEME_KEYS) {
+    const WARM = lightOf(pack);
+    let shift = { d: 0 };
+    let other = { d: Infinity };
+    let ink = { c: Infinity };
+    for (const e of V.REPO_PALETTE) {
+      const body = blend(WARM, e.dark, avatar.a);
+      const face = blend(WARM, e.ink, avatar.a);
+      if (de00(e.dark, body) > shift.d) shift = { d: de00(e.dark, body), e: e.name };
+      if (contrast(face, body) < ink.c) ink = { c: contrast(face, body), e: e.name };
+      for (const o of V.REPO_PALETTE) {
+        if (o !== e && de00(body, o.dark) < other.d) other = { d: de00(body, o.dark), e: e.name, o: o.name };
+      }
+    }
+    assert(shift.d <= 6, `${pack}: a lit body barely shifts (${shift.d.toFixed(2)} on ${shift.e})`);
+    assert(other.d >= 18, `${pack}: and stays ${other.d.toFixed(2)} from every other repo colour (${other.e} against ${other.o})`);
+    assert(ink.c >= 3, `${pack}: its face still reads on it (${ink.c.toFixed(2)}:1 on ${ink.e})`);
+    worst.shift = Math.max(worst.shift, shift.d);
+    worst.other = Math.min(worst.other, other.d);
+    worst.ink = Math.min(worst.ink, ink.c);
+  }
   assert(harbour <= 0.1 && boat.a <= 0.09 && sign <= 0.1,
     `the harbour ${harbour.toFixed(4)}, a boat ${boat.a.toFixed(4)} and the harbour sign ${sign.toFixed(4)} stay dim`);
 
-  // The border patrol's uniform keeps the 12 it holds from every reserved state colour, under the beam too.
+  // Whoever stands at the barrier keeps the 12 they hold from every reserved state colour, under the beam too,
+  // in every pack: the Shire's grey robe stands in the same light the frontier's khaki does.
   let uniform = { d: Infinity };
-  for (const [name, hex] of Object.entries(V.PATROL_COLOURS.dusk)) {
+  const lit4 = V.THEME_KEYS.flatMap((pack) => {
+    const R = V.resolveTheme(pack, true);
+    return [['khaki', R.patrolKhaki], ['khakiShade', R.patrolKhakiShade], ['navy', R.patrolNavy], ['white', R.patrolWhite]]
+      .map(([name, hex]) => [`${pack}/${name}`, hex, lightOf(pack)]);
+  });
+  for (const [name, hex, WARM] of lit4) {
     const lit = blend(WARM, hex, patrol);
     for (const [state, colour] of Object.entries(RESERVED)) {
       if (de00(lit, colour) < uniform.d) uniform = { d: de00(lit, colour), name, state };
@@ -5037,7 +5070,7 @@ check('the beam never washes out an avatar, the harbour, the border patrol or a 
     avatar: +avatar.a.toFixed(4), avatarSpot: avatar.spot, harbour: +harbour.toFixed(4),
     boat: +boat.a.toFixed(4), harbourSign: +sign.toFixed(4), patrol: +patrol.toFixed(4),
     fixtureBadges: fixtures.length, litBadges,
-    bodyShift: +shift.d.toFixed(2), nearestOtherRepo: +other.d.toFixed(2), faceInk: +ink.c.toFixed(2),
+    bodyShift: +worst.shift.toFixed(2), nearestOtherRepo: +worst.other.toFixed(2), faceInk: +worst.ink.toFixed(2),
     uniformFromState: +uniform.d.toFixed(2),
   };
 });

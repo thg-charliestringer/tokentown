@@ -3059,6 +3059,7 @@ const THEMES = {
     tree: '#8dad85', treeDark: '#789873', treeLight: '#a7c29b', trunk: '#8b6c50',
     flowers: ['#d8c6e2', '#f4eedc', '#e2c8c8', '#c8d5e7'],
     lighthouse: '#ece7db', slate: '#7c8a96', lanternGlass: '#ddd6c3', cat: '#8f8176',
+    towerStone: '#ece7db', towerEdge: '#7c8a96', beamLight: '246, 222, 160',
     shadow: 'rgba(45, 50, 38, 0.17)',
     signBoard: '#ebdec4', signBorder: '#86664a', signText: '#3a3027', signMuted: '#65594b',
     plateBg: 'rgba(255, 255, 255, 0.96)', plateBorder: 'rgba(33, 37, 41, 0.2)', plateText: '#212529', plateMuted: '#565e66',
@@ -3094,6 +3095,7 @@ const THEMES = {
     tree: '#36493c', treeDark: '#2d3e32', treeLight: '#41584a', trunk: '#4e3e30',
     flowers: ['#8f7fa1', '#b9b3a2', '#a08989', '#8898ad'],
     lighthouse: '#9a958b', slate: '#56616b', lanternGlass: '#6a665b', cat: '#6f655d',
+    towerStone: '#9a958b', towerEdge: '#56616b', beamLight: '246, 222, 160',
     shadow: 'rgba(0, 0, 0, 0.3)',
     signBoard: '#d9caab', signBorder: '#5c4530', signText: '#2e261e', signMuted: '#5c5144',
     plateBg: 'rgba(33, 37, 41, 0.95)', plateBorder: 'rgba(255, 255, 255, 0.2)', plateText: '#f1f3f5', plateMuted: '#b4bcc4',
@@ -3148,6 +3150,7 @@ const WEST_DAY = {
   tree: '#7f9a6b', treeDark: '#67805a', treeLight: '#96ae7e', trunk: '#8b6c50',
   flowers: ['#e0b2bf', '#f4eedc', '#dcab79', '#c7b0d4'],
   lighthouse: '#d9c6a4', slate: '#8a7b66', cat: '#8f8176',
+  towerStone: '#d9c6a4', towerEdge: '#8a7b66',
   shadow: 'rgba(84, 62, 36, 0.18)',
   signBoard: '#e7d7b4', signBorder: '#7d5a38', signText: '#3a2f22', signMuted: '#6a5a45',
   castle: '#c98f62', castleShade: '#ae7850', castleDark: '#875a3a', castleDoor: '#4a3526',
@@ -3179,6 +3182,7 @@ const WEST_DUSK = {
   tree: '#38492f', treeDark: '#2d3b27', treeLight: '#44583a', trunk: '#4e3e30',
   flowers: ['#8e7480', '#b9b3a2', '#93765a', '#7f7391'],
   lighthouse: '#968a76', slate: '#5e5344', cat: '#6f655d',
+  towerStone: '#968a76', towerEdge: '#5e5344',
   shadow: 'rgba(0, 0, 0, 0.32)',
   signBoard: '#d9caab', signBorder: '#54402a', signText: '#2e261e', signMuted: '#5c5144',
   castle: '#6d5340', castleShade: '#5b4534', castleDark: '#402f23', castleDoor: '#201913',
@@ -3302,9 +3306,11 @@ const SHIRE_DAY = {
   wall: '#ece4d0', wallShade: '#d6cbb0', roofs: ['#c19a5e', '#6f7a80', '#ad8a52', '#7b6a50'],
   windowDark: '#7e8a90', porchWindow: '#7e8a90', door: '#5f7d4e',
   stone: '#bcc0b2', stoneDark: '#8f9486',
-  tree: '#d9c06a', treeDark: '#bda152', treeLight: '#eddf96', trunk: '#cdc7b8',
+  tree: '#d9c06a', treeDark: '#bda152', treeLight: '#eddf96', trunk: '#8a7358',
   flowers: ['#e6c6dc', '#f6f0e0', '#d6dfa6', '#c6d0ea'],
   lighthouse: '#f0ece0', slate: '#8a93a0', lanternGlass: '#e4dcc4', cat: '#8a7f70',
+  towerStone: '#3e3c44', towerEdge: '#221f28', beamLight: '255, 96, 40',
+  patrolKhaki: '#8e8c84', patrolKhakiShade: '#6d6b63', patrolNavy: '#33312c',
   shadow: 'rgba(40, 52, 34, 0.18)',
   signBoard: '#eee3c6', signBorder: '#7a6238', signText: '#33301f', signMuted: '#5f5a42',
   castle: '#e9e6dc', castleShade: '#d3cfc0', castleDark: '#a09a88', castleDoor: '#5c5647',
@@ -3330,9 +3336,11 @@ const SHIRE_DUSK = {
   wall: '#565244', wallShade: '#48453a', roofs: ['#5e4a34', '#454e55', '#544330', '#4b4335'],
   windowDark: '#2b3238', porchWindow: '#e8c985', door: '#33452b',
   stone: '#5c6057', stoneDark: '#464a43',
-  tree: '#6b5c2f', treeDark: '#564a26', treeLight: '#877443', trunk: '#5e5b52',
+  tree: '#6b5c2f', treeDark: '#564a26', treeLight: '#877443', trunk: '#4a3d2e',
   flowers: ['#8a6f82', '#b9b3a2', '#7e8558', '#71789a'],
   lighthouse: '#9b968a', slate: '#565e69', lanternGlass: '#6a665b', cat: '#6b6157',
+  towerStone: '#2a2830', towerEdge: '#151319', beamLight: '255, 110, 50',
+  patrolKhaki: '#9c998e', patrolKhakiShade: '#6a675e', patrolNavy: '#211f1c',
   shadow: 'rgba(0, 0, 0, 0.32)',
   signBoard: '#ded0ad', signBorder: '#54442a', signText: '#2c2718', signMuted: '#5a5340',
   castle: '#6d6a60', castleShade: '#5b584f', castleDark: '#403e37', castleDoor: '#22201a',
@@ -3355,6 +3363,13 @@ const SHIRE_NAMES = Object.freeze({
   harbour: 'The Grey Havens', beach: 'Undying Lands',
 });
 const SHIRE_ROOMS = Object.freeze({ castle: 'The White Halls', cottages: 'The Parlour' });
+
+// The hobbit kit. Read off the body box like the frontier one, and held to what a character declares: the body
+// box reaches 19 either side of the feet and the widest body is 18, so an ear may tip at 19 and no further, and
+// the leg box reaches 9, which is what sizes a foot.
+export const SHIRE_KIT = Object.freeze({
+  collar: 0.62, lapel: 0.78, earTip: 19, footHalf: 9, hairRows: 6,
+});
 
 export const DEFAULT_THEME = 'village';
 
@@ -3624,6 +3639,23 @@ function drawMargarita(g, T, x, y, tilt = 0, s = 1) {
     g.restore();
     return;
   }
+  if (T.pack === 'shire') {
+    // A pipe, with three rings going up. Pipe-weed is the Shire's one contribution to the arts.
+    line(g, -7, 2, 3, -1, T.woodDark, 2.4);
+    fillRR(g, 2, -8, 6, 9, 2, T.woodDark);
+    fillEllipse(g, 5, -8, 3.2, 1.6, T.flame);
+    g.globalAlpha = 0.5;
+    for (let i = 0; i < 3; i += 1) {
+      g.beginPath();
+      g.arc(6 + i * 1.5, -14 - i * 5, 2.2 + i * 1.1, 0, TAU);
+      g.strokeStyle = `rgb(${T.smoke})`;
+      g.lineWidth = 1.2;
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+    g.restore();
+    return;
+  }
   fillPoly(g, [[-7.5, -9], [7.5, -9], [2, -2.5], [-2, -2.5]], T.drink, T.glassEdge, 1);
   line(g, -7.5, -9, 7.5, -9, T.glass, 1.8);
   line(g, 0, -2.5, 0, 4.5, T.glassEdge, 1.4);
@@ -3676,6 +3708,62 @@ function drawLocomotive(g, T, { sail, part }) {
   }
 }
 
+// A grey ship on the boat's own hull: the passenger sits between the same two gunwales, and the swan's neck and
+// the sail stand where the rowboat's mast and sail do, inside HULL and BOAT_TOP.
+function drawGreyShip(g, T, { sail, part }) {
+  const hull = () => {
+    g.beginPath();
+    g.moveTo(-60, -10);
+    g.quadraticCurveTo(-30, -16, 30, -16);
+    g.quadraticCurveTo(52, -14, 60, -10);
+    g.quadraticCurveTo(52, 14, 32, 17);
+    g.lineTo(-36, 17);
+    g.quadraticCurveTo(-56, 13, -60, -10);
+    g.closePath();
+  };
+  if (part !== 'front') {
+    if (sail) {
+      line(g, 4, -10, 4, -86, T.woodDark, 3);
+      fillPoly(g, [[6, -82], [6, -18], [46, -22], [40, -74]], T.sailCloth, T.towerEdge, 1.5);
+      fillPoly(g, [[2, -82], [2, -24], [-28, -26]], T.sailCloth, T.towerEdge, 1.5);
+      // A white star on the sail, which is the one device a grey ship carries.
+      const star = [];
+      for (let i = 0; i < 10; i += 1) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const d = i % 2 ? 2.4 : 6;
+        star.push([24 + Math.cos(a) * d, -50 + Math.sin(a) * d]);
+      }
+      fillPoly(g, star, T.flagAlt, T.slate, 0.8);
+    }
+    hull();
+    g.fillStyle = T.lighthouse;
+    g.fill();
+    g.strokeStyle = T.slate;
+    g.lineWidth = 2;
+    g.stroke();
+    fillEllipse(g, 0, -13, 52, 4.5, T.slate);
+  }
+  if (part !== 'back') {
+    g.save();
+    g.beginPath();
+    g.rect(-70, -8, 140, 33);
+    g.clip();
+    hull();
+    g.fillStyle = T.lighthouse;
+    g.fill();
+    g.strokeStyle = T.slate;
+    g.lineWidth = 2;
+    g.stroke();
+    g.restore();
+    line(g, -54, -6, 54, -6, T.slate, 1.6);
+    // The swan's neck at the bow, inside the hull's own length.
+    line(g, 52, -14, 57, -34, T.lighthouse, 5);
+    line(g, 52, -14, 57, -34, T.slate, 1.4);
+    fillEllipse(g, 55, -37, 6, 4.5, T.lighthouse, T.slate, 1.4);
+    fillPoly(g, [[59, -37], [66, -35], [59, -33]], T.flag);
+  }
+}
+
 function drawRowboat(g, T, x, y, { tilt = 0, s = 1, dir = 1, sail = false, part = 'all' } = {}) {
   g.save();
   g.translate(x, y);
@@ -3683,6 +3771,11 @@ function drawRowboat(g, T, x, y, { tilt = 0, s = 1, dir = 1, sail = false, part 
   g.scale(s * (dir < 0 ? -1 : 1), s);
   if (T.pack === 'west') {
     drawLocomotive(g, T, { sail, part });
+    g.restore();
+    return;
+  }
+  if (T.pack === 'shire') {
+    drawGreyShip(g, T, { sail, part });
     g.restore();
     return;
   }
@@ -4071,9 +4164,79 @@ function paintSaguaro(g, T, x, y, r) {
   fillEllipse(g, x, y - r * 1.95, r * 0.17, r * 0.1, T.treeLight);
 }
 
+// An ent on the tree's own footing, inside the same `treeBox`: a bole with a face in it, two boughs for arms,
+// roots for feet and a mallorn's gold crown for hair. Which way it leans and which arm it lifts come off its own
+// position, so eight of them are eight different ents rather than one drawn eight times. They are painted into
+// the background layer with everything else, so an ent stands where a tree stood and does not walk: nothing in
+// the village moves except what a session is doing.
+function paintEnt(g, T, x, y, r) {
+  const turn = ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1 + 1) % 1;
+  const lean = (turn - 0.5) * 0.36 * r;
+  const tx = x + lean;
+  const top = y - r * 1.55;
+  const w = r * 0.46;
+  fillEllipse(g, x + 4, y + 2, r * 0.85, r * 0.3, T.shadow);
+  // Roots: two splayed feet, inside the box's own width.
+  for (const side of [-1, 1]) {
+    const rx = x + side * r * 0.4;
+    fillPoly(g, [[x + side * w * 0.3, y - r * 0.45], [rx + side * r * 0.2, y], [rx - side * r * 0.16, y]], T.trunk);
+  }
+  // The bole, leaning the way this one leans.
+  fillPoly(g, [
+    [x - w * 0.62, y - r * 0.1], [x + w * 0.62, y - r * 0.1], [tx + w * 0.5, top], [tx - w * 0.5, top],
+  ], T.trunk, T.treeDark, 1.4);
+  // Two boughs for arms, one lifted higher than the other, swapping by which way it leans.
+  const high = turn > 0.5 ? 1 : -1;
+  for (const side of [-1, 1]) {
+    const lift = side === high ? r * 1.25 : r * 0.85;
+    const reach = side === high ? r * 0.82 : r * 0.7;
+    line(g, tx + side * w * 0.4, y - r * 0.95, x + side * reach, y - lift, T.trunk, Math.max(2, r * 0.13));
+    for (const k of [-0.3, 0.3]) {
+      line(g, x + side * reach, y - lift, x + side * (reach + r * 0.16), y - lift - r * (0.16 + k * 0.2), T.treeDark, Math.max(1.4, r * 0.07));
+    }
+  }
+  // The face: two eyes under a heavy brow, and a beard of moss.
+  const fy = y - r * 1.12;
+  // The beard first, so the face is laid over it rather than the other way round.
+  fillPoly(g, [
+    [tx - w * 0.42, fy + r * 0.14], [tx + w * 0.42, fy + r * 0.14],
+    [tx + w * 0.22, y - r * 0.5], [tx, y - r * 0.42], [tx - w * 0.26, y - r * 0.52],
+  ], T.moss);
+  for (const side of [-1, 1]) {
+    fillEllipse(g, tx + side * w * 0.36, fy, r * 0.1, r * 0.12, T.treeLight);
+    fillEllipse(g, tx + side * w * 0.36, fy + r * 0.02, r * 0.05, r * 0.07, T.woodDark);
+    // A heavy brow over each eye, which is most of what makes bark read as a face.
+    line(g, tx + side * w * 0.14, fy - r * 0.15, tx + side * w * 0.56, fy - r * 0.19, T.treeDark, Math.max(1.6, r * 0.075));
+  }
+  // The crown, which is a mallorn's. The bole already stands 1.55r up, so the crown has 0.53r of headroom left in
+  // the box and takes 0.50r of it: centre 0.16r above the bole, half-height 0.34r.
+  fillEllipse(g, tx - r * 0.36, top - r * 0.04, r * 0.36, r * 0.24, T.treeDark);
+  fillEllipse(g, tx + r * 0.36, top - r * 0.06, r * 0.34, r * 0.22, T.treeDark);
+  fillEllipse(g, tx, top - r * 0.18, r * 0.5, r * 0.32, T.tree);
+  fillEllipse(g, tx - r * 0.12, top - r * 0.3, r * 0.22, r * 0.13, T.treeLight);
+}
+
+// A mallorn on the tree's own footing: a silver bole and a gold crown, inside the same `treeBox`. The crown tops
+// out at 2.04r against the box's 2.08r, and reaches 0.98r wide against its 1.07r.
+function paintMallorn(g, T, x, y, r) {
+  fillEllipse(g, x + 4, y + 2, r * 0.9, r * 0.3, T.shadow);
+  fillRR(g, x - r * 0.13, y - r * 1.5, r * 0.26, r * 1.5 + 2, r * 0.13, T.trunk);
+  // Two boughs lifting away from the bole, which is what keeps a tall tree from reading as a lollipop.
+  line(g, x, y - r * 1.15, x - r * 0.42, y - r * 1.5, T.trunk, Math.max(1.6, r * 0.09));
+  line(g, x, y - r * 1.3, x + r * 0.4, y - r * 1.62, T.trunk, Math.max(1.6, r * 0.09));
+  fillEllipse(g, x - r * 0.42, y - r * 1.62, r * 0.46, r * 0.34, T.treeDark);
+  fillEllipse(g, x + r * 0.42, y - r * 1.7, r * 0.44, r * 0.32, T.treeDark);
+  fillEllipse(g, x, y - r * 1.6, r * 0.62, r * 0.44, T.tree);
+  fillEllipse(g, x - r * 0.16, y - r * 1.78, r * 0.3, r * 0.2, T.treeLight);
+}
+
 function paintTree(g, T, x, y, r) {
   if (T.pack === 'west') {
     paintSaguaro(g, T, x, y, r);
+    return;
+  }
+  if (T.pack === 'shire') {
+    paintEnt(g, T, x, y, r);
     return;
   }
   fillEllipse(g, x + 4, y + 2, r * 0.9, r * 0.3, T.shadow);
@@ -4105,10 +4268,19 @@ function paintTrees(g, T) {
 
 function paintFlowers(g, T, rand) {
   const beds = [[150, 890], [300, 886], [470, 250], [680, 884], [760, 612], [1150, 300]];
+  const shire = T.pack === 'shire';
   for (const [bx, by] of beds) {
     for (let i = 0; i < 9; i++) {
       const x = bx + (rand() - 0.5) * 42;
       const y = by + (rand() - 0.5) * 12;
+      if (shire) {
+        // Mushrooms on the flowers' own beds and the same seed, which the Shire has rather more of than flowers.
+        fillEllipse(g, x, y + 3, 2.8, 1.2, T.shadow);
+        fillRR(g, x - 1, y - 1, 2, 5, 1, T.wall);
+        fillEllipse(g, x, y - 1, 3.4, 2.4, T.flowers[i % T.flowers.length]);
+        fillEllipse(g, x - 1, y - 2, 1, 0.7, T.wall);
+        continue;
+      }
       fillEllipse(g, x, y + 3, 2.6, 1.2, T.treeDark);
       fillEllipse(g, x, y, 2.6, 2.6, T.flowers[i % T.flowers.length]);
     }
@@ -4146,9 +4318,57 @@ function paintBank(g, T) {
 }
 
 // The cottage on the green: one small house with a door to click. Idle and recent rows are inside, not in front.
+// Bag End, built around the cottage's own rect, door and windows: a green hill where the walls and the pitch
+// were, a round door on the door's own footing, and round panes in the same two openings, so the lit-window
+// drawing that follows the crowd inside still fills exactly what is painted.
+function paintBagEnd(g, T) {
+  const bx = COTTAGE.x;
+  const by = COTTAGE.y;
+  fillEllipse(g, bx + 6, by + 4, 82, 10, T.shadow);
+  // The hill: the upper half of an ellipse, so it stops on the cottage's own base line rather than running down
+  // past the ground the place declares.
+  const dome = (inset, fill) => {
+    g.beginPath();
+    g.ellipse(bx, by, 80 - inset, 138 - inset * 1.7, 0, Math.PI, TAU);
+    g.closePath();
+    g.fillStyle = fill;
+    g.fill();
+  };
+  dome(0, T.grassDark);
+  dome(5, T.grass);
+  g.globalAlpha = 0.5;
+  for (const [dx, dy, rx] of [[-46, 46, 22], [30, 30, 26], [-10, 76, 30]]) {
+    fillEllipse(g, bx + dx, by - dy, rx, rx * 0.34, T.grassLight);
+  }
+  g.globalAlpha = 1;
+  fillRR(g, bx + 54, 76, 15, 34, 2, T.stoneDark);
+  fillEllipse(g, bx + 61.5, 74, 10, 4, T.stone);
+  // The round door, on the square door's own centre.
+  fillEllipse(g, bx, 190, 27, 27, T.wood);
+  fillEllipse(g, bx, 190, 23, 23, T.door, T.woodDark, 1.5);
+  line(g, bx, 167, bx, 213, T.woodDark, 1.2);
+  fillEllipse(g, bx, 190, 3.2, 3.2, T.thatch, T.woodDark, 1);
+  // The same two openings, as round panes: `litWindow` fills each box as a capsule, which is this shape.
+  for (const [x, y, w, h] of COTTAGE_WINDOWS) {
+    const r = Math.min(w, h) / 2;
+    fillRR(g, x - 4, y - 4, w + 8, h + 8, r + 4, T.wood, T.woodDark, 1.5);
+    fillRR(g, x, y, w, h, r, T.windowDark);
+    line(g, x + w / 2, y, x + w / 2, y + h, T.woodDark, 1.2);
+  }
+  fillRR(g, bx - 22, by, 44, 8, 2, T.stone, T.stoneDark, 1);
+  fillRR(g, bx + 74, 178, 22, 36, 3, T.wood, T.woodDark, 1.5);
+  fillEllipse(g, bx + 85, 178, 11, 4, T.woodLight);
+  fillRR(g, bx - 60, 168, 34, 10, 2, T.woodDark);
+  for (let i = 0; i < 4; i++) fillEllipse(g, bx - 55 + i * 9, 166, 3, 3, T.flowers[i % T.flowers.length]);
+}
+
 function paintCottage(g, T) {
   if (T.pack === 'west') {
     paintBank(g, T);
+    return;
+  }
+  if (T.pack === 'shire') {
+    paintBagEnd(g, T);
     return;
   }
   const bx = COTTAGE.x;
@@ -4194,6 +4414,20 @@ function paintWorkshop(g, T) {
   }
   line(g, 480, 352, 1164, 352, 'rgba(255, 255, 255, 0.5)', 2);
   g.globalAlpha = 1;
+  if (T.pack === 'shire') {
+    // A smith's shop on the shed's own footing: an anvil where the sawhorse stood and a hearth where the cabinet
+    // did, both inside the shed's own numbers, so the Workshop's two road contacts are untouched.
+    fillRR(g, 500, 508, 34, 20, 2, T.woodDark);
+    fillPoly(g, [[496, 494], [540, 494], [534, 502], [530, 508], [504, 508], [500, 502]], T.steel, T.stoneDark, 1.5);
+    fillPoly(g, [[534, 494], [548, 490], [540, 500]], T.steel, T.stoneDark, 1.5);
+    fillRR(g, 1104, 486, 48, 42, 3, T.stone, T.stoneDark, 2);
+    fillRR(g, 1112, 500, 32, 24, 2, T.castleDoor);
+    fillEllipse(g, 1128, 518, 13, 7, T.flame);
+    fillEllipse(g, 1128, 520, 7, 4, T.flameCore);
+    fillPoly(g, [[1100, 486], [1156, 486], [1146, 466], [1110, 466]], T.stoneDark);
+    fillRR(g, 1120, 440, 16, 28, 2, T.stoneDark);
+    return;
+  }
   if (west) {
     // A depot's valance under the canopy, and the platform edge with the rails beyond it. Both stay inside the
     // shed's own numbers, so the Workshop's two road contacts are untouched.
@@ -4225,7 +4459,22 @@ function paintPorchHouse(g, T) {
   fillEllipse(g, 1120, 830, 150, 12, T.shadow);
   fillRR(g, 1188, 614, 16, 44, 2, T.stoneDark);
   fillRR(g, 1012, 684, 222, 118, 3, T.wall);
-  if (west) {
+  if (T.pack === 'shire') {
+    // Thatch on the pitch's own triangle, and the inn's sign hanging under the porch beam.
+    fillPoly(g, [[994, 694], [1123, 604], [1252, 694]], T.thatch, T.thatchDark, 2);
+    g.globalAlpha = 0.45;
+    for (let i = 1; i < 7; i += 1) {
+      const k = i / 7;
+      line(g, 994 + (1123 - 994) * k, 694 - (694 - 604) * k, 1252 - (1252 - 1123) * k, 694 - (694 - 604) * k, T.thatchDark, 2);
+    }
+    g.globalAlpha = 1;
+    line(g, 1150, 778, 1150, 762, T.woodDark, 2.5);
+    line(g, 1190, 778, 1190, 762, T.woodDark, 2.5);
+    fillRR(g, 1138, 738, 64, 26, 3, T.signBoard, T.signBorder, 2);
+    // A dragon on the board: a long body, a wing and a tail, small enough to read as a painted sign.
+    fillPoly(g, [[1146, 756], [1158, 746], [1172, 750], [1186, 742], [1194, 750], [1180, 756], [1160, 758]], T.door);
+    fillPoly(g, [[1166, 748], [1174, 738], [1180, 748]], T.door);
+  } else if (west) {
     // A false front where the pitch was, inside the same triangle: flat to the roof's own apex at 604, so nothing
     // here rises any nearer the road than the porch house already did.
     fillRR(g, 994, 604, 258, 92, 2, T.wallShade, T.woodDark, 2);
@@ -4236,7 +4485,7 @@ function paintPorchHouse(g, T) {
     g.globalAlpha = 1;
     // The two brackets that hold a false front up, which is what says it is a front and not a wall.
     for (const bx of [1006, 1232]) fillPoly(g, [[bx, 696], [bx + 14, 696], [bx, 682]], T.woodDark);
-  } else {
+  } else if (T.pack !== 'shire') {
     fillPoly(g, [[994, 694], [1123, 604], [1252, 694]], T.roofs[0], 'rgba(0, 0, 0, 0.2)', 2);
   }
   if (west) {
@@ -4311,7 +4560,7 @@ function paintHarbour(g, T) {
     fillEllipse(g, x - rx * 0.2, y - ry * 0.35, rx * 0.55, ry * 0.45, T.stone);
   }
   const lh = [[1530, 172], [1568, 172], [1561, 82], [1537, 82]];
-  fillPoly(g, lh, T.lighthouse, T.slate, 1.5);
+  fillPoly(g, lh, T.towerStone, T.towerEdge, 1.5);
   g.save();
   g.beginPath();
   lh.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
@@ -4325,14 +4574,28 @@ function paintHarbour(g, T) {
     g.strokeStyle = T.woodDark;
     g.lineWidth = 1.2;
     for (let x = 1528; x < 1576; x += 8) line(g, x, 82, x, 172, T.woodDark, 1.2);
+  } else if (T.pack === 'shire') {
+    // A dark tower: buttresses up the shaft instead of painted bands, and no light of its own. What burns at the
+    // top is drawn with the night lighting, where the beam is aimed from.
+    g.fillStyle = T.towerEdge;
+    for (const x of [1528, 1546, 1564]) g.fillRect(x, 82, 5, 90);
+    g.fillStyle = T.towerStone;
+    for (const y of [96, 122, 148]) g.fillRect(1520, y, 60, 4);
   } else {
     g.fillStyle = T.slate;
     g.fillRect(1520, 108, 60, 12);
     g.fillRect(1520, 142, 60, 12);
   }
   g.restore();
-  fillRR(g, 1536, 66, 26, 17, 3, T.lanternGlass, T.slate, 1.5);
-  fillPoly(g, [[1532, 68], [1549, 52], [1566, 68]], T.roofs[1]);
+  if (T.pack === 'shire') {
+    fillRR(g, 1536, 66, 26, 17, 3, T.towerStone, T.towerEdge, 1.5);
+    // Two horns either side of the socket the Eye sits in, on the cap's own footing.
+    fillPoly(g, [[1532, 68], [1536, 46], [1541, 68]], T.towerEdge);
+    fillPoly(g, [[1557, 68], [1562, 46], [1566, 68]], T.towerEdge);
+  } else {
+    fillRR(g, 1536, 66, 26, 17, 3, T.lanternGlass, T.slate, 1.5);
+    fillPoly(g, [[1532, 68], [1549, 52], [1566, 68]], T.roofs[1]);
+  }
 
   g.lineCap = 'round';
   for (const [x, y] of [[1296, 500], [1300, 146], [1158, 690], [1150, 820]]) {
@@ -6004,10 +6267,10 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
 
   // A warm halo around a window or a lantern, then the pane itself. The cottages, the sand castle and the
   // lighthouse share it, so the village has one language for a light burning inside something.
-  function warmHalo(x, y, r, peak) {
+  function warmHalo(x, y, r, peak, rgb = WARM_LIGHT) {
     const glow = ctx.createRadialGradient(x, y, 2, x, y, r);
-    glow.addColorStop(0, `rgba(${WARM_LIGHT}, ${peak})`);
-    glow.addColorStop(1, `rgba(${WARM_LIGHT}, 0)`);
+    glow.addColorStop(0, `rgba(${rgb}, ${peak})`);
+    glow.addColorStop(1, `rgba(${rgb}, 0)`);
     ctx.fillStyle = glow;
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
   }
@@ -6063,8 +6326,17 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     if (env.night) {
       for (const box of CASTLE_WINDOWS) litWindow(T, box, 26, false);
       const [lx, ly, lw, lh] = LIGHTHOUSE.lantern;
-      warmHalo(LIGHTHOUSE.x, LIGHTHOUSE.y, LIGHTHOUSE.glow, 0.5);
-      fillRR(ctx, lx + 2, ly + 2, lw - 4, lh - 4, 2, T.windowLit, T.slate, 1.2);
+      warmHalo(LIGHTHOUSE.x, LIGHTHOUSE.y, LIGHTHOUSE.glow, 0.5, T.beamLight);
+      if (env.pack === 'shire') {
+        // The Eye, in the lantern's own opening: a lidded almond with a slit, looking wherever the beam points.
+        const cx = lx + lw / 2;
+        const cy = ly + lh / 2;
+        const look = Math.cos(beamAngle(env.t, env.reduced)) * 3;
+        fillPoly(ctx, [[lx, cy], [cx, ly + 1], [lx + lw, cy], [cx, ly + lh - 1]], `rgb(${T.beamLight})`, T.towerEdge, 1.2);
+        fillEllipse(ctx, cx + look, cy, 2.6, 5.2, T.towerEdge);
+      } else {
+        fillRR(ctx, lx + 2, ly + 2, lw - 4, lh - 4, 2, T.windowLit, T.slate, 1.2);
+      }
     }
 
     const needs = countOf('needs_you');
@@ -6195,6 +6467,21 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   function drawPalm(env, x, y, h, lean) {
     const T = env.theme;
     const sway = env.reduced ? 0 : Math.sin(env.t * 0.8 + x * 0.01) * 1 + Math.sin(env.t * 1.9 + y) * 0.35;
+    if (env.pack === 'shire') {
+      // A white tree on the palm's footing, keeping the sway that is the island's one bit of ambient motion.
+      ctx.save();
+      ctx.translate(sway * 0.8, 0);
+      fillEllipse(ctx, x + 10, y + 2, 26, 6, T.shadow);
+      const w = h * 0.1;
+      fillRR(ctx, x - w / 2, y - h, w, h, w / 2, T.palmTrunk);
+      for (const [ax, ay] of [[-0.3, 0.72], [0.28, 0.66], [-0.16, 0.86], [0.2, 0.9]]) {
+        line(ctx, x, y - h * 0.62, x + h * ax, y - h * ay, T.palmTrunk, w * 0.5);
+        fillEllipse(ctx, x + h * ax, y - h * ay, h * 0.16, h * 0.12, T.palm);
+      }
+      fillEllipse(ctx, x, y - h * 1.02, h * 0.2, h * 0.14, T.palmDark);
+      ctx.restore();
+      return;
+    }
     if (env.west) {
       // A saguaro on the palm's footing: the island's one bit of ambient sway, so it keeps swaying.
       ctx.save();
@@ -6583,6 +6870,55 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.restore();
   }
 
+  // Curly hair over the crown, pointed ears at the temples and a waistcoat: clipped to the body's own silhouette,
+  // so one set of numbers dresses a round, a square and a tall body. Hair and waistcoat take the body's edge
+  // colour and the buttons its accent, both of which the palette already holds clear of every body.
+  function drawShireKit(x, top, m, shape, tint, edge, accent, eyeY, waistcoat) {
+    const K = SHIRE_KIT;
+    const bottom = top + m.h;
+    const half = m.w / 2;
+    ctx.save();
+    ctx.beginPath();
+    if (shape === 'round') ctx.ellipse(x, top + m.h / 2, half, m.h / 2, 0, 0, TAU);
+    else rr(ctx, x - half, top, m.w, m.h, shape === 'tall' ? half : 9);
+    ctx.clip();
+    // A row of curls across the crown, and two more tucked behind the ears.
+    for (let i = 0; i < K.hairRows; i += 1) {
+      const t = i / (K.hairRows - 1);
+      fillEllipse(ctx, x - half + 2 + t * (m.w - 4), top + 5 + Math.sin(t * Math.PI) * -2, 6, 5.5, edge);
+    }
+    fillEllipse(ctx, x - half + 3, top + 13, 5, 6, edge);
+    fillEllipse(ctx, x + half - 3, top + 13, 5, 6, edge);
+    // The waistcoat, below the lowest mouth of the three shapes, with its two buttons. A deck chair and a boat's
+    // gunwale both cut across it, so a lounger and a passenger go without, the way the frontier belt does.
+    if (waistcoat) {
+      const collarY = top + m.h * K.collar;
+      ctx.fillStyle = edge;
+      ctx.fillRect(x - half, collarY, m.w, bottom - collarY);
+      fillPoly(ctx, [[x - m.w * 0.28, collarY], [x + m.w * 0.28, collarY], [x, top + m.h * K.lapel]], tint);
+      fillEllipse(ctx, x - 5, top + m.h * 0.86, 2, 2, accent);
+      fillEllipse(ctx, x + 5, top + m.h * 0.86, 2, 2, accent);
+    }
+    ctx.restore();
+    // The ears sit outside the silhouette, so they are drawn after the clip is lifted. They tip at exactly what
+    // the character's own box allows either side, and no further.
+    for (const side of [-1, 1]) {
+      const base = x + side * (half - 1);
+      fillPoly(ctx, [
+        [base, eyeY + 4], [base, eyeY - 5], [x + side * K.earTip, eyeY - 9],
+      ], tint, edge, 1.2);
+    }
+  }
+
+  // A hobbit's feet, on the legs' own footing and inside the 9 px either side the leg box declares.
+  function drawShireFeet(x, y, edge) {
+    for (const side of [-1, 1]) {
+      fillEllipse(ctx, x + side * 5.5, y - 1.5, 3.5, 3, edge);
+      line(ctx, x + side * 4, y - 4.5, x + side * 4.5, y - 6.5, edge, 1.2);
+      line(ctx, x + side * 7, y - 4.5, x + side * 7, y - 6.5, edge, 1.2);
+    }
+  }
+
   // Pinned on the waistcoat, and painted after the arms: the near arm swings straight through the lapel it sits on.
   // Body colour inside the body's own edge colour, the one pair the palette guarantees reads, whatever the repo.
   function drawSheriffStar(cx, cy, r, tint, edge) {
@@ -6656,6 +6992,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       ctx.moveTo(x + 6, bottom - 3);
       ctx.lineTo(x + 6 - swing * 4, y - 1 + lift);
       ctx.stroke();
+      if (env.pack === 'shire' && !walking) drawShireFeet(x, y - 1 + lift, edge);
     }
 
     ctx.beginPath();
@@ -6673,6 +7010,10 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     const westHat = env.west;
     const westKit = westHat && !inBoat && !lounging;
     if (westKit) drawWestKit(x, top, m, f.shape, tint, edge, T);
+    // The same rule for the Shire: a waistcoat is what a deck chair or a gunwale cuts across, the hair and the
+    // ears are not, so the two are gated apart.
+    const shire = env.pack === 'shire';
+    const shireKit = shire && !inBoat && !lounging;
 
     const shY = top + m.h * 0.56;
     const leftX = x - m.w / 2 + 1;
@@ -6798,6 +7139,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     }
 
     const accent = accentFor(colour, f.hue);
+    if (shire) drawShireKit(x, top, m, f.shape, tint, edge, accent, eyeY, shireKit);
     if (westHat) {
       // The five looks tell five sessions of one repo apart as trimmings instead: the star (with the kit, above),
       // a bandana, a feather in the hatband, glasses (drawn with the face), or the hat alone.
@@ -7022,12 +7364,24 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       ctx.stroke();
     }
     fillEllipse(ctx, x, y, 18, 4.5, T.shadow);
+    const grey = env.pack === 'shire';
     line(ctx, x - 5, bottom - 2, x - 6, y - 1, T.patrolNavy, 5);
     line(ctx, x + 5, bottom - 2, x + 6, y - 1, T.patrolNavy, 5);
-    fillRR(ctx, x - w / 2, top, w, h, 10, T.patrolKhaki, T.patrolKhakiShade, 2);
-    fillRR(ctx, x - w / 2 + 1, top + h * 0.7, w - 2, 4, 1, T.patrolNavy);
-    // The badge: a small white shield on the chest.
-    fillPoly(ctx, [[x + 3, top + 12], [x + 10, top + 12], [x + 10, top + 17], [x + 6.5, top + 21], [x + 3, top + 17]], T.patrolWhite, T.patrolNavy, 1);
+    if (grey) {
+      // A robe that widens to the ground, a staff, a hat and a beard, all inside GUARD_BOX: the box reaches 60
+      // above the feet and 18 either side, and the hat's point stops at 56 and the staff at 16.
+      line(ctx, x - 16, y - 2, x - 15, top - 12, T.patrolNavy, 3);
+      fillEllipse(ctx, x - 15, top - 13, 3.2, 3.2, T.patrolWhite);
+      fillPoly(ctx, [
+        [x - w / 2 + 3, top], [x + w / 2 - 3, top], [x + w / 2 + 1, y - 1], [x - w / 2 - 1, y - 1],
+      ], T.patrolKhaki, T.patrolKhakiShade, 2);
+      fillRR(ctx, x - w / 2 + 1, top + h * 0.72, w - 2, 3.5, 1, T.patrolNavy);
+    } else {
+      fillRR(ctx, x - w / 2, top, w, h, 10, T.patrolKhaki, T.patrolKhakiShade, 2);
+      fillRR(ctx, x - w / 2 + 1, top + h * 0.7, w - 2, 4, 1, T.patrolNavy);
+      // The badge: a small white shield on the chest.
+      fillPoly(ctx, [[x + 3, top + 12], [x + 10, top + 12], [x + 10, top + 17], [x + 6.5, top + 21], [x + 3, top + 17]], T.patrolWhite, T.patrolNavy, 1);
+    }
 
     const shY = top + h * 0.5;
     const leftX = x - w / 2 + 1;
@@ -7066,6 +7420,14 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       fillRR(ctx, stampHand.x - 1.5, stampHand.y - 4, 3, 6, 1, T.patrolKhakiShade);
     }
 
+    if (grey) {
+      // The beard first, so the brim laid over it reads as a hat rather than a collar.
+      fillPoly(ctx, [
+        [x - 7, top + 13], [x + 7, top + 13], [x + 4, top + 30], [x, top + 33], [x - 4, top + 30],
+      ], T.patrolWhite);
+      fillEllipse(ctx, x, top + 3, 15, 4, T.patrolNavy);
+      fillPoly(ctx, [[x - 8, top + 2], [x - 1, top - 12], [x + 6, top + 2]], T.patrolNavy);
+    }
     // Face, looking left at the pier; now and then a glance up the deck at the queue, and a blink.
     const glance = !still && (t % 6.2) > 4.6 ? -1.5 : 0;
     const lookX = state.stamp || state.wave ? -2 : -1.5;
@@ -7672,8 +8034,42 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       drawMineBand(env);
       return;
     }
+    if (env.pack === 'shire') {
+      drawStarlight(env);
+      return;
+    }
     drawDiscoLights(env);
     drawDiscoBall(env);
+  }
+
+  // Where the green hall hangs its mirror ball, these halls have a light of their own: one star over the archway
+  // and a slow drift of others across the wall. It rides the hall's own tick and holds still under reduced
+  // motion, the way the ball and the beam do.
+  function drawStarlight(env) {
+    const T = env.theme;
+    const t = env.reduced ? 0 : env.t;
+    const { x, y } = DISCO_BALL;
+    const glow = ctx.createRadialGradient(x, y, 2, x, y, 150);
+    glow.addColorStop(0, `rgba(${WARM_LIGHT}, 0.3)`);
+    glow.addColorStop(1, `rgba(${WARM_LIGHT}, 0)`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - 150, y - 150, 300, 300);
+    const star = (sx, sy, rad, alpha) => {
+      ctx.globalAlpha = alpha;
+      const pts = [];
+      for (let i = 0; i < 8; i += 1) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 4;
+        const d = i % 2 ? rad * 0.32 : rad;
+        pts.push([sx + Math.cos(a) * d, sy + Math.sin(a) * d]);
+      }
+      fillPoly(ctx, pts, T.flagAlt);
+      ctx.globalAlpha = 1;
+    };
+    star(x, y, 22 + (env.reduced ? 0 : Math.sin(t * 1.4) * 2), 0.9);
+    for (const d of DISCO_DOTS) {
+      const sx = 110 + ((d.u + t * 0.006) % 1) * 1380;
+      star(sx, d.y, d.r * 1.3, 0.35 + ((d.u * 7) % 1) * 0.3);
+    }
   }
 
   // A fiddle, an upright and a banjo on the stage, swaying on the beat with notes rising off them. All of it rides
@@ -7807,7 +8203,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.save();
     for (const cone of LIGHTHOUSE.cones) {
       const grad = ctx.createRadialGradient(x, y, 0, x, y, reach);
-      for (const [f, share] of BEAM_PROFILE) grad.addColorStop(f, `rgba(${WARM_LIGHT}, ${rnd5(cone.alpha * share)})`);
+      for (const [f, share] of BEAM_PROFILE) grad.addColorStop(f, `rgba(${env.theme.beamLight}, ${rnd5(cone.alpha * share)})`);
       ctx.beginPath();
       ctx.moveTo(x, y);
       ctx.arc(x, y, reach, a - cone.half, a + cone.half);

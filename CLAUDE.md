@@ -146,7 +146,18 @@ again.
   room names, because village.js loads lazily and the top bar has to offer the choice before it arrives.
   `tests/test_web.py`'s `ThemeContractTests` holds the two in step, and a pack that names a colour the base theme
   has no use for is a typo that would silently do nothing, so the harness checks that too. A new pack needs a key,
-  a name, a note, two override maps and any board names it renames, and nothing else: it must not touch a lane.
+  a name, a note, `hatted`, two override maps and any board names it renames, and nothing else: it must not touch
+  a lane. Three packs in, the checks that hold one hold all of them: a pack is added to `THEME_PACKS` and the
+  suite starts judging it that moment, with no new check written.
+- **A pack says what it is, rather than the code asking which one it is.** `headroom` once asked whether the pack
+  was 'west' to decide that everyone is hatted, which was a guess about every pack that would ever exist. A third
+  pack made it `themePack(pack).hatted`. Any rule that would branch on a pack's name belongs on the pack instead.
+- **Anything a pack recolours has to be checked in every pack.** Three checks were written against one pack's
+  colours and had to be opened up when a second and a third changed them: the guard at the barrier (whose colours
+  must clear every state badge, or a guard reads as a blocked session), the beam (whose light must not shift a lit
+  body towards another repo's colour), and the graveyard's own fence colours, which is how the painted checks find
+  it. `slate` is the ghosts' outline, the jail's roof and a chessboard's dark squares as well as the tower's, which
+  is why a pack that wanted a black tower got `towerStone` and `towerEdge` of its own rather than darkening it.
 - **A pack is paint, never geometry.** Every building stands on the footing it replaces, which is the only reason
   a frontier town could be laid over a village with this large a geometry suite without moving a crowd, a sign or
   a clickable door. Three painted checks hold it: what a place paints stays out of every other place and off the
