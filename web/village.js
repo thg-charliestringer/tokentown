@@ -3546,6 +3546,13 @@ function drawMargarita(g, T, x, y, tilt = 0, s = 1) {
   g.translate(x, y);
   g.rotate(tilt);
   g.scale(s, s);
+  if (T.pack === 'west') {
+    fillRR(g, -5, -9, 10, 13, 1.5, T.glass, T.glassEdge, 1.2);
+    fillRR(g, -4, -4, 8, 7.5, 1, T.drink);
+    line(g, -5, -9, 5, -9, T.glassEdge, 1.4);
+    g.restore();
+    return;
+  }
   fillPoly(g, [[-7.5, -9], [7.5, -9], [2, -2.5], [-2, -2.5]], T.drink, T.glassEdge, 1);
   line(g, -7.5, -9, 7.5, -9, T.glass, 1.8);
   line(g, 0, -2.5, 0, 4.5, T.glassEdge, 1.4);
@@ -4150,9 +4157,14 @@ function paintPorchHouse(g, T) {
   if (west) {
     // A false front where the pitch was, inside the same triangle: flat to the roof's own apex at 604, so nothing
     // here rises any nearer the road than the porch house already did.
-    fillRR(g, 994, 604, 258, 92, 2, T.wall, 'rgba(0, 0, 0, 0.2)', 2);
-    fillRR(g, 994, 604, 258, 12, 2, T.woodDark);
-    fillRR(g, 994, 640, 258, 5, 1, T.woodDark);
+    fillRR(g, 994, 604, 258, 92, 2, T.wallShade, T.woodDark, 2);
+    fillRR(g, 994, 604, 258, 13, 2, T.woodDark);
+    fillRR(g, 994, 638, 258, 5, 1, T.woodDark);
+    g.globalAlpha = 0.4;
+    for (let x = 1012; x < 1250; x += 22) line(g, x, 620, x, 694, T.woodDark, 1.4);
+    g.globalAlpha = 1;
+    // The two brackets that hold a false front up, which is what says it is a front and not a wall.
+    for (const bx of [1006, 1232]) fillPoly(g, [[bx, 696], [bx + 14, 696], [bx, 682]], T.woodDark);
   } else {
     fillPoly(g, [[994, 694], [1123, 604], [1252, 694]], T.roofs[0], 'rgba(0, 0, 0, 0.2)', 2);
   }
@@ -4813,12 +4825,14 @@ function paintCottageRoom(g, T) {
     const x = rand() * W;
     line(g, x, y, x, y + 34, T.roomFloorLine, 2);
   }
-  const [rx, ry, rw, rh] = [300, 560, 1000, 280];
-  g.globalAlpha = 0.9;
-  fillRR(g, rx, ry, rw, rh, 26, west ? T.roomWallShade : T.rug, T.woodDark, 2);
-  g.globalAlpha = 0.35;
-  fillRR(g, rx + 26, ry + 24, rw - 52, rh - 48, 18, null, T.signBoard, 3);
-  g.globalAlpha = 1;
+  if (!west) {
+    const [rx, ry, rw, rh] = [300, 560, 1000, 280];
+    g.globalAlpha = 0.9;
+    fillRR(g, rx, ry, rw, rh, 26, T.rug, T.woodDark, 2);
+    g.globalAlpha = 0.35;
+    fillRR(g, rx + 26, ry + 24, rw - 52, rh - 48, 18, null, T.signBoard, 3);
+    g.globalAlpha = 1;
+  }
   for (const t of COTTAGE_TABLES) paintGameTable(g, T, t);
 }
 
@@ -6110,6 +6124,21 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   function drawPalm(env, x, y, h, lean) {
     const T = env.theme;
     const sway = env.reduced ? 0 : Math.sin(env.t * 0.8 + x * 0.01) * 1 + Math.sin(env.t * 1.9 + y) * 0.35;
+    if (env.west) {
+      // A saguaro on the palm's footing: the island's one bit of ambient sway, so it keeps swaying.
+      ctx.save();
+      ctx.translate(sway * 0.8, 0);
+      fillEllipse(ctx, x + 10, y + 2, 26, 6, T.shadow);
+      const w = h * 0.13;
+      fillRR(ctx, x - w / 2, y - h, w, h, w / 2, T.palm);
+      for (const [ax, top, join] of [[x - h * 0.26, y - h * 0.74, y - h * 0.46], [x + h * 0.22, y - h * 0.62, y - h * 0.34]]) {
+        const aw = w * 0.72;
+        fillRR(ctx, ax - aw / 2, top, aw, join - top + aw, aw / 2, T.palmDark);
+        fillRR(ctx, Math.min(ax, x) - aw / 2, join, Math.abs(ax - x) + aw, aw, aw / 2, T.palmDark);
+      }
+      ctx.restore();
+      return;
+    }
     const tx = x + lean + sway * 3;
     const ty = y - h;
     ctx.save();
@@ -7565,6 +7594,13 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   function drawMineBand(env) {
     const T = env.theme;
     const { x, y, w, h } = MINE_STAGE;
+    // A stage lamp behind them: the band stands against the archway, which is the darkest thing in the room, so
+    // without it three dark figures on a dark opening read as nothing at all.
+    const lamp = ctx.createRadialGradient(x, y - 50, 8, x, y - 50, 150);
+    lamp.addColorStop(0, 'rgba(246, 214, 140, 0.30)');
+    lamp.addColorStop(1, 'rgba(246, 214, 140, 0)');
+    ctx.fillStyle = lamp;
+    ctx.fillRect(x - 160, y - 200, 320, 260);
     fillRR(ctx, x - w / 2, y, w, h, 3, T.wood, T.woodDark, 2);
     fillRR(ctx, x - w / 2, y + h, w, 6, 2, T.woodDark);
     const players = [[-62, 'fiddle'], [0, 'bass'], [62, 'banjo']];
@@ -7572,8 +7608,9 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       const sway = env.reduced ? 0 : Math.sin(env.t * 3.2 + i * 1.1) * 3;
       const px = x + dx + sway;
       ctx.save();
-      fillEllipse(ctx, px, y - 44, 13, 15, T.wallShade, T.woodDark, 1.5);
-      fillEllipse(ctx, px, y - 62, 9, 9, T.wallShade, T.woodDark, 1.5);
+      // Pale in both schemes: the hall's own wall colour is dark at dusk, which is exactly when the band plays.
+      fillEllipse(ctx, px, y - 44, 13, 15, T.signBoard, T.woodDark, 1.5);
+      fillEllipse(ctx, px, y - 62, 9, 9, T.signBoard, T.woodDark, 1.5);
       // Everyone on the stage is hatted too.
       fillEllipse(ctx, px, y - 68, 14, 3, T.woodDark);
       fillRR(ctx, px - 6, y - 78, 12, 11, 3, T.woodDark);
