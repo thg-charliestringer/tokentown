@@ -1835,6 +1835,41 @@ check('no road is drawn on open water: the coast, or a deck, carries every part 
     && postFoot[1] + postFoot[3] <= by + bh && postFoot[1] + postFoot[3] >= by), 'so it stands on the quay');
 });
 
+check('what a tree paints stays inside the box it declares, in every theme pack', () => {
+  // treeBox is what every other check reasons about: the signs keep clear of it, the ghosts keep out of it and the
+  // world map lays out around it. A saguaro drawn on the tree's footing has to live inside the same box, or all of
+  // that reasoning is about a shape that is no longer there.
+  for (const pack of V.THEME_KEYS) {
+    for (const dark of [false, true]) {
+      const label = `${pack} ${dark ? 'dusk' : 'day'}`;
+      const T = V.resolveTheme(pack, dark);
+      const inks = new Set([T.tree, T.treeDark, T.treeLight, T.trunk]);
+      const bg = [];
+      paintFrames([], { dark, bg, seconds: 0.1, pack });
+      const foliage = bg.filter((sh) => inks.has(sh.style));
+      assert(foliage.length >= V.TREES.length, `${label}: the trees are painted at all (${foliage.length} shapes)`);
+      for (const tree of V.TREES) {
+        const [bx, by, bw, bh] = V.treeBox(tree);
+        // Attributed by its centre, so the flower beds and the harbour's scrub, which share these colours, are
+        // only ever judged against the box they actually sit in.
+        const mine = foliage.filter((sh) => {
+          const cx = (sh.box[0] + sh.box[2]) / 2;
+          const cy = (sh.box[1] + sh.box[3]) / 2;
+          return cx >= bx && cx <= bx + bw && cy >= by && cy <= by + bh;
+        });
+        assert(mine.length >= 3, `${label}: the tree at ${JSON.stringify(tree)} paints something (${mine.length})`);
+        for (const sh of mine) {
+          const pad = sh.kind === 'stroke' ? sh.lw / 2 : 0;
+          const out = Math.max(bx - (sh.box[0] - pad), (sh.box[2] + pad) - (bx + bw),
+            by - (sh.box[1] - pad), (sh.box[3] + pad) - (by + bh));
+          assert(out <= 0.01,
+            `${label}: the tree at ${JSON.stringify(tree)} paints ${sh.kind} ${String(sh.style)} ${out.toFixed(2)} px outside its box`);
+        }
+      }
+    }
+  }
+});
+
 check('every tree stands on the land, clear of the signs', () => {
   eq(V.TREES.length, 8, 'the trees');
   for (const tree of V.TREES) {
@@ -4256,6 +4291,72 @@ function nearestGap(a, b, reach = 120) {
   }
   return best;
 }
+
+// How far what a place paints already reaches past the ground it declares, px, before this check existed. A shape
+// that escapes its ground is invisible to the overlap check above, which only ever attributes a shape that is
+// wholly inside one: that is the gap a reskin could walk straight through.
+// How far what a place paints already reached past the ground it declares, px, before this check existed: an
+// outline drawn on the edge itself, the Workshop's posts standing below its deck, the Harbour's lighthouse rocks.
+// Held at what they measure, in every pack, so nothing can grow past them unnoticed and no reskin can drift out.
+const GROUND_ESCAPES = { porch: 1, workshop: 4, jail: 2.6, cottages: 4.5, castle: 1.08, harbour: 12 };
+
+check('what a place paints into the background stays on the ground it declares, in every theme pack', () => {
+  const measured = {};
+  for (const pack of V.THEME_KEYS) {
+    for (const dark of [false, true]) {
+      const label = `${pack} ${dark ? 'dusk' : 'day'}`;
+      const bg = [];
+      paintFrames([], { dark, bg, seconds: 0.1, pack });
+      // The terrain wash: ground, track, flats and the tufts and flowers scattered over them. It sweeps across
+      // every one of these boxes and belongs to none of them, so a place is judged on what it builds, not what it
+      // stands on.
+      const T = V.resolveTheme(pack, dark);
+      const terrain = new Set([...T.flowers, ...[
+        'grass', 'grassLight', 'grassDark', 'tuft', 'path', 'pathEdge', 'pebble', 'sand', 'sandLight', 'sandWet',
+        'sandDot', 'dune', 'water', 'waterDeep', 'ripple', 'shallow', 'foam', 'graveGrass', 'shadow',
+        // Planting belongs to no place either: a flower bed sits across the Porch's ground and the trees have
+        // their own box check above.
+        'tree', 'treeDark', 'treeLight', 'trunk',
+      ].map((k) => T[k])]);
+      for (const [place, grounds] of Object.entries(GROUNDS)) {
+        let seen = 0;
+        for (const [gx, gy, gw, gh] of grounds) {
+          // Attributed by its centre, and only shapes no bigger than the ground itself: the sea, the roads and the
+          // ground wash all sweep across these boxes and belong to none of them. The limit of attributing by the
+          // centre: a shape moved clear off its ground belongs to no place and so is checked against none. This
+          // catches a place growing past its footing, which is what a reskin does; it does not catch one part of a
+          // building being moved somewhere else entirely, which the eye does.
+          const mine = bg.filter((sh) => {
+            if (terrain.has(sh.style)) return false;
+            const [x0, y0, x1, y1] = sh.box;
+            const cx = (x0 + x1) / 2;
+            const cy = (y0 + y1) / 2;
+            return cx >= gx && cx <= gx + gw && cy >= gy && cy <= gy + gh
+              && x1 - x0 <= gw * 1.2 && y1 - y0 <= gh * 1.2;
+          });
+          seen += mine.length;
+          for (const sh of mine) {
+            const pad = sh.kind === 'stroke' ? sh.lw / 2 : 0;
+            const out = Math.max(gx - (sh.box[0] - pad), (sh.box[2] + pad) - (gx + gw),
+              gy - (sh.box[1] - pad), (sh.box[3] + pad) - (gy + gh));
+            if (out > 0) measured[`${pack}/${place}`] = Math.max(measured[`${pack}/${place}`] || 0, +out.toFixed(2));
+            const allowed = GROUND_ESCAPES[place] || 0;
+            assert(out <= allowed + 1e-6,
+              `${label}: the ${place} paints ${sh.kind} ${String(sh.style)} ${JSON.stringify(sh.box.map(r2))} ${out.toFixed(2)} px off its ground ${JSON.stringify([gx, gy, gw, gh])}, ${allowed} allowed`);
+          }
+        }
+        assert(seen > 0, `${label}: the ${place} paints something on its own ground`);
+      }
+    }
+  }
+  // Per pack, so a reskin that crept further off its ground than the green village does is caught even though it
+  // is still inside the allowance the green village earned.
+  for (const pack of V.THEME_KEYS) {
+    for (const [place, allowed] of Object.entries(GROUND_ESCAPES)) {
+      eq(measured[`${pack}/${place}`], allowed, `${pack}: the ${place} still reaches exactly as far off its ground as it did`);
+    }
+  }
+});
 
 check('what a place paints stays out of every other place and off the road: 0 to 30 rows at 1.5x, every theme pack, both schemes, one village and an island', () => {
   const measured = {};

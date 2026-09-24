@@ -3583,6 +3583,41 @@ function paintWater(g, T, rand) {
   fillPoly(g, band(0, () => 0), T.water);
   fillPoly(g, band(95, (y) => 12 * Math.sin(y / 83)), T.waterDeep);
   g.lineCap = 'round';
+  if (T.pack === 'west') {
+    // A gulch cut down the flats, on the deep band's own wobble so it never wanders onto the island or the deck.
+    g.lineWidth = 26;
+    g.strokeStyle = T.stoneDark;
+    g.beginPath();
+    for (let y = -40; y <= H + 40; y += 20) {
+      const x = shoreX(y) + 138 + 34 * Math.sin(y / 132);
+      if (y <= -40) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.stroke();
+    g.lineWidth = 14;
+    g.strokeStyle = T.sandWet;
+    g.stroke();
+    // Cracked mud where the ripples were, on the same seed and the same guards.
+    g.strokeStyle = T.ripple;
+    g.lineWidth = 1.6;
+    for (let i = 0; i < 90; i++) {
+      const y = rand() * H;
+      const x = shoreX(y) + 24 + rand() * (W - shoreX(y) - 10);
+      if (onIsland(x, y, 40) || nearHarbour(x, y, 0)) continue;
+      const r = 8 + rand() * 14;
+      g.globalAlpha = 0.3 + rand() * 0.3;
+      g.beginPath();
+      // Three cracks off one point, which is what dried mud does and what an arc plainly does not.
+      for (let k = 0; k < 3; k++) {
+        const a = rand() * TAU;
+        g.moveTo(x, y);
+        g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+      }
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+    return;
+  }
   g.strokeStyle = T.ripple;
   g.lineWidth = 2;
   for (let i = 0; i < 90; i++) {
@@ -3645,6 +3680,13 @@ function paintIsland(g, T, rand) {
 }
 
 function paintShell(g, T, x, y, r, rot) {
+  if (T.pack === 'west') {
+    // A weathered stone where the shell is, on the shell's own footing.
+    fillEllipse(g, x, y + r * 0.35, r * 0.95, r * 0.35, T.shadow);
+    fillEllipse(g, x, y, r * 0.95, r * 0.7, T.stone);
+    fillEllipse(g, x - r * 0.25, y - r * 0.2, r * 0.4, r * 0.28, T.wallShade);
+    return;
+  }
   g.save();
   g.translate(x, y);
   g.rotate(rot);
@@ -3662,6 +3704,21 @@ function paintShell(g, T, x, y, r, rot) {
 }
 
 function paintStarfish(g, T, x, y, r, rot) {
+  if (T.pack === 'west') {
+    // A horseshoe, open end down, inside the starfish's own radius.
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    g.beginPath();
+    g.arc(0, 0, r * 0.68, Math.PI * 0.85, Math.PI * 0.15);
+    g.strokeStyle = T.steel;
+    g.lineWidth = Math.max(1.6, r * 0.34);
+    g.lineCap = 'butt';
+    g.stroke();
+    g.lineCap = 'round';
+    g.restore();
+    return;
+  }
   const pts = [];
   for (let i = 0; i < 10; i++) {
     const a = rot + (i / 10) * TAU - Math.PI / 2;
@@ -3751,7 +3808,29 @@ function paintTufts(g, T, rand) {
   }
 }
 
+// A saguaro on the tree's own footing and inside the same `treeBox`: the trunk tops out at 1.95r against the
+// box's 2.08r, and the far arm reaches 0.68r against its 1.07r.
+function paintSaguaro(g, T, x, y, r) {
+  fillEllipse(g, x + 4, y + 2, r * 0.9, r * 0.3, T.shadow);
+  // An arm is the elbow out from the trunk at `joinY` and the limb standing up from it to `topY`.
+  const arm = (ax, joinY, topY) => {
+    const w = r * 0.24;
+    fillRR(g, ax - w / 2, topY, w, joinY - topY + w, w / 2, T.treeDark);
+    fillRR(g, Math.min(ax, x) - w / 2, joinY, Math.abs(ax - x) + w, w, w / 2, T.treeDark);
+  };
+  arm(x - r * 0.55, y - r * 0.95, y - r * 1.5);
+  arm(x + r * 0.5, y - r * 1.15, y - r * 1.65);
+  fillRR(g, x - r * 0.17, y - r * 1.95, r * 0.34, r * 1.95 + 2, r * 0.17, T.tree);
+  line(g, x - r * 0.06, y - r * 1.85, x - r * 0.06, y - r * 0.2, T.treeDark, 1.2);
+  line(g, x + r * 0.06, y - r * 1.85, x + r * 0.06, y - r * 0.2, T.treeLight, 1.2);
+  fillEllipse(g, x, y - r * 1.95, r * 0.17, r * 0.1, T.treeLight);
+}
+
 function paintTree(g, T, x, y, r) {
+  if (T.pack === 'west') {
+    paintSaguaro(g, T, x, y, r);
+    return;
+  }
   fillEllipse(g, x + 4, y + 2, r * 0.9, r * 0.3, T.shadow);
   fillRR(g, x - 5, y - r * 0.9, 10, r * 0.9 + 2, 3, T.trunk);
   fillEllipse(g, x - r * 0.45, y - r * 1.05, r * 0.62, r * 0.58, T.treeDark);
@@ -3791,8 +3870,42 @@ function paintFlowers(g, T, rand) {
   }
 }
 
+// The bank, built around the cottage's own rect and door: a stone front with a stepped parapet where the pitch
+// was, and a hitching rail where the window box is. The parapet tops out at 74, inside the roof's own apex at 68.
+function paintBank(g, T) {
+  const bx = COTTAGE.x;
+  const by = COTTAGE.y;
+  fillEllipse(g, bx + 6, by + 4, 82, 10, T.shadow);
+  // The stepped front: three courses rising to the middle, all inside the roof's triangle.
+  fillRR(g, bx - 78, 110, 156, 20, 2, T.stoneDark);
+  fillRR(g, bx - 52, 92, 104, 22, 2, T.stone, T.stoneDark, 2);
+  fillRR(g, bx - 24, 74, 48, 22, 2, T.stone, T.stoneDark, 2);
+  fillRR(g, bx - 68, 122, 136, 92, 3, T.stone);
+  fillRR(g, bx - 68, 200, 136, 14, 2, T.stoneDark);
+  // Two pilasters either side of the door, which is what makes a stone front read as a bank and not a warehouse.
+  for (const px of [bx - 46, bx + 34]) fillRR(g, px, 128, 12, 78, 1, T.wallShade, T.stoneDark, 1);
+  fillRR(g, bx - 16, 166, 32, 48, 3, T.door);
+  fillEllipse(g, bx + 10, 192, 1.8, 1.8, T.steel);
+  for (const [x, y, w, h] of COTTAGE_WINDOWS) {
+    fillRR(g, x, y, w, h, 2, T.windowDark, T.woodDark, 2);
+    // A teller's grille rather than a cottage's glazing bars.
+    for (let i = 1; i < 4; i++) line(g, x + (w * i) / 4, y + 2, x + (w * i) / 4, y + h - 2, T.steel, 1.2);
+    line(g, x, y + h / 2, x + w, y + h / 2, T.steel, 1.2);
+  }
+  fillRR(g, bx - 22, by, 44, 8, 2, T.stone, T.stoneDark, 1);
+  // The hitching rail, on the window box's footing.
+  for (const px of [bx - 62, bx - 30]) fillRR(g, px, 168, 5, 30, 1, T.woodDark);
+  fillRR(g, bx - 66, 168, 44, 5, 2, T.wood, T.woodDark, 1);
+  fillRR(g, bx + 74, 178, 22, 36, 3, T.wood, T.woodDark, 1.5);
+  fillEllipse(g, bx + 85, 178, 11, 4, T.woodLight);
+}
+
 // The cottage on the green: one small house with a door to click. Idle and recent rows are inside, not in front.
 function paintCottage(g, T) {
+  if (T.pack === 'west') {
+    paintBank(g, T);
+    return;
+  }
   const bx = COTTAGE.x;
   const by = COTTAGE.y;
   fillEllipse(g, bx + 6, by + 4, 82, 10, T.shadow);
@@ -3815,6 +3928,7 @@ function paintCottage(g, T) {
 }
 
 function paintWorkshop(g, T) {
+  const west = T.pack === 'west';
   fillEllipse(g, 830, 544, 356, 12, T.shadow);
   fillRR(g, 486, 386, 672, 152, 6, T.woodLight, T.woodDark, 2);
   g.globalAlpha = 0.45;
@@ -3835,6 +3949,22 @@ function paintWorkshop(g, T) {
   }
   line(g, 480, 352, 1164, 352, 'rgba(255, 255, 255, 0.5)', 2);
   g.globalAlpha = 1;
+  if (west) {
+    // A depot's valance under the canopy, and the platform edge with the rails beyond it. Both stay inside the
+    // shed's own numbers, so the Workshop's two road contacts are untouched.
+    for (let x = 484; x + 24 <= 1156; x += 24) fillPoly(g, [[x, 386], [x + 24, 386], [x + 12, 398]], T.woodDark);
+    fillRR(g, 486, 524, 672, 6, 1, T.stoneDark);
+    line(g, 490, 534, 1154, 534, T.steel, 2);
+    for (let x = 496; x < 1154; x += 28) line(g, x, 530, x, 538, T.woodDark, 2.5);
+    // A baggage cart on the sawhorse's footing, and a water column where the cabinet stood.
+    fillRR(g, 496, 494, 44, 26, 2, T.wood, T.woodDark, 1.5);
+    fillEllipse(g, 506, 524, 7, 7, T.woodDark);
+    fillEllipse(g, 532, 524, 7, 7, T.woodDark);
+    fillRR(g, 1118, 470, 20, 54, 3, T.plank, T.woodDark, 1.5);
+    fillRR(g, 1108, 458, 40, 16, 4, T.wood, T.woodDark, 1.5);
+    line(g, 1128, 500, 1146, 512, T.woodDark, 3);
+    return;
+  }
   line(g, 500, 530, 510, 498, T.woodDark, 3);
   line(g, 530, 530, 520, 498, T.woodDark, 3);
   fillRR(g, 496, 494, 40, 7, 2, T.wood, T.woodDark, 1.2);
@@ -3844,14 +3974,30 @@ function paintWorkshop(g, T) {
 }
 
 function paintPorchHouse(g, T) {
+  const west = T.pack === 'west';
   g.save();
   g.translate(HOUSE_DX, 0);
   fillEllipse(g, 1120, 830, 150, 12, T.shadow);
   fillRR(g, 1188, 614, 16, 44, 2, T.stoneDark);
   fillRR(g, 1012, 684, 222, 118, 3, T.wall);
-  fillPoly(g, [[994, 694], [1123, 604], [1252, 694]], T.roofs[0], 'rgba(0, 0, 0, 0.2)', 2);
-  fillRR(g, 1040, 734, 34, 68, 3, T.door);
-  fillEllipse(g, 1067, 770, 2, 2, T.stone);
+  if (west) {
+    // A false front where the pitch was, inside the same triangle: flat to the roof's own apex at 604, so nothing
+    // here rises any nearer the road than the porch house already did.
+    fillRR(g, 994, 604, 258, 92, 2, T.wall, 'rgba(0, 0, 0, 0.2)', 2);
+    fillRR(g, 994, 604, 258, 12, 2, T.woodDark);
+    fillRR(g, 994, 640, 258, 5, 1, T.woodDark);
+  } else {
+    fillPoly(g, [[994, 694], [1123, 604], [1252, 694]], T.roofs[0], 'rgba(0, 0, 0, 0.2)', 2);
+  }
+  if (west) {
+    // Batwing doors: the opening is dark all the way down, and the two leaves cover its middle only.
+    fillRR(g, 1040, 734, 34, 68, 3, T.windowDark);
+    fillRR(g, 1040, 748, 16, 38, 2, T.wood, T.woodDark, 1.5);
+    fillRR(g, 1058, 748, 16, 38, 2, T.wood, T.woodDark, 1.5);
+  } else {
+    fillRR(g, 1040, 734, 34, 68, 3, T.door);
+    fillEllipse(g, 1067, 770, 2, 2, T.stone);
+  }
   for (const x of [1104, 1172]) {
     fillRR(g, x, 712, 42, 34, 2, T.porchWindow, T.woodDark, 2);
     line(g, x + 21, 712, x + 21, 746, T.woodDark, 1.5);
@@ -3921,9 +4067,19 @@ function paintHarbour(g, T) {
   lh.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
   g.closePath();
   g.clip();
-  g.fillStyle = T.slate;
-  g.fillRect(1520, 108, 60, 12);
-  g.fillRect(1520, 142, 60, 12);
+  if (T.pack === 'west') {
+    // A water tower's iron hoops where the lighthouse has its bands, inside the tower's own outline. The lantern
+    // above is left exactly where it is: the night beam is aimed from it, and moving it would move the beam.
+    g.fillStyle = T.steel;
+    for (const y of [100, 124, 148]) g.fillRect(1520, y, 60, 5);
+    g.strokeStyle = T.woodDark;
+    g.lineWidth = 1.2;
+    for (let x = 1528; x < 1576; x += 8) line(g, x, 82, x, 172, T.woodDark, 1.2);
+  } else {
+    g.fillStyle = T.slate;
+    g.fillRect(1520, 108, 60, 12);
+    g.fillRect(1520, 142, 60, 12);
+  }
   g.restore();
   fillRR(g, 1536, 66, 26, 17, 3, T.lanternGlass, T.slate, 1.5);
   fillPoly(g, [[1532, 68], [1549, 52], [1566, 68]], T.roofs[1]);
@@ -3955,16 +4111,27 @@ function paintPatrolBooth(g, T) {
 function paintSandCastle(g, T) {
   const cx = CASTLE.x;
   const by = CASTLE.y;
+  const west = T.pack === 'west';
   g.save();
   g.translate(cx, by);
   g.scale(CASTLE.s, CASTLE.s);
   g.translate(-cx, -by);
   fillEllipse(g, cx + 6, by + 4, 88, 12, T.shadow);
   fillEllipse(g, cx, by + 3, 82, 9, T.sandWet);
+  // In the frontier town the same run of merlons is a broken rock line: same span, same 11 px of headroom, so the
+  // mesa stands exactly as tall as the castle did and the openings below it do not move.
   const merlons = (x0, x1, y, w = 10, gap = 6) => {
     const n = Math.max(1, Math.floor((x1 - x0 + gap) / (w + gap)));
     const start = x0 + (x1 - x0 - (n * w + (n - 1) * gap)) / 2;
-    for (let i = 0; i < n; i++) fillRR(g, start + i * (w + gap), y - 9, w, 11, 2, T.castle, T.castleDark, 1.2);
+    for (let i = 0; i < n; i++) {
+      const x = start + i * (w + gap);
+      if (!west) {
+        fillRR(g, x, y - 9, w, 11, 2, T.castle, T.castleDark, 1.2);
+        continue;
+      }
+      const lift = i % 2 ? 4 : 9;
+      fillPoly(g, [[x - gap / 2, y + 2], [x + w / 2, y - lift], [x + w + gap / 2, y + 2]], T.castle, T.castleDark, 1.2);
+    }
   };
   const ridges = (x0, x1, ys) => {
     g.globalAlpha = 0.7;
@@ -3990,18 +4157,36 @@ function paintSandCastle(g, T) {
     merlons(tx - 17, tx + 17, by - 96, 8, 5);
     fillRR(g, tx - 4, by - 84, 8, 14, 4, T.castleDoor);
   }
-  // Door with a scalloped arch.
-  g.beginPath();
-  g.moveTo(cx - 13, by);
-  g.lineTo(cx - 13, by - 22);
-  g.arc(cx, by - 22, 13, Math.PI, TAU);
-  g.lineTo(cx + 13, by);
-  g.closePath();
-  g.fillStyle = T.castleDoor;
-  g.fill();
-  g.strokeStyle = T.castleDark;
-  g.lineWidth = 2;
-  g.stroke();
+  if (west) {
+    // The mine's timbered portal on the door's own opening: two posts, a lintel, the rails running out of it and
+    // an ore cart standing on them. All of it inside the curtain wall's width, so the castle's footprint holds.
+    // A square-cut adit, so it is not one of the capsule openings the night lighting fills: those are the keep's
+    // and the two turrets', which this branch leaves exactly where they are.
+    g.fillStyle = T.castleDoor;
+    g.fillRect(cx - 15, by - 40, 30, 40);
+    fillRR(g, cx - 20, by - 46, 40, 8, 1, T.woodDark);
+    fillRR(g, cx - 20, by - 40, 6, 40, 1, T.wood, T.woodDark, 1.2);
+    fillRR(g, cx + 14, by - 40, 6, 40, 1, T.wood, T.woodDark, 1.2);
+    for (const rx of [cx - 8, cx + 8]) line(g, rx, by - 34, rx, by, T.steel, 2);
+    for (let y = by - 30; y <= by - 4; y += 9) line(g, cx - 12, y, cx + 12, y, T.woodDark, 2);
+    fillRR(g, cx - 34, by - 26, 26, 20, 2, T.plank, T.woodDark, 1.5);
+    fillEllipse(g, cx - 28, by - 4, 4.5, 4.5, T.steel);
+    fillEllipse(g, cx - 14, by - 4, 4.5, 4.5, T.steel);
+    fillEllipse(g, cx - 21, by - 28, 10, 4, T.stoneDark);
+  } else {
+    // Door with a scalloped arch.
+    g.beginPath();
+    g.moveTo(cx - 13, by);
+    g.lineTo(cx - 13, by - 22);
+    g.arc(cx, by - 22, 13, Math.PI, TAU);
+    g.lineTo(cx + 13, by);
+    g.closePath();
+    g.fillStyle = T.castleDoor;
+    g.fill();
+    g.strokeStyle = T.castleDark;
+    g.lineWidth = 2;
+    g.stroke();
+  }
   for (const [x, y, r, rot] of [[cx - 34, by - 34, 5, -0.2], [cx + 32, by - 40, 4.5, 0.3], [cx - 58, by - 46, 4, 0], [cx + 58, by - 14, 4, 0.2]]) {
     paintShell(g, T, x, y, r, rot);
   }
