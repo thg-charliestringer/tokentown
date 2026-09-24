@@ -183,9 +183,9 @@ Cursor you have installed.
 |---|---|
 | **The Porch** | **Blocked** by the door, waving under an orange light. **Needs input** on the swings (finished a turn in the last 2 hours). **Errored** (a puff of smoke) and **Stopped** (a pause sign) on the steps. One sign names all four, and orange on the Porch always means blocked |
 | **The Workshop** | **Running**: busy, or idle while a task it started in the background still runs (`background task · N min`) |
-| **The Cottages** | **Idle** (live, quiet for 2 hours or more) and **Recent** (active in the last 7 days). One cottage with lit windows and a count on its sign. Click it to go inside, where the sessions wander and sit down to chess, ludo, snakes and ladders or cards |
+| **The Cottages** | **Idle** (live, quiet for 2 hours or more) and **Recent** (active in the last 7 days). One cottage with lit windows and a count on its sign. Click it to go inside, where the sessions wander and sit down to chess, ludo, snakes and ladders or cards. In the Wild West it is **The Bank**, and the room behind it is the counting room |
 | **The Harbour** | **PR open**. Sessions queue behind the border patrol. When a PR merges, the guard stamps that character's passport, the barrier lifts, and it walks down the pier to a boat |
-| **Valhalla island** | A PR merged with none still open, or you sent it there. For 14 days they lounge on the beach with margaritas, then move into the **sand castle**. Click the castle to go inside |
+| **Valhalla island** | A PR merged with none still open, or you sent it there. For 14 days they lounge on the beach with margaritas, then move into the **sand castle**. Click the castle to go inside. In the Wild West the island is a mesa and the castle is a mine |
 | **The Jail** | Every PR was closed without merging. They stand in a barred yard. A merge always beats a closure |
 | **The Graveyard** | Archived, a terminal or VS Code session that has ended, or no activity for 30+ days. One headstone per session, newest first, with friendly ghosts floating over them: two from the first grave, up to twelve in a full graveyard |
 | **The immigration desk** | Not sessions: PRs waiting on your review, as visitors (see below) |
@@ -228,11 +228,43 @@ otherwise the World.
 The **count pills** in the top bar always count the whole board, every repo, even while an island is open. The list
 beside the village follows what is on screen. Both say which they are showing.
 
+### Themes
+
+The **Theme** dropdown in the top bar picks how the village is painted. Your choice is remembered.
+
+- **Village**: the green village, as it has always been.
+- **Wild West**: a frontier town. Its sessions wear cowboy kit, its village is desert, its two rooms are a bank's
+  counting room and a mine, and a locomotive hauls merged PRs across the flats.
+
+A theme is paint and lettering only. Every building stands on the footing it replaces, so nothing moves: the
+Board's columns, the Repos legend, the count pills and every clickable door read the same whichever theme you
+pick. Only the name painted on a board changes.
+
+| Place | Village | Wild West |
+|---|---|---|
+| The Workshop | Workbenches under an awning | **The Depot**: a platform under the canopy, with a baggage cart and a water column |
+| The Cottages | A cottage on the green | **The Bank**: a stone front, a stepped parapet, a hitching rail |
+| The Porch | A porch house with a lantern | **The Saloon**: a false front and batwing doors |
+| The Harbour | A deck and a pier | **The Rail Yard**, under a water tower |
+| Valhalla island | Sand, dune grass, shells | **Valhalla mesa**: a mine driven into the rock |
+| The sand castle | A sand castle | The mine's timbered portal, with rails and an ore cart |
+| The sea | Water, ripples, foam | Dry flats, a gulch cut through them, cracked mud |
+| The trees | Eight trees | Eight saguaros |
+| The Jail, the Graveyard | Unchanged | Unchanged |
+
+In the Wild West a session wears a hat, a waistcoat, a gun belt and a holstered revolver, with a sheriff's star,
+a bandana, a feather in the hatband, glasses or the hat alone to tell five sessions of one repo apart. Its
+colour, size, badge and lane are untouched. A horse trots the circuit the roads make, a range on the horizon has
+a tunnel driven through it, and the crossing runs straight from the berth to the jetty rather than taking the
+voyage's long way round.
+
 ### At night
 
 Night means dark mode, not the clock: the scene follows your Mac's appearance setting. At night the sand castle's
 windows glow, the lighthouse sweeps its beam round, and the sand castle hall has a disco with a mirror ball and
-coloured spotlights. The beam, the disco and the ghosts hold still when your Mac is set to reduce motion.
+coloured spotlights. In the Wild West the mine has a band instead, and every five seconds two of the crowd go at
+it: a brawl with a **POW!**, then a shootout with a **BANG!**. The beam, the disco, the band, the fights, the
+horse and the ghosts all hold still when your Mac is set to reduce motion.
 
 ### Visitors: PRs waiting on your review
 
@@ -292,6 +324,7 @@ and merged sessions are already there.
   [Wherever Claude keeps its files](#wherever-claude-keeps-its-files)), and when `gh` is not signed in.
 - **The update banner**, under the top bar: a new release of Tokentown is out, with **What's new** and **Update
   now**. See [Updates](#updates).
+- **Theme**: how the village is painted, Village or Wild West. See [Themes](#themes).
 - **Privacy** (`p`): hides titles and shows `repo / worktree` instead, for screen sharing.
 
 ## Keys

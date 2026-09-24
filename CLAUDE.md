@@ -28,9 +28,9 @@ town/actions.py      open a session in Claude or its editor (VS Code, Insiders, 
 town/server.py       ThreadingHTTPServer, scan thread, PR, review and update threads, Update now and its restart
 town/check.py        `tokentown check` report
 web/index.html       page shell, keys overlay and the How it works page
-web/app.js           claim, polling, top bar, update banner, What's new, list, Board, card, keys
+web/app.js           claim, polling, top bar, theme picker, update banner, What's new, list, Board, card, keys
 web/app.css          styles
-web/village.js       the Village canvas: places, characters, world of islands, interiors, visitors
+web/village.js       the Village canvas: places, characters, world of islands, interiors, visitors, theme packs
 tests/fixtures.py    synthetic home builder
 tests/test_*.py      unittest suites, one per module (test_status.py also covers board.py and check.py, and
                      test_updates.py covers actions.update_command)
@@ -140,6 +140,25 @@ again.
 
 ## Things that bite
 
+- **The theme contract spans two files and a pack's own palette.** A pack is a name, colours laid over the base
+  day and dusk themes, and the words painted on the place boards and over an interior's door. `village.js` owns
+  `THEME_PACKS`, `resolveTheme`, `placeName` and `roomName`; `app.js` keeps its own copy of the list and of both
+  room names, because village.js loads lazily and the top bar has to offer the choice before it arrives.
+  `tests/test_web.py`'s `ThemeContractTests` holds the two in step, and a pack that names a colour the base theme
+  has no use for is a typo that would silently do nothing, so the harness checks that too. A new pack needs a key,
+  a name, a note, two override maps and any board names it renames, and nothing else: it must not touch a lane.
+- **A pack is paint, never geometry.** Every building stands on the footing it replaces, which is the only reason
+  a frontier town could be laid over a village with this large a geometry suite without moving a crowd, a sign or
+  a clickable door. Three painted checks hold it: what a place paints stays out of every other place and off the
+  road, in every pack, with the clearances asserted equal across all of them; what a place paints into the
+  background stays on the ground it declares; and what a tree paints stays inside its `treeBox`. The one thing a
+  pack does decide beyond paint is which line the crossing takes (`sailLane`), and a journey already under way
+  keeps the line it was planned on.
+- **A merged theme is a new object.** Nothing may ask whether a theme is `THEMES.dusk` by identity: every such
+  test would be false. The theme carries its own `night` and `pack`, and every cached layer is keyed by both, or
+  switching keeps the village, the sea or an open interior the last pack painted.
+- **The badge lift is written once.** `headroom` is read by the draw and by hit testing alike. A hat that raised
+  only one of them would paint a badge where no click lands, which is what a taller frontier hat would have done.
 - **The lane contract spans three files.** `board.py`'s lane order, `app.js` (`LANE_WORD`, `LANE_HELP`,
   `COLUMN_LANES`, `HUD_PILL_KEYS`) and `village.js` (the place and badge for each lane) must agree.
   `tests/test_web.py` reads all three and fails if a lane is missing anywhere. A new lane needs a word, help text,
@@ -159,7 +178,9 @@ again.
   real movement (`anyMotion`: a character walking or sailing, guests wandering an open interior) earns a faster
   rate. Bobbing, swaying and sweeping belong on the ambient tick.
 - **Night means the dusk theme, not the clock** (`env.night`). Night-only art that moves (the lighthouse beam, the
-  disco) must hold still under reduced motion.
+  disco, the frontier mine's band and its fights) must hold still under reduced motion. So must anything else that
+  is scenery rather than a session going somewhere: the horse on the frontier's roads is on the ambient tick, and
+  `tests/test_web.py` keeps all of it out of `anyMotion` and `nextMotionAt`.
 - **Transcripts are big.** Token counts and PR links are read incrementally with a byte budget per scan. Never
   re-read whole transcripts on each scan.
 - **Claude's files are not always where they are on this Mac.** Claude Code uses `CLAUDE_CONFIG_DIR` instead of
