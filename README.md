@@ -256,7 +256,7 @@ pick. Only the name painted on a board changes.
 
 | Place | Village | Middle-earth |
 |---|---|---|
-| The open ground | A wash of grass | **Farmland**: hedged fields of standing corn, ploughed earth and pasture with ponies grazing, a hillside with two more holes in it, and the Misty Mountains on the horizon |
+| The open ground | A wash of grass | **Farmland**: hedged fields of standing corn, ploughed earth and pasture with ponies grazing, a hillside with another hole in it, and the Misty Mountains on the horizon. All of it north of the road: the ground below belongs to the Porch |
 | The Workshop | Workbenches under an awning | **The Forge**: a timber-framed smithy on a stone footing, under a tiled roof, with an anvil and a lit hearth |
 | The Cottages | A cottage on the green | **Bag End**: a green hill with a round door, leaded round windows, a paling fence and a bench by the gate |
 | The Porch | A porch house with a lantern | **The Green Dragon**: a half-timbered inn under thatch, with a sign on the gable |
@@ -266,7 +266,7 @@ pick. Only the name painted on a board changes.
 | The trees | Eight trees | Eight ents, each leaning its own way, and each dancing to its own beat |
 | The roads | Nothing walks them | A ninth ent walks the ring the four roads make round the workshop, where the frontier has its horse. About a minute and a half to get round |
 | The lighthouse | A lighthouse sweeping its beam | A dark tower, and at night an Eye that sweeps it instead |
-| The border patrol | A guard in uniform | A grey pilgrim with a staff, who decides what passes |
+| The border patrol | A guard in uniform | A grey pilgrim with a staff, who decides what passes, and sends up fireworks at night |
 | The Jail | A stone block under a slate roof | **Shelob's**: the same block cut into dark rock under a broken brow, a mouth in place of the door, silk in place of the bars, webs in the corners of the cage and a spider walking the plot |
 | The windows | Glass with a glazing bar | Leaded diamond panes, on every opening in the pack |
 | The Graveyard | Headstones | Barrows, each with a standing stone at its head. Orcs haunt them in place of ghosts, and something creeps round inside the fence that never leaves |
@@ -293,8 +293,9 @@ windows glow, the lighthouse sweeps its beam round, and the sand castle hall has
 coloured spotlights. In the Wild West the mine has a band instead, and every five seconds two of the crowd go at
 it: a brawl with a **POW!**, then a shootout with a **BANG!**. In Middle-earth the hall has starlight, and the
 dark tower's Eye sweeps where the lighthouse beam did, and the eyes of the thing in the graveyard catch the
-light. The beam, the disco, the band, the fights, the starlight, the horse, the creeper, the spider, the walking
-ent, the dancing ents and the ghosts all hold still when your Mac is set to reduce motion.
+light, and the grey pilgrim sends up fireworks from the head of his staff over the water beyond the Havens. The
+beam, the disco, the band, the fights, the starlight, the fireworks, the horse, the creeper, the spider, the
+walking ent, the dancing ents and the ghosts all hold still when your Mac is set to reduce motion.
 
 ### Visitors: PRs waiting on your review
 

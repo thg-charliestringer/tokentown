@@ -225,6 +225,18 @@ again.
 - **Two of them in one place will find each other's colours.** The orcs' iron caps are the same `steel` as the
   creature's skin, so with graves on the board his painted check was measuring their helmets. Both checks run on
   an empty board, where the walker is drawn and nothing else in that colour is.
+- **A hash off a position is a hash off a footing.** `paintEnt` takes which way it leans, how tall it stands, how
+  thick its bole is and which bough it raises from two hashes of its own x and y, which is what makes eight
+  standing ents eight ents. Give the same routine a walker and every one of those re-rolls on every frame: the
+  one that walks the ring road was flickering between a stout 1.3r stump and a slim 1.53r tree three times a
+  frame. It takes a `seed` now, and the seed is chosen rather than inherited, because the point it starts from
+  happened to hash to the shortest, stoutest ent there is.
+- **Hand-placed dressing has no box of its own, so give it one.** The Shire's fields, hillsides and ponies are
+  laid into "open ground", which is the only thing on the map that nothing declares. Four field quads and a
+  hillside went straight over the Porch's swings: its spots start at y 734, so the ground above looked free, but
+  a swing frame reaches 90 px above its row and a row's badge reaches `PORCH_CEILING`, and none of that is in any
+  rect the layout checks reason about. `PORCH_GROUND` says it once, and a check holds every quad, hillside and
+  pony clear of it, of every spot, sign, tree box and road band. It found four more overlaps the moment it ran.
 - **Transcripts are big.** Token counts and PR links are read incrementally with a byte budget per scan. Never
   re-read whole transcripts on each scan.
 - **Claude's files are not always where they are on this Mac.** Claude Code uses `CLAUDE_CONFIG_DIR` instead of

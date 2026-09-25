@@ -1899,6 +1899,47 @@ check('the ents dance, each to its own phase, and stand still when asked', () =>
   eq(new Set(at0).size, V.TREES.length, 'no two ents are in step');
 });
 
+check("the Shire's own dressing stays on ground nothing else has claimed", () => {
+  // Fields, hillsides and ponies are laid by hand into open ground, which is the one thing on the map with no
+  // box of its own to keep them honest. Four field quads and a hillside were laid over the Porch's swings: the
+  // spots are at y 734, so the ground looked free, but a swing frame reaches 90 px above its row and a row's
+  // badge reaches PORCH_CEILING, and none of that is in any rect the layout checks reason about.
+  const box = (pts) => {
+    const xs = pts.map((q) => q[0]);
+    const ys = pts.map((q) => q[1]);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+  };
+  const dressing = [
+    ...V.SHIRE_FIELDS.map((f, i) => [`field ${i}`, box(f)]),
+    // A hillside is drawn as the top half of an ellipse, with its ground shadow 5 right and 3 down of it.
+    ...V.SHIRE_HOLES.map((h, i) => [`hillside ${i}`, [h.x - h.r, h.y - h.r * 0.86, h.r * 2 + 5, h.r * 0.86 + 11]]),
+    ...V.SHIRE_PONIES.map((q, i) => [`pony ${i}`,
+      [q.x + V.PONY_BOX[0], q.y + V.PONY_BOX[1], V.PONY_BOX[2] - V.PONY_BOX[0], V.PONY_BOX[3] - V.PONY_BOX[1]]]),
+  ];
+  const taken = { porch: V.PORCH_GROUND, jail: V.JAIL.plot, graveyard: V.GRAVEYARD.fence, cottage: V.COTTAGE.rect };
+  for (const [name, o] of Object.entries(V.SPOTS)) taken[`the ${name} spot`] = o.rect;
+  for (const [i, o] of V.PORCH_OBSTACLES.entries()) taken[`the porch house ${i}`] = o;
+  for (const place of V.PLACE_KEYS) taken[`the ${place} sign`] = V.signBox(place);
+  taken['the graveyard sign'] = [V.GRAVEYARD.sign[0] - 60, V.GRAVEYARD.sign[1] - 30, 120, 60];
+  V.TREES.forEach((tree, i) => { taken[`tree ${i}`] = V.treeBox(tree); });
+  const roadBands = V.ROAD_LINES.map(([[x0, y0], [x1, y1]]) => {
+    const half = V.ROAD_BAND / 2;
+    return y0 === y1
+      ? [Math.min(x0, x1), y0 - half, Math.abs(x1 - x0), V.ROAD_BAND]
+      : [x0 - half, Math.min(y0, y1), V.ROAD_BAND, Math.abs(y1 - y0)];
+  });
+  roadBands.forEach((b, i) => { taken[`road ${i}`] = b; });
+
+  assert(dressing.length >= 8, `there is dressing to check (${dressing.length} pieces)`);
+  for (const [name, b] of dressing) {
+    assert(b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= 1600 && b[1] + b[3] <= 900, `${name} is on the canvas`);
+    assert(b[0] + b[2] < V.shoreX(b[1] + b[3] / 2), `${name} reaches the sea`);
+    for (const [what, t] of Object.entries(taken)) {
+      assert(!V.boxesOverlap(b, t), `${name} ${JSON.stringify(b)} is laid over ${what} ${JSON.stringify(t)}`);
+    }
+  }
+});
+
 check('every tree stands on the land, clear of the signs', () => {
   eq(V.TREES.length, 8, 'the trees');
   for (const tree of V.TREES) {
@@ -4108,6 +4149,75 @@ check('an ent walks the ring the roads make round the workshop, on its roots, an
     const out = Math.max(box[0] - (sh.box[0] - pad), (sh.box[2] + pad) - (box[0] + box[2]),
       box[1] - (sh.box[1] - pad), (sh.box[3] + pad) - (box[1] + box[3]));
     assert(out <= 0.01, `the walking ent paints ${out.toFixed(2)} px outside a tree's own box: ${JSON.stringify(sh.box.map((v) => Math.round(v * 10) / 10))}`);
+  }
+});
+
+check('the grey pilgrim sets off fireworks at night, over open water, and they hold when asked', () => {
+  const [sx, sy] = V.FIREWORK_FROM;
+  // They leave from the head of his staff, which is inside the box he declares.
+  const [gx, gy, gw, gh] = V.GUARD_BOX;
+  assert(sx >= gx && sx <= gx + gw && sy >= gy && sy <= gy + gh,
+    `the rockets leave from his staff ${JSON.stringify([sx, sy])}, inside ${JSON.stringify(V.GUARD_BOX)}`);
+
+  const taken = { 'the harbour sign': V.signBox('harbour'), 'the guard': V.GUARD_BOX, 'the booth': V.BOOTH_BOX,
+    'the barrier': V.BARRIER_BOX, 'the platform': V.PATROL_PLATFORM };
+  assert(V.FIREWORKS.length >= 2, 'more than one goes up');
+  for (const [i, f] of V.FIREWORKS.entries()) {
+    const b = V.fireworkBox(f);
+    assert(b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= 1600 && b[1] + b[3] <= 900, `firework ${i} is on the canvas`);
+    // Over open water, so a burst never hangs over the deck, the queue or the land behind them.
+    for (let y = b[1]; y <= b[1] + b[3]; y += 4) {
+      assert(b[0] > V.shoreX(y), `firework ${i} hangs over the land at y ${y.toFixed(0)} (coast ${V.shoreX(y).toFixed(0)})`);
+    }
+    // Clear of the lantern on the point, which is the one thing up there at night that is not theirs.
+    const [lx, ly, lw, lh] = V.LIGHTHOUSE.lantern;
+    assert(!V.boxesOverlap(b, [lx - 24, ly - 20, lw + 48, lh + 120]), `firework ${i} covers the light on the point`);
+    for (const [what, t] of Object.entries(taken)) {
+      assert(!V.boxesOverlap(b, t), `firework ${i} ${JSON.stringify(b)} covers ${what} ${JSON.stringify(t)}`);
+    }
+  }
+
+  // A whole cycle: it rises, it bursts, and there is a stretch with nothing in the sky.
+  const f0 = V.FIREWORKS[0];
+  let rising = 0;
+  let bursting = 0;
+  let dark = 0;
+  for (let t = 0; t < V.FIREWORK_PERIOD; t += V.FIREWORK_PERIOD / 400) {
+    const st = V.fireworkAt(t, false, f0);
+    if (!st) dark += 1;
+    else if (st.burst === 0) rising += 1;
+    else bursting += 1;
+    if (st) {
+      assert(st.rise >= 0 && st.rise <= 1, `the rocket rises from 0 to 1 at t ${t.toFixed(2)} (${st.rise})`);
+      assert(st.burst >= 0 && st.burst <= 1, `the burst opens from 0 to 1 at t ${t.toFixed(2)} (${st.burst})`);
+    }
+  }
+  assert(rising > 20 && bursting > 20 && dark > 20, `it rises, bursts and rests (${rising}/${bursting}/${dark})`);
+  // No two of them go up together, or it reads as one firework drawn twice.
+  const phases = new Set(V.FIREWORKS.map((f) => f.phase));
+  eq(phases.size, V.FIREWORKS.length, 'each goes up at its own moment');
+
+  // Reduced motion holds every one of them open, rather than taking them away: still, not gone.
+  for (const f of V.FIREWORKS) {
+    const held = new Set();
+    for (let t = 0; t < V.FIREWORK_PERIOD * 2; t += V.FIREWORK_PERIOD / 40) {
+      const st = V.fireworkAt(t, true, f);
+      assert(st, 'reduced motion never leaves the sky empty');
+      held.add(`${st.rise},${st.burst}`);
+    }
+    eq(held.size, 1, 'and holds it at one pose');
+  }
+
+  // Night only. Nothing of theirs is painted in the day, in either pack that has a barrier.
+  const T = V.resolveTheme('shire', false);
+  const sky = [V.fireworkBox(V.FIREWORKS[0]), V.fireworkBox(V.FIREWORKS[1])];
+  for (const dark2 of [false, true]) {
+    const lit = lastFrame(paintedShapes([], { reduce: true, dark: dark2, theme: 'shire' }).shapes, dark2 ? 'dusk' : 'day')
+      .filter((sh) => (sh.style === T.flame || sh.style === T.flameCore || sh.style === V.resolveTheme('shire', true).flame
+        || sh.style === V.resolveTheme('shire', true).flameCore)
+        && sky.some(([bx, by, bw, bh]) => sh.box[0] >= bx && sh.box[2] <= bx + bw && sh.box[1] >= by && sh.box[3] <= by + bh));
+    if (dark2) assert(lit.length >= 8, `they are painted at night (${lit.length} shapes)`);
+    else eq(lit.length, 0, 'and nothing of them in the day');
   }
 });
 

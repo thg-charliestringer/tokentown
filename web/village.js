@@ -3330,6 +3330,12 @@ export const ENT_WALK_FOOT = Object.freeze([
   -0.72 * ENT_WALK_R, -0.45 * ENT_WALK_R, 0.72 * ENT_WALK_R, 0,
 ]);
 
+// The one point its own look is taken from, so it stays the same ent all the way round. It is chosen rather than
+// inherited: the two hashes at this point give turn 0.359 and turn2 0.942, which is a bole standing 1.525r and
+// only 0.430r thick, with a modest lean and its left bough raised. Seeded on its own starting node it came out
+// 1.299r and 0.456r, which is the shortest and near the stoutest an ent can be, and read as a stump.
+export const ENT_WALK_SEED = Object.freeze([189, 113]);
+
 export function walkingEntAt(t, reduced = false) {
   return walkAt(ENT_WALK_CIRCUIT, ENT_WALK_SPEED, t, reduced);
 }
@@ -3373,6 +3379,38 @@ export const SPIDER_REACH = 18;
 
 export function spiderAt(t, reduced = false) {
   return walkAt(SPIDER_CIRCUIT, SPIDER_SPEED, t, reduced);
+}
+
+// The grey pilgrim's fireworks, night only, over the water east of the Grey Havens. Each one rises from the head
+// of his staff and bursts. Like the beam, the disco and the mine's band, it rides the village's ambient tick and
+// never asks for a frame of its own, and reduced motion holds every burst open rather than taking them away.
+export const FIREWORK_PERIOD = 7;
+export const FIREWORK_RISE = 1.1;
+export const FIREWORK_BURST = 1.6;
+// Where a rocket leaves from: the knot at the head of the staff, which `drawGuard` paints at (x - 16, top - 12)
+// and `top` is the guard's own 38 tall body 6 above its feet.
+export const FIREWORK_FROM = Object.freeze([GUARD.x - 16, GUARD.y - 6 - 38 - 12]);
+// Each burst, and the box it is allowed. They hang over open water: east of the pier, below the harbour board,
+// clear of the dark tower on the point and inside the canvas.
+export const FIREWORKS = Object.freeze([
+  Object.freeze({ x: 1462, y: 196, r: 38, phase: 0, rays: 14 }),
+  Object.freeze({ x: 1548, y: 268, r: 28, phase: 3.4, rays: 11 }),
+]);
+// How far the sparks fall as the burst opens. A ring that holds its shape all the way out reads as a star cut
+// out of paper: this is what makes it a firework.
+export const FIREWORK_DROOP = 9;
+export function fireworkBox(f) {
+  return [f.x - f.r - 4, f.y - f.r - 4, (f.r + 4) * 2, (f.r + 4) * 2 + FIREWORK_DROOP];
+}
+
+// Where a firework is in its cycle at t: how far the rocket has risen, and how far the burst has opened. Null
+// between shows. Reduced motion holds them all open, the way the disco holds its ball: still, not gone.
+export function fireworkAt(t, reduced, f) {
+  if (reduced) return { rise: 1, burst: 0.45 };
+  const k = ((((Number(t) || 0) + f.phase) % FIREWORK_PERIOD) + FIREWORK_PERIOD) % FIREWORK_PERIOD;
+  if (k < FIREWORK_RISE) return { rise: k / FIREWORK_RISE, burst: 0 };
+  if (k < FIREWORK_RISE + FIREWORK_BURST) return { rise: 1, burst: (k - FIREWORK_RISE) / FIREWORK_BURST };
+  return null;
 }
 
 // A green country: the Shire's own hills and hedgerows, oak and thatch, and a road west to the sea. The sea stays
@@ -4006,28 +4044,30 @@ function paintHorizonRange(g, T) {
 // The open ground between the places, which is most of the map and which a wash of ellipses leaves saying
 // nothing. Hedged fields, a hillside with doors in it and a lane's own verges say where this is. Every patch is
 // hand-placed in ground no place declares and no road band crosses, so none of it is any place's to answer for.
-const SHIRE_FIELDS = Object.freeze([
+// Four of these used to lie below the graveyard, which looked like open ground and is not: the Porch's three
+// spots stand there, its swing frames reach 90 px above their rows and a row's badge reaches PORCH_CEILING, so
+// everything from y 581 down and x 666 west belongs to it. They were laid over the swings. `PORCH_GROUND` below
+// says so once, and a check holds every quad, hole and pony to it.
+export const SHIRE_FIELDS = Object.freeze([
   // Top left, under the jail's own ground, which ends at y 250, and above the y 320 road.
   Object.freeze([[10, 266], [210, 262], [222, 298], [16, 302]]),
   Object.freeze([[232, 262], [430, 266], [430, 300], [240, 298]]),
   // West of the jail's ground, which starts at x 70.
-  Object.freeze([[10, 120], [50, 112], [56, 210], [14, 216]]),
+  Object.freeze([[10, 120], [50, 112], [54, 178], [14, 182]]),
   // Top middle, west of Bag End.
-  Object.freeze([[500, 20], [700, 14], [710, 120], [506, 126]]),
+  Object.freeze([[500, 48], [676, 44], [682, 120], [506, 126]]),
   Object.freeze([[506, 134], [712, 128], [718, 250], [512, 252]]),
   // Top right, east of Bag End and short of the coast.
-  Object.freeze([[944, 18], [1140, 26], [1132, 130], [938, 122]]),
-  Object.freeze([[938, 140], [1130, 146], [1122, 254], [932, 248]]),
-  // Bottom left, below the graveyard and west of the Porch's rows.
-  Object.freeze([[8, 600], [200, 596], [206, 700], [12, 706]]),
-  Object.freeze([[214, 598], [424, 604], [420, 702], [218, 700]]),
-  Object.freeze([[10, 760], [180, 756], [186, 862], [14, 866]]),
-  Object.freeze([[196, 758], [418, 764], [412, 864], [192, 860]]),
+  Object.freeze([[944, 46], [1084, 50], [1080, 116], [938, 110]]),
+  Object.freeze([[938, 186], [1130, 190], [1122, 254], [932, 250]]),
 ]);
 
+// The ground the Porch takes, which no dressing may touch: from its own ceiling down, and from the west end of
+// the steps to the east end of its door spot, with a wide body's half-width either side.
+export const PORCH_GROUND = Object.freeze([6, PORCH_CEILING, 660, 900 - PORCH_CEILING]);
+
 // Hillsides with a door in them, in open ground away from every place: Bag End is not the only hole in the hill.
-const SHIRE_HOLES = Object.freeze([
-  Object.freeze({ x: 300, y: 742, r: 54 }),
+export const SHIRE_HOLES = Object.freeze([
   Object.freeze({ x: 372, y: 236, r: 42 }),
 ]);
 
@@ -4067,10 +4107,13 @@ function paintPony(g, T, x, y, dir) {
   g.restore();
 }
 
+// What a pony paints about the point it stands on, as [left, top, right, bottom]: the tail reaches 18 back, the
+// muzzle 19 forward, the ear 16 up and the ground shadow 15 down.
+export const PONY_BOX = Object.freeze([-20, -17, 20, 16]);
+
 // Ponies grazing, in two of the pastures and well inside their hedges.
-const SHIRE_PONIES = Object.freeze([
-  Object.freeze({ x: 1010, y: 92, dir: 1 }), Object.freeze({ x: 1076, y: 58, dir: -1 }),
-  Object.freeze({ x: 282, y: 666, dir: -1 }), Object.freeze({ x: 360, y: 638, dir: 1 }),
+export const SHIRE_PONIES = Object.freeze([
+  Object.freeze({ x: 1000, y: 94, dir: 1 }), Object.freeze({ x: 1054, y: 72, dir: -1 }),
 ]);
 
 // What is growing in a field. Fields take it in turn: standing corn, ploughed earth, then pasture, which is the
@@ -4466,9 +4509,15 @@ export function entSway(t, reduced, x, y) {
 // position, so eight of them are eight different ents rather than one drawn eight times. Unlike every other tree
 // they are drawn per frame rather than into the background layer, because they dance: it rides the village's own
 // ambient tick, like the beam and the frontier's horse, and holds still under reduced motion.
-function paintEnt(g, T, x, y, r, sway = 0, stride = 0) {
-  const turn = ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1 + 1) % 1;
-  const turn2 = ((Math.sin(x * 4.898 + y * 21.773) * 19483.1234) % 1 + 1) % 1;
+// `seed` is what the ent's own two hashes are taken from, and it is the footing rather than the position for a
+// reason: which way it leans, how tall it stands, how thick its bole is and which bough it has raised all come
+// off those hashes, so a walking ent seeded on where it currently is re-rolls all four of them every frame and
+// flickers. One that stands still never showed it, because for those two the footing and the position are the
+// same point.
+function paintEnt(g, T, x, y, r, sway = 0, stride = 0, seed = null) {
+  const [sx, sy] = seed || [x, y];
+  const turn = ((Math.sin(sx * 12.9898 + sy * 78.233) * 43758.5453) % 1 + 1) % 1;
+  const turn2 = ((Math.sin(sx * 4.898 + sy * 21.773) * 19483.1234) % 1 + 1) % 1;
   // The dance is added to the lean it already had: both together reach 0.34r, which puts the far edge of the
   // crown at 1.06r of the 1.07r the box allows.
   const lean = (turn - 0.5) * 0.44 * r + sway * ENT_SWAY * r;
@@ -4491,6 +4540,12 @@ function paintEnt(g, T, x, y, r, sway = 0, stride = 0) {
   fillPoly(g, [
     [x - w * 0.62, y - r * 0.1], [x + w * 0.62, y - r * 0.1], [tx + w * 0.5, top], [tx - w * 0.5, top],
   ], T.trunk, T.treeDark, 1.4);
+  // Grain, so the bole reads as bark rather than as a plank.
+  g.globalAlpha = 0.45;
+  for (const k of [-0.22, 0.2]) {
+    line(g, x + w * k, y - r * 0.2, tx + w * k, top + r * 0.12, T.treeDark, Math.max(1, r * 0.045));
+  }
+  g.globalAlpha = 1;
   // Two boughs for arms, one lifted higher than the other, swapping by which way it leans.
   const high = turn > 0.5 ? 1 : -1;
   for (const side of [-1, 1]) {
@@ -4499,30 +4554,52 @@ function paintEnt(g, T, x, y, r, sway = 0, stride = 0) {
     const wave = sway * side * ENT_SWAY * r;
     const lift = (side === high ? r * 1.25 : r * 0.85) + wave;
     const reach = side === high ? r * 0.82 : r * 0.7;
-    line(g, tx + side * w * 0.4, y - r * 0.95, x + side * reach, y - lift, T.trunk, Math.max(2, r * 0.13));
+    // Bent at an elbow rather than run straight out: a bough that leaves the bole in a line is a broom handle.
+    // The ends are where they always were, so nothing about the box changes.
+    const ex = x + side * reach;
+    const ey = y - lift;
+    const sx2 = tx + side * w * 0.4;
+    const sy2 = y - r * 0.95;
+    strokePolyline(g, [
+      [sx2, sy2], [sx2 + (ex - sx2) * 0.55, sy2 - (sy2 - ey) * 0.72], [ex, ey],
+    ], T.trunk, Math.max(2, r * 0.13));
     for (const k of [-0.3, 0.3]) {
       line(g, x + side * reach, y - lift, x + side * (reach + r * 0.16), y - lift - r * (0.16 + k * 0.2), T.treeDark, Math.max(1.4, r * 0.07));
     }
   }
   // The face: two eyes under a heavy brow, and a beard of moss.
   const fy = y - r * 1.12;
-  // The beard first, so the face is laid over it rather than the other way round.
-  fillPoly(g, [
-    [tx - w * 0.42, fy + r * 0.14], [tx + w * 0.42, fy + r * 0.14],
-    [tx + w * 0.22, y - r * 0.5], [tx, y - r * 0.42], [tx - w * 0.26, y - r * 0.52],
-  ], T.moss);
+  // The beard first, so the face is laid over it rather than the other way round. Three hanging strands of moss
+  // inside the span a solid wedge took: as one shape it read as a bib rather than as something growing on bark.
+  for (const [k, drop] of [[-0.3, 0.46], [0.02, 0.58], [0.3, 0.42]]) {
+    const bx = tx + w * k;
+    strokePolyline(g, [
+      [bx, fy + r * 0.12], [bx + w * 0.08, fy + r * 0.3], [bx - w * 0.05, y - r * drop],
+    ], T.moss, Math.max(1.6, r * 0.1));
+  }
   for (const side of [-1, 1]) {
     fillEllipse(g, tx + side * w * 0.36, fy, r * 0.1, r * 0.12, T.treeLight);
     fillEllipse(g, tx + side * w * 0.36, fy + r * 0.02, r * 0.05, r * 0.07, T.woodDark);
     // A heavy brow over each eye, which is most of what makes bark read as a face.
     line(g, tx + side * w * 0.14, fy - r * 0.15, tx + side * w * 0.56, fy - r * 0.19, T.treeDark, Math.max(1.6, r * 0.075));
   }
+  // Two twigs up into the crown, so it grows out of the bole rather than sitting on it like a hat.
+  for (const side of [-1, 1]) {
+    line(g, tx, top + r * 0.1, tx + side * r * 0.3, top - r * 0.16, T.trunk, Math.max(1.4, r * 0.07));
+  }
   // The crown, which is a mallorn's. The bole already stands 1.55r up, so the crown has 0.53r of headroom left in
-  // the box and takes 0.50r of it: centre 0.16r above the bole, half-height 0.34r.
-  fillEllipse(g, tx - r * 0.36, top - r * 0.04, r * 0.36, r * 0.24, T.treeDark);
-  fillEllipse(g, tx + r * 0.36, top - r * 0.06, r * 0.34, r * 0.22, T.treeDark);
-  fillEllipse(g, tx, top - r * 0.18, r * (0.44 + turn2 * 0.1), r * (0.28 + turn2 * 0.05), T.tree);
-  fillEllipse(g, tx - r * 0.12, top - r * 0.3, r * 0.22, r * 0.13, T.treeLight);
+  // the box and takes 0.50r of it: centre 0.16r above the bole, half-height 0.34r. Broken into lobes at
+  // different heights rather than domed: one smooth ellipse over a bole is a mushroom, whatever colour it is.
+  // Narrow. A crown reaching 0.72r either side of a bole 0.43r thick is a cap on a stalk, whatever it is made
+  // of: these reach 0.55r, so the canopy is nearer round than wide and the thing reads as a tree.
+  for (const [dx, dy, rx2, ry2] of [[-0.3, 0.0, 0.25, 0.19], [0.3, -0.03, 0.24, 0.18], [-0.1, -0.08, 0.26, 0.2], [0.14, -0.1, 0.24, 0.19]]) {
+    fillEllipse(g, tx + r * dx, top + r * dy, r * rx2, r * ry2, T.treeDark);
+  }
+  for (const [dx, dy, rx2, ry2] of [[-0.2, -0.16, 0.26, 0.19], [0.18, -0.19, 0.24, 0.18], [0, -0.28, 0.24, 0.18], [-0.31, -0.08, 0.2, 0.14], [0.31, -0.1, 0.18, 0.13]]) {
+    fillEllipse(g, tx + r * dx, top + r * (dy - turn2 * 0.04), r * rx2, r * ry2, T.tree);
+  }
+  fillEllipse(g, tx - r * 0.12, top - r * (0.33 + turn2 * 0.04), r * 0.16, r * 0.1, T.treeLight);
+  fillEllipse(g, tx + r * 0.2, top - r * 0.22, r * 0.11, r * 0.08, T.treeLight);
 }
 
 // A mallorn on the tree's own footing: a silver bole and a gold crown, inside the same `treeBox`. The crown tops
@@ -7196,6 +7273,51 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.restore();
   }
 
+  // The grey pilgrim's fireworks. Night only, and nothing here starts a frame: env.t is the village's own tick.
+  function drawFireworks(env) {
+    if (!env.night) return;
+    const T = env.theme;
+    const [fx0, fy0] = FIREWORK_FROM;
+    for (const f of FIREWORKS) {
+      const s2 = fireworkAt(env.t, env.reduced, f);
+      if (!s2) continue;
+      if (s2.burst === 0) {
+        // The rocket on its way up, with the last of its trail behind it.
+        const k = s2.rise;
+        const tail = Math.max(0, k - 0.22);
+        ctx.globalAlpha = 0.55;
+        line(ctx, fx0 + (f.x - fx0) * tail, fy0 + (f.y - fy0) * tail,
+          fx0 + (f.x - fx0) * k, fy0 + (f.y - fy0) * k, T.flame, 2);
+        ctx.globalAlpha = 1;
+        fillEllipse(ctx, fx0 + (f.x - fx0) * k, fy0 + (f.y - fy0) * k, 2.6, 2.6, T.flameCore);
+        continue;
+      }
+      // The burst: rays out from the centre, each with a spark on the end, fading as it opens.
+      const k = s2.burst;
+      const rr = f.r * (0.3 + 0.7 * Math.min(1, k * 1.7));
+      ctx.globalAlpha = Math.max(0, 1 - k) * 0.95;
+      const fall = k * k * FIREWORK_DROOP;
+      for (let i = 0; i < f.rays; i += 1) {
+        const a = (i / f.rays) * TAU + f.phase;
+        const c = Math.cos(a);
+        const sn = Math.sin(a);
+        line(ctx, f.x + c * rr * 0.34, f.y + sn * rr * 0.34 + fall * 0.12, f.x + c * rr, f.y + sn * rr + fall, T.flame, 2);
+        fillEllipse(ctx, f.x + c * rr, f.y + sn * rr + fall, 2.2, 2.2, T.flameCore);
+      }
+      // A second, shorter ring between the first, so the burst has some depth to it.
+      ctx.globalAlpha = Math.max(0, 1 - k) * 0.55;
+      for (let i = 0; i < f.rays; i += 1) {
+        const a = ((i + 0.5) / f.rays) * TAU + f.phase;
+        const c = Math.cos(a) * rr * 0.64;
+        const sn = Math.sin(a) * rr * 0.64;
+        line(ctx, f.x + c * 0.4, f.y + sn * 0.4, f.x + c, f.y + sn + fall * 0.6, T.flame, 1.4);
+      }
+      ctx.globalAlpha = Math.max(0, 1 - k) * 0.95;
+      fillEllipse(ctx, f.x, f.y, rr * 0.16, rr * 0.16, T.flameCore);
+      ctx.globalAlpha = 1;
+    }
+  }
+
   // The ents, which dance and so cannot be painted into a layer that is drawn once. Everything else on the map
   // that moves is a session going somewhere; this is scenery, so it rides the ambient tick and never asks for a
   // frame of its own.
@@ -7209,7 +7331,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   function drawWalkingEnt(env) {
     const { x, y } = walkingEntAt(env.t, env.reduced);
     const stride = entStride(env.t, env.reduced);
-    paintEnt(ctx, env.theme, x, y, ENT_WALK_R, stride * 0.5, stride);
+    paintEnt(ctx, env.theme, x, y, ENT_WALK_R, stride * 0.5, stride, ENT_WALK_SEED);
   }
 
   function drawAmbient(env) {
@@ -9472,6 +9594,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       drawWalkingEnt(env);
       drawSpider(env);
       drawGollum(env);
+      drawFireworks(env);
     }
     for (const key of PLACE_KEYS) drawSign(key, env);
     drawGraveyardSign(env);
