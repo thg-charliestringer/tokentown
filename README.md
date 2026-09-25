@@ -356,6 +356,12 @@ transcript is read from its tail for the session's state, and in full once (then
 and PR links. After the server starts, totals show "counting..." for about 20 s and PR links take about a minute to
 catch up.
 
+**Cloud sessions do not appear.** A session you start on claude.ai/code runs in Anthropic's container, not on this
+Mac. It writes a transcript and a registry entry in the shapes Tokentown reads, but on that container's disk, which
+is thrown away when the session ends: nothing reaches `~/.claude` or the Claude app's session records. The Claude
+app lists those sessions by asking Anthropic for them, which would take a network call and a credential, so
+Tokentown does not. Health stays green while one is missing, because no source it reads is missing.
+
 **VS Code sessions** register while they are open, but with no status, so their lane comes from the transcript. A
 permission prompt leaves no record there, so Tokentown infers it: a Bash command that has not started after 15 s
 (no shell under the session's process), or an edit still pending after 15 s, is Blocked with `Approve`. A wait on any
