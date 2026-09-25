@@ -3299,13 +3299,15 @@ export function horseAt(t, reduced = false) {
 // the barrows is scenery, not a session going anywhere, and nothing that only moves the scenery may hold the
 // canvas at full rate.
 export const GOLLUM_CIRCUIT = Object.freeze([
-  Object.freeze({ x: 54, y: 392 }), Object.freeze({ x: 398, y: 392 }),
-  Object.freeze({ x: 398, y: 514 }), Object.freeze({ x: 54, y: 514 }),
+  Object.freeze({ x: 56, y: 392 }), Object.freeze({ x: 396, y: 392 }),
+  Object.freeze({ x: 396, y: 508 }), Object.freeze({ x: 56, y: 508 }),
 ]);
 export const GOLLUM_SPEED = 18;
 // Half of what he paints, in any direction rather than across the leg: the circuit is a rectangle inside a
-// rectangle, so a square reach is both simpler than the road maths and stricter at the corners.
-export const GOLLUM_REACH = 19;
+// rectangle, so a square reach is both simpler than the road maths and stricter at the corners. It is 24 because
+// the head has to be half again the body for anyone to know what he is, and the fence is what allows it: the
+// circuit is inset far enough that 26 still clears every rail.
+export const GOLLUM_REACH = 26;
 
 // Where he is at t and which way he faces. On the two upright legs he already faces the way the next corner
 // takes him, so he turns before he walks rather than sliding along sideways.
@@ -6953,31 +6955,42 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
 
   // Creeping the inside of the graveyard fence. Everything he paints stays within GOLLUM_REACH of the point he
   // is at, which is what keeps him off the rails at a corner.
+  const GOLLUM_DRAW = 1.15;
   function drawGollum(env) {
     const T = env.theme;
     const { x, y, dir } = gollumAt(env.t, env.reduced);
     const creep = env.reduced ? 0 : Math.sin(env.t * 4.5);
     ctx.save();
     ctx.translate(x, y);
-    ctx.scale(dir < 0 ? -1 : 1, 1);
-    fillEllipse(ctx, 0, 9, 15, 3.5, T.shadow);
-    // Limbs first, so the body covers only where they meet it. Long arms reaching ahead, legs folded under the
-    // rump: drawn thin and left showing, because a body wide enough to hide them reads as a wombat.
-    for (const [ax, phase] of [[15, 0], [12, 2.4]]) line(ctx, 4, -5, ax + creep * Math.sin(phase) * 2.2, 8, T.steel, 2.6);
-    for (const [lx, phase] of [[-9, 1.1], [-5, 3.4]]) line(ctx, -7, -7, lx + creep * Math.sin(phase) * 2, 8, T.steel, 2.6);
-    // Rump up at the back, shoulders down at the front: the sloping spine is the whole silhouette.
-    fillPoly(ctx, [[-11, -8], [4, -6], [5, -1], [-10, -3]], T.steel, T.slate, 1.3);
-    fillEllipse(ctx, -8, -7, 5.5, 4.5, T.steel, T.slate, 1.3);
-    // A scrawny neck, and a head too big for it.
-    line(ctx, 4, -6, 10, -8, T.steel, 3);
-    fillEllipse(ctx, 12, -9, 6, 5.5, T.steel, T.slate, 1.3);
-    // The eyes are the only thing anyone remembers, so they are lit in both schemes rather than shaded.
-    for (const ex of [10.5, 14.5]) {
-      fillEllipse(ctx, ex, -10, 2.3, 2.1, T.flameCore);
-      fillEllipse(ctx, ex + 0.5, -10, 1, 1.2, T.slate);
+    // Drawn at 1.15, because at 1 he stood a head shorter than the ghosts he is creeping past and read as a bug.
+    ctx.scale(dir < 0 ? -GOLLUM_DRAW : GOLLUM_DRAW, GOLLUM_DRAW);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    fillEllipse(ctx, 1, 9, 14, 3.5, T.shadow);
+    // The head sits on top of everything else, not beside it. Drawn level with the body, the two ellipses read
+    // as a creature with two heads, which is what the first go at him looked like.
+    // He skulks upright rather than trotting on all fours: knees bent deep, arms hanging past them, head craned
+    // out in front of the body. On all fours he was a grey insect, whatever size the head was.
+    for (const [fx, phase] of [[-5, 1.3], [2, 3.8]]) {
+      const swing = creep * Math.sin(phase) * 2.4;
+      strokePolyline(ctx, [[-2, -4], [1 + swing * 0.5, 1], [fx + swing, 7]], T.steel, 2.8);
     }
-    line(ctx, 10, -6, 15, -6.4, T.slate, 1.2);
-    for (const [hx, hy] of [[9, -13], [12, -14], [15, -13]]) line(ctx, hx, hy, hx - 1.5, hy - 4, T.slate, 1.3);
+    for (const [hx, phase] of [[4, 2.6], [9, 0]]) {
+      const swing = creep * Math.sin(phase) * 1.8;
+      strokePolyline(ctx, [[0, -9], [hx * 0.7 + swing, -3], [hx + swing, 4]], T.steel, 2.6);
+    }
+    // A narrow hunched body with its ribs showing, and a neck craned forward under the head.
+    fillEllipse(ctx, -1, -6, 4.5, 5.5, T.steel, T.slate, 1.3);
+    for (const ry of [-8, -6, -4]) line(ctx, -4, ry, 1.5, ry, T.slate, 0.9);
+    line(ctx, 0, -9, 3, -11, T.steel, 3.2);
+    // The head, half again the body, and the eyes that all but fill it.
+    fillEllipse(ctx, 5, -15, 7, 6.5, T.steel, T.slate, 1.4);
+    for (const ex of [2.5, 8.5]) {
+      fillEllipse(ctx, ex, -16, 3, 2.8, T.flameCore, T.slate, 1);
+      fillEllipse(ctx, ex + 0.6, -16, 1.3, 1.5, T.slate);
+    }
+    line(ctx, 2, -10.5, 9, -11, T.slate, 1.3);
+    for (const [hx, hy] of [[2, -20], [5, -20.5], [8, -20]]) line(ctx, hx, hy, hx - 1.5, hy - 2.5, T.slate, 1.3);
     ctx.restore();
   }
 
@@ -8054,13 +8067,12 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     line(ctx, x + 5, bottom - 2, x + 6, y - 1, T.patrolNavy, 5);
     if (grey) {
       // A robe that widens to the ground, a staff, a hat and a beard, all inside GUARD_BOX: the box reaches 60
-      // above the feet and 18 either side, and the hat's point stops at 56 and the staff at 16.
-      line(ctx, x - 16, y - 2, x - 15, top - 12, T.patrolNavy, 3);
-      fillEllipse(ctx, x - 15, top - 13, 3.2, 3.2, T.patrolWhite);
+      // above the feet and 18 either side, and the hat's point stops at 58 and the staff at 17.
       fillPoly(ctx, [
         [x - w / 2 + 3, top], [x + w / 2 - 3, top], [x + w / 2 + 1, y - 1], [x - w / 2 - 1, y - 1],
       ], T.patrolKhaki, T.patrolKhakiShade, 2);
-      fillRR(ctx, x - w / 2 + 1, top + h * 0.72, w - 2, 3.5, 1, T.patrolNavy);
+      // A cord at the waist, not a uniform belt: the navy band read as one more piece of kit.
+      line(ctx, x - w / 2 + 2, top + h * 0.74, x + w / 2 - 2, top + h * 0.72, T.patrolKhakiShade, 2.5);
     } else {
       fillRR(ctx, x - w / 2, top, w, h, 10, T.patrolKhaki, T.patrolKhakiShade, 2);
       fillRR(ctx, x - w / 2 + 1, top + h * 0.7, w - 2, 4, 1, T.patrolNavy);
@@ -8106,12 +8118,14 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     }
 
     if (grey) {
-      // The beard first, so the brim laid over it reads as a hat rather than a collar.
+      // The beard, before the face, so the eyes land above it rather than on it. It is broad and it is most of
+      // his height: a narrow wedge under the chin read as a cravat, which is what made him nobody in particular.
       fillPoly(ctx, [
-        [x - 7, top + 13], [x + 7, top + 13], [x + 4, top + 30], [x, top + 33], [x - 4, top + 30],
-      ], T.patrolWhite);
-      fillEllipse(ctx, x, top + 3, 15, 4, T.patrolNavy);
-      fillPoly(ctx, [[x - 8, top + 2], [x - 1, top - 12], [x + 6, top + 2]], T.patrolNavy);
+        [x - 11, top + 17], [x + 11, top + 17], [x + 10, top + 27], [x + 6, top + 35],
+        [x, top + 38], [x - 6, top + 35], [x - 10, top + 27],
+      ], T.patrolWhite, T.patrolKhakiShade, 1.2);
+      // Hair falling either side of it, from under where the brim will go.
+      for (const hx of [-12, 12]) fillPoly(ctx, [[x + hx, top + 6], [x + hx * 1.15, top + 22], [x + hx * 0.55, top + 20]], T.patrolWhite);
     }
     // Face, looking left at the pier; now and then a glance up the deck at the queue, and a blink.
     const glance = !still && (t % 6.2) > 4.6 ? -1.5 : 0;
@@ -8126,6 +8140,39 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       fillEllipse(ctx, x + 5 + lookX, eyeY, 2.2, 2.6, INK_DARK);
     }
     line(ctx, x - 3 + lookX, top + h * 0.58, x + 2 + lookX, top + h * 0.58, INK_DARK, 1.6);
+    if (grey) {
+      // The hat goes on last, over the face, which is the only order that reads: a brim drawn under the eyes is
+      // a collar. The peaked cap below used to be drawn over this one, point and all.
+      const brows = () => {
+        for (const bx of [-6, 4]) line(ctx, x + bx - 2.5, top + 11.5, x + bx + 2.5, top + 10.5, T.patrolWhite, 2.6);
+      };
+      brows();
+      // Crown: a tall cone falling back off the brim, curved rather than straight, which is what makes it floppy.
+      ctx.beginPath();
+      ctx.moveTo(x - 10, top + 5);
+      ctx.quadraticCurveTo(x - 7, top - 9, x + 4, top - 16);
+      ctx.quadraticCurveTo(x + 1, top - 5, x + 9, top + 5);
+      ctx.closePath();
+      ctx.fillStyle = T.patrolKhakiShade;
+      ctx.fill();
+      ctx.strokeStyle = T.patrolNavy;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      // Brim: wider than his shoulders, and drooping at the front where he is looking.
+      fillEllipse(ctx, x - 1, top + 6, 16, 5, T.patrolKhakiShade, T.patrolNavy, 1.4);
+      fillEllipse(ctx, x - 9, top + 7.5, 8, 3, T.patrolKhakiShade, T.patrolNavy, 1.2);
+      // The staff last of all, in front of the robe and across the brim: behind them it was covered end to end
+      // and only its head showed, which read as a lamp post standing beside him.
+      strokePolyline(ctx, [[x - 15, y - 1], [x - 16, top + 18], [x - 15, top], [x - 16, top - 10]], T.patrolNavy, 3.5);
+      for (const [kx, ky, kr] of [[-16, -12, 3.4], [-12.5, -14, 2.2], [-17, -8, 2.2]]) {
+        fillEllipse(ctx, x + kx, top + ky, kr, kr * 0.9, T.patrolNavy);
+      }
+      fillEllipse(ctx, x - 15.5, top - 11.5, 2, 1.8, T.patrolWhite);
+      // The hand that holds it, where the arms put it.
+      fillEllipse(ctx, x - 15, top + 27, 3.4, 3.4, T.patrolKhaki, T.patrolKhakiShade, 1.2);
+      ctx.restore();
+      return;
+    }
     // Cap: a navy crown with a white badge, and its peak towards the pier.
     fillRR(ctx, x - 13, top - 9, 26, 12, 5, T.patrolNavy);
     fillEllipse(ctx, x - 7, top + 2, 10, 3, T.patrolNavy);
