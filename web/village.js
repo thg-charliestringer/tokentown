@@ -5476,18 +5476,7 @@ function paintHall(g, T) {
     // Laid as a closure because it is needed twice: everything drawn into the pane begins a path of its own, so
     // the stroke that frames the window has to be given the pane's outline again or it outlines the last shape
     // drawn inside it. It always did: the green hall's windows have never had their frames.
-    const pane = () => {
-      if (rivendell) {
-        hallLancet(g, wx);
-        return;
-      }
-      g.beginPath();
-      g.moveTo(wx - 70, 300);
-      g.lineTo(wx - 70, 140);
-      g.arc(wx, 140, 70, Math.PI, TAU);
-      g.lineTo(wx + 70, 300);
-      g.closePath();
-    };
+    const pane = () => hallPane(g, wx, rivendell);
     pane();
     g.fillStyle = T.hallSky;
     g.fill();
@@ -5742,7 +5731,11 @@ const HALL_TORCHES = [[120, 190], [520, 190], [1080, 190], [1480, 190]];
 // The two windows in the hall's back wall, and the box a lancet takes in it. One list, because what is drawn
 // through a window has to agree with where the window is.
 export const HALL_WINDOWS = Object.freeze([300, 1300]);
+// What each kind of window takes about its own centre line, as [left, top, width, height]. A lancet comes to a
+// point 46 down; a round head springs from 140 and peaks at 70. A firework shown through either has to sit in
+// both, because the same display is seen through both.
 export const HALL_LANCET_BOX = Object.freeze([-70, 46, 140, 254]);
+export const HALL_ARCH_BOX = Object.freeze([-70, 70, 140, 230]);
 
 // The same fireworks seen from inside the White Halls, through the two lancets over the gorge. Each sits inside
 // the pane it is seen through, so it is true with the clip and without it.
@@ -5751,14 +5744,20 @@ export const HALL_FIREWORKS = Object.freeze([
   Object.freeze({ x: HALL_WINDOWS[1], y: 150, r: 42, phase: 3.4, rays: 11 }),
 ]);
 
-// A lancet: two curves meeting at a point, which is the one line that says this hall is not that hall. Laid as a
-// path and nothing else, so the wall can fill and stroke it and a firework can be clipped to it.
-function hallLancet(g, wx) {
+// One of the hall's two windows, as a path and nothing else, so the wall can fill and stroke it and a firework
+// can be clipped to it. A lancet is two curves meeting at a point, which is the one line that says this hall is
+// not that hall; every other pack takes the round head it always had.
+function hallPane(g, wx, lancet) {
   g.beginPath();
   g.moveTo(wx - 70, 300);
-  g.lineTo(wx - 70, 156);
-  g.quadraticCurveTo(wx - 70, 74, wx, 46);
-  g.quadraticCurveTo(wx + 70, 74, wx + 70, 156);
+  if (lancet) {
+    g.lineTo(wx - 70, 156);
+    g.quadraticCurveTo(wx - 70, 74, wx, 46);
+    g.quadraticCurveTo(wx + 70, 74, wx + 70, 156);
+  } else {
+    g.lineTo(wx - 70, 140);
+    g.arc(wx, 140, 70, Math.PI, TAU);
+  }
   g.lineTo(wx + 70, 300);
   g.closePath();
 }
@@ -7344,14 +7343,15 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     g.globalAlpha = 1;
   }
 
-  // The same display, seen from inside the hall through its two lancets. Clipped to the pane, so a spark cannot
-  // land on the stone, and fired from the sill so a rocket climbs the window before it goes off.
+  // The same display, seen from inside the hall through its two windows: over the gorge in the White Halls, over
+  // the sea in the sand castle. Clipped to the pane, so a spark cannot land on the stone, and fired from the sill
+  // so a rocket climbs the window before it goes off.
   function drawHallFireworks(env) {
     for (const f of HALL_FIREWORKS) {
       const s2 = fireworkAt(env.t, env.reduced, f);
       if (!s2) continue;
       ctx.save();
-      hallLancet(ctx, f.x);
+      hallPane(ctx, f.x, env.pack === 'shire');
       ctx.clip();
       paintFirework(ctx, env.theme, f, s2, f.x, 296);
       ctx.restore();
@@ -9218,6 +9218,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     }
     drawDiscoLights(env);
     drawDiscoBall(env);
+    drawHallFireworks(env);
   }
 
   // Where the green hall hangs its mirror ball, these halls have a light of their own: one star over the archway

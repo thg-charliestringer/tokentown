@@ -4212,12 +4212,17 @@ check('the grey pilgrim sets off fireworks at night, over open water, and they h
   // the pane it is seen through: the draw clips to the lancet, which the spy cannot see, so a burst hung outside
   // one would be invisible on screen and invisible to every check as well.
   eq(V.HALL_FIREWORKS.length, V.HALL_WINDOWS.length, 'one through each window');
-  const [bl, bt, bw, bh] = V.HALL_LANCET_BOX;
-  for (const [i, f] of V.HALL_FIREWORKS.entries()) {
-    assert(V.HALL_WINDOWS.includes(f.x), `hall firework ${i} is centred on a window (${f.x})`);
-    const b = V.fireworkBox(f);
-    assert(b[0] >= f.x + bl && b[0] + b[2] <= f.x + bl + bw && b[1] >= bt && b[1] + b[3] <= bt + bh,
-      `hall firework ${i} ${JSON.stringify(b)} sits inside its own lancet ${JSON.stringify([f.x + bl, bt, bw, bh])}`);
+  // Both shapes, because the same display is shown through both: a lancet in the White Halls and the round head
+  // the sand castle has always had. The round head springs lower than the lancet's point, so a burst that fits a
+  // lancet does not have to fit an arch.
+  for (const [what, shape] of [['lancet', V.HALL_LANCET_BOX], ['round head', V.HALL_ARCH_BOX]]) {
+    const [bl, bt, bw, bh] = shape;
+    for (const [i, f] of V.HALL_FIREWORKS.entries()) {
+      assert(V.HALL_WINDOWS.includes(f.x), `hall firework ${i} is centred on a window (${f.x})`);
+      const b = V.fireworkBox(f);
+      assert(b[0] >= f.x + bl && b[0] + b[2] <= f.x + bl + bw && b[1] >= bt && b[1] + b[3] <= bt + bh,
+        `hall firework ${i} ${JSON.stringify(b)} sits inside a ${what} ${JSON.stringify([f.x + bl, bt, bw, bh])}`);
+    }
   }
   eq(new Set(V.HALL_FIREWORKS.map((f) => f.phase)).size, V.HALL_FIREWORKS.length, 'and each goes up at its own moment');
 
