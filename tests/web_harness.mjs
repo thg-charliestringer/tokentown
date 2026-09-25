@@ -1845,8 +1845,15 @@ check('what a tree paints stays inside the box it declares, in every theme pack'
       const T = V.resolveTheme(pack, dark);
       const inks = new Set([T.tree, T.treeDark, T.treeLight, T.trunk]);
       const bg = [];
+      // Long enough to cover a whole ent beat, because an ent dances and is drawn per frame rather than into the
+      // background layer: every pose it takes has to stay inside the box, not just the one at rest. The frame and
+      // the layer are read together, so a tree is found wherever its pack paints it.
+      // Two passes, because the two are read differently: with `bg` the village blits its background layer and
+      // the frames come back empty, and without it there is no document to make a layer at all. An ent dances and
+      // is drawn per frame, so it is only in the second; every other tree is only in the first.
       paintFrames([], { dark, bg, seconds: 0.1, pack });
-      const foliage = bg.filter((sh) => inks.has(sh.style));
+      const frames = paintFrames([], { dark, seconds: V.ENT_BEAT + 0.4, pack });
+      const foliage = [...bg, ...frames.flat()].filter((sh) => inks.has(sh.style));
       assert(foliage.length >= V.TREES.length, `${label}: the trees are painted at all (${foliage.length} shapes)`);
       for (const tree of V.TREES) {
         const [bx, by, bw, bh] = V.treeBox(tree);
@@ -1868,6 +1875,28 @@ check('what a tree paints stays inside the box it declares, in every theme pack'
       }
     }
   }
+});
+
+check('the ents dance, each to its own phase, and stand still when asked', () => {
+  const beat = V.ENT_BEAT;
+  for (const [x, y] of V.TREES) {
+    const still = new Set();
+    for (let t = 0; t <= beat; t += beat / 40) still.add(V.entSway(t, true, x, y));
+    eq([...still], [0], `reduced motion holds the ent at ${x},${y} at rest`);
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let t = 0; t <= beat; t += beat / 90) {
+      const k = V.entSway(t, false, x, y);
+      assert(k >= -1 && k <= 1, `the ent at ${x},${y} sways within its own range (${k})`);
+      lo = Math.min(lo, k);
+      hi = Math.max(hi, k);
+    }
+    assert(hi - lo > 1.9, `the ent at ${x},${y} gets through a whole beat (${(hi - lo).toFixed(2)})`);
+  }
+  // Eight ents in step would read as one ent drawn eight times, which is the thing the whole draw is built to
+  // avoid: their phases come off their own positions, so no two are at the same point of the beat.
+  const at0 = V.TREES.map(([x, y]) => V.entSway(0, false, x, y).toFixed(3));
+  eq(new Set(at0).size, V.TREES.length, 'no two ents are in step');
 });
 
 check('every tree stands on the land, clear of the signs', () => {
@@ -4042,11 +4071,12 @@ check('gollum creeps inside the graveyard fence all the way round, and holds sti
   eq(still.size, 1, 'reduced motion holds him at one place');
 
   // And the reach is honest about the drawing, not just about the circuit. Under reduced motion he stands at the
-  // circuit's first node, so everything he paints there can be measured against it. He is the only thing inside
-  // the fence drawn in the steel and the flame's core, which is what picks his shapes out of the frame.
+  // circuit's first node, so everything he paints there can be measured against it. The board is empty on
+  // purpose: he is drawn whatever is on it, but what haunts the barrows is not, and the orcs' iron caps are the
+  // same steel as his own skin, so with graves on the board they were being measured as him.
   const T = V.resolveTheme('shire', false);
   const at = V.gollumAt(0, true);
-  const mine = lastFrame(paintedShapes(graveRows(6), { reduce: true, theme: 'shire' }).shapes)
+  const mine = lastFrame(paintedShapes([], { reduce: true, theme: 'shire' }).shapes)
     .filter((s) => (s.style === T.steel || s.style === T.flameCore)
       && s.box[0] >= inner[0] && s.box[2] <= inner[0] + inner[2]
       && s.box[1] >= inner[1] && s.box[3] <= inner[1] + inner[3]);

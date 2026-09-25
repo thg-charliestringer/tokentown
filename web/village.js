@@ -4408,15 +4408,32 @@ function paintSaguaro(g, T, x, y, r) {
   fillEllipse(g, x, y - r * 1.95, r * 0.17, r * 0.1, T.treeLight);
 }
 
+// How far an ent's dance may move it, as a fraction of r. It is the crown that binds, not the bole: the crown's
+// outer lobe sits 0.72r from the lean and the box allows 1.07r, and the lean is already up to 0.22r of that on
+// its own, which leaves 0.13r. There is almost nothing to spare above either, the tallest ent already taking
+// 2.05r of 2.08r, so the dance is a lean and a wave and never a stretch: at 0.18 a crown went 0.02 px out.
+export const ENT_SWAY = 0.12;
+export const ENT_BEAT = 3.7;
+
+// Where an ent is in its dance at t, from -1 to 1, with its own phase off its own position so eight of them are
+// never in step. Reduced motion holds every one of them at rest.
+export function entSway(t, reduced, x, y) {
+  if (reduced) return 0;
+  const phase = ((Math.sin(x * 3.117 + y * 9.431) * 27644.6) % 1 + 1) % 1;
+  return Math.sin((TAU * (Number(t) || 0)) / ENT_BEAT + phase * TAU);
+}
+
 // An ent on the tree's own footing, inside the same `treeBox`: a bole with a face in it, two boughs for arms,
 // roots for feet and a mallorn's gold crown for hair. Which way it leans and which arm it lifts come off its own
-// position, so eight of them are eight different ents rather than one drawn eight times. They are painted into
-// the background layer with everything else, so an ent stands where a tree stood and does not walk: nothing in
-// the village moves except what a session is doing.
-function paintEnt(g, T, x, y, r) {
+// position, so eight of them are eight different ents rather than one drawn eight times. Unlike every other tree
+// they are drawn per frame rather than into the background layer, because they dance: it rides the village's own
+// ambient tick, like the beam and the frontier's horse, and holds still under reduced motion.
+function paintEnt(g, T, x, y, r, sway = 0) {
   const turn = ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1 + 1) % 1;
   const turn2 = ((Math.sin(x * 4.898 + y * 21.773) * 19483.1234) % 1 + 1) % 1;
-  const lean = (turn - 0.5) * 0.44 * r;
+  // The dance is added to the lean it already had: both together reach 0.34r, which puts the far edge of the
+  // crown at 1.06r of the 1.07r the box allows.
+  const lean = (turn - 0.5) * 0.44 * r + sway * ENT_SWAY * r;
   const tx = x + lean;
   // Eight ents standing the same height in the same stance read as one ent drawn eight times. How tall it stands
   // and how thick its bole is come off its own position, inside the box either way. The tallest bole takes 1.54r
@@ -4438,7 +4455,10 @@ function paintEnt(g, T, x, y, r) {
   // Two boughs for arms, one lifted higher than the other, swapping by which way it leans.
   const high = turn > 0.5 ? 1 : -1;
   for (const side of [-1, 1]) {
-    const lift = side === high ? r * 1.25 : r * 0.85;
+    // The boughs rise and fall out of phase with each other, which is what turns a sway into a dance. Only the
+    // lift moves: the reach is fixed, because the arms already come within 0.09r of the side of the box.
+    const wave = sway * side * ENT_SWAY * r;
+    const lift = (side === high ? r * 1.25 : r * 0.85) + wave;
     const reach = side === high ? r * 0.82 : r * 0.7;
     line(g, tx + side * w * 0.4, y - r * 0.95, x + side * reach, y - lift, T.trunk, Math.max(2, r * 0.13));
     for (const k of [-0.3, 0.3]) {
@@ -4480,13 +4500,13 @@ function paintMallorn(g, T, x, y, r) {
   fillEllipse(g, x - r * 0.16, y - r * 1.78, r * 0.3, r * 0.2, T.treeLight);
 }
 
-function paintTree(g, T, x, y, r) {
+function paintTree(g, T, x, y, r, sway = 0) {
   if (T.pack === 'west') {
     paintSaguaro(g, T, x, y, r);
     return;
   }
   if (T.pack === 'shire') {
-    paintEnt(g, T, x, y, r);
+    paintEnt(g, T, x, y, r, sway);
     return;
   }
   fillEllipse(g, x + 4, y + 2, r * 0.9, r * 0.3, T.shadow);
@@ -4512,7 +4532,10 @@ export function treeBox([x, y, r]) {
   return [left, y - 2.08 * r, right - left, 2.08 * r + 2 + 0.3 * r];
 }
 
+// Every tree but an ent. An ent dances, so it cannot live in a layer that is painted once: the village draws
+// those per frame instead (`drawEnts`), on the ambient tick.
 function paintTrees(g, T) {
+  if (T.pack === 'shire') return;
   for (const [x, y, r] of TREES) paintTree(g, T, x, y, r);
 }
 
@@ -6994,6 +7017,13 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.restore();
   }
 
+  // The ents, which dance and so cannot be painted into a layer that is drawn once. Everything else on the map
+  // that moves is a session going somewhere; this is scenery, so it rides the ambient tick and never asks for a
+  // frame of its own.
+  function drawEnts(env) {
+    for (const [x, y, r] of TREES) paintEnt(ctx, env.theme, x, y, r, entSway(env.t, env.reduced, x, y));
+  }
+
   function drawAmbient(env) {
     const { t, theme: T } = env;
     // Lit by whoever is in the room, idle or recent alike: dark windows with guests inside read as a bug.
@@ -8632,6 +8662,46 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     for (const g of ghostsFor(countOf('graveyard') || stones.size)) drawGhost(env, g);
   }
 
+  // What haunts the barrows in Middle-earth. It stands on the ghost's own perch and inside the same box: ears no
+  // wider than the arms reached, nothing above the dome's own top, and the jaw no lower than the skirt hung. The
+  // shoulders sway on the ghost's own ripple, so it is the same motion on the same ambient tick.
+  function drawOrc(g, T, x, y, rx, ry, k, w) {
+    const lean = w * rx * 0.06;
+    // Shoulders, hunched and higher on one side.
+    fillPoly(g, [
+      [x - rx * 1.12, y + ry * 1.24], [x - rx * 0.8, y + ry * 0.1],
+      [x + rx * 0.8, y + ry * 0.1], [x + rx * 1.12, y + ry * 1.24],
+    ], T.yewDark, T.ink, 1.5 * k);
+    // Ears, swept back and pointed, which is the first thing that says this is not a ghost.
+    for (const side of [-1, 1]) {
+      fillPoly(g, [
+        [x + lean + side * rx * 0.66, y - ry * 0.28], [x + lean + side * rx * 1.22, y - ry * 0.86],
+        [x + lean + side * rx * 0.78, y + ry * 0.22],
+      ], T.yew, T.ink, 1.3 * k);
+    }
+    // The head: square-jawed, not domed.
+    fillRR(g, x + lean - rx * 0.84, y - ry * 0.92, rx * 1.68, ry * 1.42, rx * 0.34, T.yew, T.ink, 1.7 * k);
+    // A heavy brow, and small eyes lit under it.
+    fillRR(g, x + lean - rx * 0.86, y - ry * 0.46, rx * 1.72, ry * 0.26, 2 * k, T.yewDark);
+    for (const side of [-1, 1]) {
+      fillEllipse(g, x + lean + side * rx * 0.36, y - ry * 0.12, rx * 0.18, ry * 0.14, T.flame);
+      fillEllipse(g, x + lean + side * rx * 0.36, y - ry * 0.12, rx * 0.08, ry * 0.07, T.ink);
+    }
+    // The jaw, and two tusks coming up out of it.
+    fillRR(g, x + lean - rx * 0.58, y + ry * 0.16, rx * 1.16, ry * 0.4, rx * 0.18, T.yewDark, T.ink, 1.3 * k);
+    for (const side of [-1, 1]) {
+      fillPoly(g, [
+        [x + lean + side * rx * 0.2, y + ry * 0.5], [x + lean + side * rx * 0.42, y - ry * 0.06],
+        [x + lean + side * rx * 0.44, y + ry * 0.5],
+      ], T.sailCloth, T.ink, 0.9 * k);
+    }
+    line(g, x + lean - rx * 0.4, y + ry * 0.36, x + lean + rx * 0.4, y + ry * 0.36, T.ink, 1.2 * k);
+    // An iron cap with a nose guard, sitting on the dome's own top line.
+    fillRR(g, x + lean - rx * 0.78, y - ry, rx * 1.56, ry * 0.36, 2 * k, T.steel, T.ink, 1.4 * k);
+    fillRR(g, x + lean - rx * 0.1, y - ry * 0.7, rx * 0.2, ry * 0.42, 1.5 * k, T.steel, T.ink, 1.2 * k);
+    for (const side of [-1, 1]) fillEllipse(g, x + lean + side * rx * 0.58, y - ry * 0.86, rx * 0.1, ry * 0.08, T.slate);
+  }
+
   function drawGhost(env, g) {
     const T = env.theme;
     const { x, y } = ghostAt(env.t, env.reduced, g);
@@ -8641,6 +8711,11 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     const k = rx / GHOST.rx;
     const w = env.reduced ? 0 : Math.sin((TAU * (env.t + g.phase)) / 3.1);
     ctx.save();
+    if (env.pack === 'shire') {
+      drawOrc(ctx, T, x, y, rx, ry, k, w);
+      ctx.restore();
+      return;
+    }
     const halo = ctx.createRadialGradient(x, y, 2, x, y, rx + 8);
     halo.addColorStop(0, `rgba(${T.ghost}, 0.22)`);
     halo.addColorStop(1, `rgba(${T.ghost}, 0)`);
@@ -9204,7 +9279,10 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     const T = env.theme;
     drawAmbient(env);
     if (env.west) drawHorse(env);
-    if (env.pack === 'shire') drawGollum(env);
+    if (env.pack === 'shire') {
+      drawEnts(env);
+      drawGollum(env);
+    }
     for (const key of PLACE_KEYS) drawSign(key, env);
     drawGraveyardSign(env);
     drawRoomBadge(env, { id: CASTLE_ID, at: CASTLE.badge, lanes: SCENE_ART.castle.lanes });
