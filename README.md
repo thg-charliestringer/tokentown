@@ -293,7 +293,8 @@ windows glow, the lighthouse sweeps its beam round, and the sand castle hall has
 coloured spotlights. In the Wild West the mine has a band instead, and every five seconds two of the crowd go at
 it: a brawl with a **POW!**, then a shootout with a **BANG!**. In Middle-earth the hall has starlight, and the
 dark tower's Eye sweeps where the lighthouse beam did, and the eyes of the thing in the graveyard catch the
-light, and the grey pilgrim sends up fireworks from the head of his staff over the water beyond the Havens. The
+light, and the grey pilgrim sends up fireworks from the head of his staff over the water beyond the Havens. Go
+inside the White Halls and you see the same display through its two lancets, over the gorge. The
 beam, the disco, the band, the fights, the starlight, the fireworks, the horse, the creeper, the spider, the
 walking ent, the dancing ents and the ghosts all hold still when your Mac is set to reduce motion.
 

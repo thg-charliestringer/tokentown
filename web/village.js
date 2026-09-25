@@ -5472,22 +5472,19 @@ function paintHall(g, T) {
   // The pit props between the courses, which is what makes boards read as shoring.
   if (west) for (const x of [66, 442, 800, 1158, 1534]) fillRR(g, x - 11, -10, 22, 366, 2, T.wood, T.woodDark, 1.5);
   // Windows looking out to sea.
-  for (const wx of [300, 1300]) {
+  for (const wx of HALL_WINDOWS) {
     // Laid as a closure because it is needed twice: everything drawn into the pane begins a path of its own, so
     // the stroke that frames the window has to be given the pane's outline again or it outlines the last shape
     // drawn inside it. It always did: the green hall's windows have never had their frames.
     const pane = () => {
+      if (rivendell) {
+        hallLancet(g, wx);
+        return;
+      }
       g.beginPath();
       g.moveTo(wx - 70, 300);
-      if (rivendell) {
-        // A lancet: two curves meeting at a point, which is the one line that says this hall is not that hall.
-        g.lineTo(wx - 70, 156);
-        g.quadraticCurveTo(wx - 70, 74, wx, 46);
-        g.quadraticCurveTo(wx + 70, 74, wx + 70, 156);
-      } else {
-        g.lineTo(wx - 70, 140);
-        g.arc(wx, 140, 70, Math.PI, TAU);
-      }
+      g.lineTo(wx - 70, 140);
+      g.arc(wx, 140, 70, Math.PI, TAU);
       g.lineTo(wx + 70, 300);
       g.closePath();
     };
@@ -5741,6 +5738,30 @@ function paintCarvedStar(g, T, x, y, r, rot, lineWidth = 1.4) {
 }
 
 const HALL_TORCHES = [[120, 190], [520, 190], [1080, 190], [1480, 190]];
+
+// The two windows in the hall's back wall, and the box a lancet takes in it. One list, because what is drawn
+// through a window has to agree with where the window is.
+export const HALL_WINDOWS = Object.freeze([300, 1300]);
+export const HALL_LANCET_BOX = Object.freeze([-70, 46, 140, 254]);
+
+// The same fireworks seen from inside the White Halls, through the two lancets over the gorge. Each sits inside
+// the pane it is seen through, so it is true with the clip and without it.
+export const HALL_FIREWORKS = Object.freeze([
+  Object.freeze({ x: HALL_WINDOWS[0], y: 158, r: 48, phase: 0, rays: 13 }),
+  Object.freeze({ x: HALL_WINDOWS[1], y: 150, r: 42, phase: 3.4, rays: 11 }),
+]);
+
+// A lancet: two curves meeting at a point, which is the one line that says this hall is not that hall. Laid as a
+// path and nothing else, so the wall can fill and stroke it and a firework can be clipped to it.
+function hallLancet(g, wx) {
+  g.beginPath();
+  g.moveTo(wx - 70, 300);
+  g.lineTo(wx - 70, 156);
+  g.quadraticCurveTo(wx - 70, 74, wx, 46);
+  g.quadraticCurveTo(wx + 70, 74, wx + 70, 156);
+  g.lineTo(wx + 70, 300);
+  g.closePath();
+}
 
 // The mirror ball hangs on its chain in front of the wall, between the title plaque (618..982, 42..154), which is
 // drawn after it and hides the top of the chain, and the door arch below. No guest's badge reaches that high.
@@ -7281,40 +7302,59 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     for (const f of FIREWORKS) {
       const s2 = fireworkAt(env.t, env.reduced, f);
       if (!s2) continue;
-      if (s2.burst === 0) {
-        // The rocket on its way up, with the last of its trail behind it.
-        const k = s2.rise;
-        const tail = Math.max(0, k - 0.22);
-        ctx.globalAlpha = 0.55;
-        line(ctx, fx0 + (f.x - fx0) * tail, fy0 + (f.y - fy0) * tail,
-          fx0 + (f.x - fx0) * k, fy0 + (f.y - fy0) * k, T.flame, 2);
-        ctx.globalAlpha = 1;
-        fillEllipse(ctx, fx0 + (f.x - fx0) * k, fy0 + (f.y - fy0) * k, 2.6, 2.6, T.flameCore);
-        continue;
-      }
-      // The burst: rays out from the centre, each with a spark on the end, fading as it opens.
-      const k = s2.burst;
-      const rr = f.r * (0.3 + 0.7 * Math.min(1, k * 1.7));
-      ctx.globalAlpha = Math.max(0, 1 - k) * 0.95;
-      const fall = k * k * FIREWORK_DROOP;
-      for (let i = 0; i < f.rays; i += 1) {
-        const a = (i / f.rays) * TAU + f.phase;
-        const c = Math.cos(a);
-        const sn = Math.sin(a);
-        line(ctx, f.x + c * rr * 0.34, f.y + sn * rr * 0.34 + fall * 0.12, f.x + c * rr, f.y + sn * rr + fall, T.flame, 2);
-        fillEllipse(ctx, f.x + c * rr, f.y + sn * rr + fall, 2.2, 2.2, T.flameCore);
-      }
-      // A second, shorter ring between the first, so the burst has some depth to it.
-      ctx.globalAlpha = Math.max(0, 1 - k) * 0.55;
-      for (let i = 0; i < f.rays; i += 1) {
-        const a = ((i + 0.5) / f.rays) * TAU + f.phase;
-        const c = Math.cos(a) * rr * 0.64;
-        const sn = Math.sin(a) * rr * 0.64;
-        line(ctx, f.x + c * 0.4, f.y + sn * 0.4, f.x + c, f.y + sn + fall * 0.6, T.flame, 1.4);
-      }
-      ctx.globalAlpha = Math.max(0, 1 - k) * 0.95;
-      fillEllipse(ctx, f.x, f.y, rr * 0.16, rr * 0.16, T.flameCore);
-      ctx.globalAlpha = 1;
+      paintFirework(ctx, T, f, s2, fx0, fy0);
+    }
+  }
+
+  // One firework, wherever it is fired from: the rocket on its way up, or the burst opening. Shared, because the
+  // hall shows the same fireworks through its own windows and a second copy would drift from this one.
+  function paintFirework(g, T, f, s2, fromX, fromY) {
+    if (s2.burst === 0) {
+      const k = s2.rise;
+      const tail = Math.max(0, k - 0.22);
+      g.globalAlpha = 0.55;
+      line(g, fromX + (f.x - fromX) * tail, fromY + (f.y - fromY) * tail,
+        fromX + (f.x - fromX) * k, fromY + (f.y - fromY) * k, T.flame, 2);
+      g.globalAlpha = 1;
+      fillEllipse(g, fromX + (f.x - fromX) * k, fromY + (f.y - fromY) * k, 2.6, 2.6, T.flameCore);
+      return;
+    }
+    // The burst: rays out from the centre, each with a spark on the end, fading as it opens.
+    const k = s2.burst;
+    const rr = f.r * (0.3 + 0.7 * Math.min(1, k * 1.7));
+    const fall = k * k * FIREWORK_DROOP;
+    g.globalAlpha = Math.max(0, 1 - k) * 0.95;
+    for (let i = 0; i < f.rays; i += 1) {
+      const a = (i / f.rays) * TAU + f.phase;
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
+      line(g, f.x + c * rr * 0.34, f.y + sn * rr * 0.34 + fall * 0.12, f.x + c * rr, f.y + sn * rr + fall, T.flame, 2);
+      fillEllipse(g, f.x + c * rr, f.y + sn * rr + fall, 2.2, 2.2, T.flameCore);
+    }
+    // A second, shorter ring between the first, so the burst has some depth to it.
+    g.globalAlpha = Math.max(0, 1 - k) * 0.55;
+    for (let i = 0; i < f.rays; i += 1) {
+      const a = ((i + 0.5) / f.rays) * TAU + f.phase;
+      const c = Math.cos(a) * rr * 0.64;
+      const sn = Math.sin(a) * rr * 0.64;
+      line(g, f.x + c * 0.4, f.y + sn * 0.4, f.x + c, f.y + sn + fall * 0.6, T.flame, 1.4);
+    }
+    g.globalAlpha = Math.max(0, 1 - k) * 0.95;
+    fillEllipse(g, f.x, f.y, rr * 0.16, rr * 0.16, T.flameCore);
+    g.globalAlpha = 1;
+  }
+
+  // The same display, seen from inside the hall through its two lancets. Clipped to the pane, so a spark cannot
+  // land on the stone, and fired from the sill so a rocket climbs the window before it goes off.
+  function drawHallFireworks(env) {
+    for (const f of HALL_FIREWORKS) {
+      const s2 = fireworkAt(env.t, env.reduced, f);
+      if (!s2) continue;
+      ctx.save();
+      hallLancet(ctx, f.x);
+      ctx.clip();
+      paintFirework(ctx, env.theme, f, s2, f.x, 296);
+      ctx.restore();
     }
   }
 
@@ -9173,6 +9213,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     }
     if (env.pack === 'shire') {
       drawStarlight(env);
+      drawHallFireworks(env);
       return;
     }
     drawDiscoLights(env);
