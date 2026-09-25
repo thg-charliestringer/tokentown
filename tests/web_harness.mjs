@@ -187,7 +187,7 @@ function withFrameLoop(fn) {
   }
 }
 
-function makeVillage({ reduce = true, texts = null, measure = false, perChar = 8.5, spy = null, boats = null, mode, island } = {}) {
+function makeVillage({ reduce = true, texts = null, measure = false, perChar = 8.5, spy = null, boats = null, mode, island, theme } = {}) {
   reduceMotion = reduce;
   const listeners = new Map();
   const canvas = {
@@ -211,6 +211,7 @@ function makeVillage({ reduce = true, texts = null, measure = false, perChar = 8
     onIsland: (repo) => log.islands.push(repo),
     mode,
     island,
+    theme,
   });
   village.resize();
   const fire = (type, x, y, extra = {}) => {
@@ -1834,6 +1835,111 @@ check('no road is drawn on open water: the coast, or a deck, carries every part 
     && postFoot[1] + postFoot[3] <= by + bh && postFoot[1] + postFoot[3] >= by), 'so it stands on the quay');
 });
 
+check('what a tree paints stays inside the box it declares, in every theme pack', () => {
+  // treeBox is what every other check reasons about: the signs keep clear of it, the ghosts keep out of it and the
+  // world map lays out around it. A saguaro drawn on the tree's footing has to live inside the same box, or all of
+  // that reasoning is about a shape that is no longer there.
+  for (const pack of V.THEME_KEYS) {
+    for (const dark of [false, true]) {
+      const label = `${pack} ${dark ? 'dusk' : 'day'}`;
+      const T = V.resolveTheme(pack, dark);
+      const inks = new Set([T.tree, T.treeDark, T.treeLight, T.trunk]);
+      const bg = [];
+      // Long enough to cover a whole ent beat, because an ent dances and is drawn per frame rather than into the
+      // background layer: every pose it takes has to stay inside the box, not just the one at rest. The frame and
+      // the layer are read together, so a tree is found wherever its pack paints it.
+      // Two passes, because the two are read differently: with `bg` the village blits its background layer and
+      // the frames come back empty, and without it there is no document to make a layer at all. An ent dances and
+      // is drawn per frame, so it is only in the second; every other tree is only in the first.
+      paintFrames([], { dark, bg, seconds: 0.1, pack });
+      const frames = paintFrames([], { dark, seconds: V.ENT_BEAT + 0.4, pack });
+      const foliage = [...bg, ...frames.flat()].filter((sh) => inks.has(sh.style));
+      assert(foliage.length >= V.TREES.length, `${label}: the trees are painted at all (${foliage.length} shapes)`);
+      for (const tree of V.TREES) {
+        const [bx, by, bw, bh] = V.treeBox(tree);
+        // Attributed by its centre, so the flower beds and the harbour's scrub, which share these colours, are
+        // only ever judged against the box they actually sit in.
+        const mine = foliage.filter((sh) => {
+          const cx = (sh.box[0] + sh.box[2]) / 2;
+          const cy = (sh.box[1] + sh.box[3]) / 2;
+          return cx >= bx && cx <= bx + bw && cy >= by && cy <= by + bh;
+        });
+        assert(mine.length >= 3, `${label}: the tree at ${JSON.stringify(tree)} paints something (${mine.length})`);
+        for (const sh of mine) {
+          const pad = sh.kind === 'stroke' ? sh.lw / 2 : 0;
+          const out = Math.max(bx - (sh.box[0] - pad), (sh.box[2] + pad) - (bx + bw),
+            by - (sh.box[1] - pad), (sh.box[3] + pad) - (by + bh));
+          assert(out <= 0.01,
+            `${label}: the tree at ${JSON.stringify(tree)} paints ${sh.kind} ${String(sh.style)} ${out.toFixed(2)} px outside its box`);
+        }
+      }
+    }
+  }
+});
+
+check('the ents dance, each to its own phase, and stand still when asked', () => {
+  const beat = V.ENT_BEAT;
+  for (const [x, y] of V.TREES) {
+    const still = new Set();
+    for (let t = 0; t <= beat; t += beat / 40) still.add(V.entSway(t, true, x, y));
+    eq([...still], [0], `reduced motion holds the ent at ${x},${y} at rest`);
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let t = 0; t <= beat; t += beat / 90) {
+      const k = V.entSway(t, false, x, y);
+      assert(k >= -1 && k <= 1, `the ent at ${x},${y} sways within its own range (${k})`);
+      lo = Math.min(lo, k);
+      hi = Math.max(hi, k);
+    }
+    assert(hi - lo > 1.9, `the ent at ${x},${y} gets through a whole beat (${(hi - lo).toFixed(2)})`);
+  }
+  // Eight ents in step would read as one ent drawn eight times, which is the thing the whole draw is built to
+  // avoid: their phases come off their own positions, so no two are at the same point of the beat.
+  const at0 = V.TREES.map(([x, y]) => V.entSway(0, false, x, y).toFixed(3));
+  eq(new Set(at0).size, V.TREES.length, 'no two ents are in step');
+});
+
+check("the Shire's own dressing stays on ground nothing else has claimed", () => {
+  // Fields, hillsides and ponies are laid by hand into open ground, which is the one thing on the map with no
+  // box of its own to keep them honest. Four field quads and a hillside were laid over the Porch's swings: the
+  // spots are at y 734, so the ground looked free, but a swing frame reaches 90 px above its row and a row's
+  // badge reaches PORCH_CEILING, and none of that is in any rect the layout checks reason about.
+  const box = (pts) => {
+    const xs = pts.map((q) => q[0]);
+    const ys = pts.map((q) => q[1]);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+  };
+  const dressing = [
+    ...V.SHIRE_FIELDS.map((f, i) => [`field ${i}`, box(f)]),
+    // A hillside is drawn as the top half of an ellipse, with its ground shadow 5 right and 3 down of it.
+    ...V.SHIRE_HOLES.map((h, i) => [`hillside ${i}`, [h.x - h.r, h.y - h.r * 0.86, h.r * 2 + 5, h.r * 0.86 + 11]]),
+    ...V.SHIRE_PONIES.map((q, i) => [`pony ${i}`,
+      [q.x + V.PONY_BOX[0], q.y + V.PONY_BOX[1], V.PONY_BOX[2] - V.PONY_BOX[0], V.PONY_BOX[3] - V.PONY_BOX[1]]]),
+  ];
+  const taken = { porch: V.PORCH_GROUND, jail: V.JAIL.plot, graveyard: V.GRAVEYARD.fence, cottage: V.COTTAGE.rect };
+  for (const [name, o] of Object.entries(V.SPOTS)) taken[`the ${name} spot`] = o.rect;
+  for (const [i, o] of V.PORCH_OBSTACLES.entries()) taken[`the porch house ${i}`] = o;
+  for (const place of V.PLACE_KEYS) taken[`the ${place} sign`] = V.signBox(place);
+  taken['the graveyard sign'] = [V.GRAVEYARD.sign[0] - 60, V.GRAVEYARD.sign[1] - 30, 120, 60];
+  V.TREES.forEach((tree, i) => { taken[`tree ${i}`] = V.treeBox(tree); });
+  const roadBands = V.ROAD_LINES.map(([[x0, y0], [x1, y1]]) => {
+    const half = V.ROAD_BAND / 2;
+    return y0 === y1
+      ? [Math.min(x0, x1), y0 - half, Math.abs(x1 - x0), V.ROAD_BAND]
+      : [x0 - half, Math.min(y0, y1), V.ROAD_BAND, Math.abs(y1 - y0)];
+  });
+  roadBands.forEach((b, i) => { taken[`road ${i}`] = b; });
+
+  assert(dressing.length >= 8, `there is dressing to check (${dressing.length} pieces)`);
+  for (const [name, b] of dressing) {
+    assert(b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= 1600 && b[1] + b[3] <= 900, `${name} is on the canvas`);
+    assert(b[0] + b[2] < V.shoreX(b[1] + b[3] / 2), `${name} reaches the sea`);
+    for (const [what, t] of Object.entries(taken)) {
+      assert(!V.boxesOverlap(b, t), `${name} ${JSON.stringify(b)} is laid over ${what} ${JSON.stringify(t)}`);
+    }
+  }
+});
+
 check('every tree stands on the land, clear of the signs', () => {
   eq(V.TREES.length, 8, 'the trees');
   for (const tree of V.TREES) {
@@ -3007,6 +3113,294 @@ check('hall guests multiply the crowd scale by their token size, and still keep 
 
 // ---------- the border patrol ----------
 
+// ----- theme packs -----
+
+check('the horse keeps to the roads all the way round, and holds still when asked', () => {
+  // Every node of the circuit is a road junction the village already has, so the horse cannot be trotting a line
+  // nobody paints.
+  for (const node of V.HORSE_CIRCUIT) {
+    assert(V.ROAD_NODES.some(([x, y]) => x === node.x && y === node.y),
+      `the circuit turns at ${JSON.stringify(node)}, which is a road junction`);
+  }
+  assert(V.HORSE_REACH * 2 < V.ROAD_BAND, `the horse (${V.HORSE_REACH * 2} wide) fits the road band (${V.ROAD_BAND})`);
+
+  // Two things, measured apart. Where the horse stands is on a road's centreline; how wide it paints is measured
+  // across the leg it is running, which is the direction the band is only 38 px wide in. Measuring its width along
+  // the leg instead would fail at every corner for a horse of any size at all, since two bands meeting at a right
+  // angle leave the outer corner uncovered.
+  const half = V.ROAD_BAND / 2;
+  const onRoad = (x, y) => V.ROAD_LINES.some(([[x0, y0], [x1, y1]]) => {
+    const vx = x1 - x0;
+    const vy = y1 - y0;
+    const k = Math.max(0, Math.min(1, ((x - x0) * vx + (y - y0) * vy) / (vx * vx + vy * vy)));
+    return Math.hypot(x - (x0 + vx * k), y - (y0 + vy * k)) <= half;
+  });
+  const loop = V.HORSE_CIRCUIT.reduce((sum, a, i) => {
+    const b = V.HORSE_CIRCUIT[(i + 1) % V.HORSE_CIRCUIT.length];
+    return sum + Math.hypot(b.x - a.x, b.y - a.y);
+  }, 0);
+  const period = loop / V.HORSE_SPEED;
+  let seen = 0;
+  for (let t = 0; t <= period * 2; t += period / 900) {
+    const h = V.horseAt(t);
+    assert(Math.abs(h.dir) === 1, `the horse faces one way or the other at t ${t.toFixed(2)}`);
+    assert(onRoad(h.x, h.y), `the horse stands off the road at t ${t.toFixed(2)}: ${h.x.toFixed(1)},${h.y.toFixed(1)}`);
+    for (const d of [-V.HORSE_REACH, V.HORSE_REACH]) {
+      const p2 = h.axis === 'x' ? { x: h.x, y: h.y + d } : { x: h.x + d, y: h.y };
+      assert(onRoad(p2.x, p2.y),
+        `the horse paints off the road at t ${t.toFixed(2)}: ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`);
+    }
+    seen += 1;
+  }
+  assert(seen > 1000, 'the whole circuit was walked');
+
+  // It goes somewhere over a lap, and nowhere at all under reduced motion.
+  const places = new Set();
+  for (let t = 0; t <= period; t += period / 40) places.add(`${V.horseAt(t).x.toFixed(0)},${V.horseAt(t).y.toFixed(0)}`);
+  assert(places.size > 30, `the horse gets round the circuit (${places.size} places)`);
+  const still = new Set();
+  for (let t = 0; t <= period; t += period / 40) still.add(`${V.horseAt(t, true).x},${V.horseAt(t, true).y}`);
+  eq(still.size, 1, 'reduced motion holds it at one place');
+});
+
+check('the frontier line runs straight from the berth to the jetty, over water all the way, and every other pack keeps the voyage', () => {
+  const xy = (p) => ({ x: p.x, y: p.y });
+  eq(V.sailLane(), V.SAIL_WAYPOINTS, 'the default is the voyage');
+  eq(V.sailLane('village'), V.SAIL_WAYPOINTS, 'and so is the green village');
+  eq(V.sailLane('nope'), V.SAIL_WAYPOINTS, 'and so is a pack nobody has heard of');
+  const straight = V.sailLane('west');
+  assert(straight !== V.SAIL_WAYPOINTS, 'the frontier runs its own line');
+
+  const routeOf = (lane) => [xy(V.BOAT_BERTH), ...lane.map(xy), xy(V.JETTY_BERTH)];
+  const voyage = V.routeLength(routeOf(V.SAIL_WAYPOINTS));
+  const run = V.routeLength(routeOf(straight));
+  assert(run < voyage * 0.4 && run > voyage * 0.25,
+    `the frontier run is about a third of the voyage (${run.toFixed(0)} against ${voyage.toFixed(0)})`);
+
+  // Same rules the voyage is held to: open water all along it, a hull clear of the coast, and never over the sand.
+  for (const lane of [routeOf(straight), [...routeOf(straight)].reverse()]) {
+    for (let i = 1; i < lane.length; i += 1) {
+      for (let k = 0; k <= 200; k += 1) {
+        const q = {
+          x: lane[i - 1].x + (lane[i].x - lane[i - 1].x) * (k / 200),
+          y: lane[i - 1].y + (lane[i].y - lane[i - 1].y) * (k / 200),
+        };
+        assert(q.x > V.shoreX(q.y) && !V.onIsland(q.x, q.y), `the frontier line stays on the water at ${JSON.stringify(q)}`);
+        const box = V.hullBox(q.x, q.y);
+        for (let y = box[1]; y <= box[1] + box[3] + 1e-9; y += 1) {
+          assert(box[0] > V.shoreX(y), `a locomotive at ${JSON.stringify(q)} crosses the waterline at y ${y.toFixed(0)}`);
+        }
+        for (const cx of [box[0], box[0] + box[2] / 2, box[0] + box[2]]) {
+          for (const cy of [box[1], box[1] + box[3] / 2, box[1] + box[3]]) {
+            assert(!V.onIsland(cx, cy, 6), `a locomotive at ${JSON.stringify(q)} covers the island`);
+          }
+        }
+      }
+    }
+  }
+
+  // The outward run, the engine that comes back for the next passenger and the one that goes to fetch one all take
+  // the line the pack is given, not the default.
+  const from = { x: 700, y: 700, area: 'land' };
+  const to = { x: V.ISLAND.cx, y: V.ISLAND.cy, area: 'island' };
+  const legs = V.planJourney(from, to, { lane: straight });
+  const sail = legs.find((l) => l.kind === 'sail');
+  assert(sail, 'the journey still crosses');
+  eq(sail.pts.length, 2, 'the crossing is one straight leg');
+  const journey = V.scheduleJourney(legs, 0);
+  const trips = V.scheduleFerries(journey, 0, straight);
+  assert(trips.length > 0, 'an engine comes back for the next passenger');
+  for (const trip of trips) eq(trip.pts.length, 2, `the ${trip.kind} run takes the same straight line`);
+  // And the voyage is untouched: its crossing still goes the long way round.
+  const long = V.planJourney(from, to).find((l) => l.kind === 'sail');
+  eq(long.pts.length, V.SAIL_WAYPOINTS.length + 2, 'the green village still sails the whole voyage');
+});
+
+check('the locomotive stands on the boat\'s own footing: inside the hull it replaces and under BOAT_TOP', () => {
+  const L = V.LOCO;
+  assert(L.back >= V.HULL.l, `the tender's back sheet (${L.back}) is inside the hull's stern (${V.HULL.l})`);
+  assert(L.nose <= V.HULL.r, `the cowcatcher (${L.nose}) is inside the hull's bow (${V.HULL.r})`);
+  assert(L.wheels <= V.HULL.b, `the wheels (${L.wheels}) stand on the hull's own waterline (${V.HULL.b})`);
+  // The chimney and its plume rise where a boat's mast and flag do, and no higher: every box the boat declares,
+  // and the lighthouse beam's reckoning of what it falls on, is built from BOAT_TOP.
+  assert(L.plume >= V.BOAT_TOP, `the plume (${L.plume}) stays under BOAT_TOP (${V.BOAT_TOP})`);
+  assert(L.cap > L.plume, 'the chimney cap is below the top of its own plume');
+  assert(L.cap < V.HULL.t, 'and above the hull it stands on');
+});
+
+check('a fight breaks out in the mine inside one cycle, takes in whoever is nearest, and stops dead under reduced motion', () => {
+  // Timing first, as a pure function: somewhere in every cycle there is a fight, they alternate, and reduced
+  // motion has none at all rather than a frozen punch.
+  const kinds = new Set();
+  let fights = 0;
+  for (let t = 0; t < V.WEST_FIGHT_PERIOD; t += 0.05) {
+    const f = V.fightAt(t);
+    if (!f) continue;
+    fights += 1;
+    kinds.add(f.kind);
+    assert(f.k >= 0 && f.k <= 1, `a fight at ${t.toFixed(2)} is somewhere in its own run (${f.k})`);
+  }
+  assert(fights > 0, 'a fight breaks out inside one cycle');
+  eq([...kinds], ['brawl'], 'the first cycle is a brawl');
+  eq(V.fightAt(V.WEST_FIGHT_PERIOD).kind, 'shootout', 'and the next is a shootout');
+  eq(V.fightAt(V.WEST_FIGHT_PERIOD * 2).kind, 'brawl', 'and then they turn about again');
+  eq(V.fightAt(V.WEST_FIGHT_PERIOD - 0.01), null, 'the rest of a cycle is quiet');
+  for (const t of [0, 0.5, V.WEST_FIGHT_PERIOD * 3 + 0.2]) {
+    eq(V.fightAt(t, true), null, `reduced motion: nothing at ${t}`);
+  }
+
+  // The pair: the two standing nearest each other, west first, so the cloud between them always has both inside it.
+  eq(V.fightPair([]), null, 'nobody to fight');
+  eq(V.fightPair([{ x: 0, y: 0 }]), null, 'one guest cannot brawl');
+  const far = { x: 900, y: 500 };
+  const near = [{ x: 200, y: 500 }, { x: 260, y: 500 }];
+  eq(V.fightPair([far, ...near]), near, 'the two nearest each other, not the first two');
+  eq(V.fightPair([near[1], near[0]]), near, 'and the westmost of the pair comes first');
+});
+
+check('every theme pack paints a whole village: no colour is left to chance, and both rooms are named', () => {
+  const base = { day: V.resolveTheme('village', false), dusk: V.resolveTheme('village', true) };
+  assert(V.THEME_KEYS.length >= 2, 'there is more than one pack to choose between');
+  eq(V.THEME_KEYS[0], V.DEFAULT_THEME, 'the green village is the default and comes first');
+  for (const packKey of V.THEME_KEYS) {
+    for (const night of [false, true]) {
+      const scheme = night ? 'dusk' : 'day';
+      const T = V.resolveTheme(packKey, night);
+      eq(T.pack, packKey, `${packKey} ${scheme}: the theme knows its pack`);
+      eq(T.night, night, `${packKey} ${scheme}: the theme knows the time of day`);
+      // A pack that left a colour out would paint `undefined`, which a canvas silently ignores: the shape
+      // vanishes rather than erroring, so nothing downstream would ever say so.
+      const missing = Object.keys(base[scheme]).filter((k) => T[k] === undefined);
+      eq(missing, [], `${packKey} ${scheme}: colours the pack dropped`);
+      // And a pack that misspells one does nothing at all: the base colour is kept and the new one is never read.
+      const pack = V.THEME_PACKS.find((q) => q.key === packKey);
+      const unknown = Object.keys(night ? pack.dusk : pack.day).filter((k) => !(k in base[scheme]));
+      eq(unknown, [], `${packKey} ${scheme}: colours the pack names that the village has no use for`);
+      // The floor a scene falls back to has to be the pack's own, or the margins either side of a themed room
+      // keep the last pack's floor.
+      for (const floor of ['hallFloor', 'roomFloor', 'grass']) {
+        assert(typeof T[floor] === 'string' && T[floor].length > 0, `${packKey} ${scheme}: ${floor} is a colour`);
+      }
+    }
+    // Every board a pack renames is a board the village has, and both rooms are named whatever the pack.
+    for (const place of V.PLACE_KEYS) {
+      const word = V.placeName(place, packKey);
+      assert(typeof word === 'string' && word.length > 0 && word.length <= 20, `${packKey}: ${place} has a board name (${word})`);
+    }
+    for (const room of ['castle', 'cottages']) {
+      assert(V.roomName(room, packKey).length > 0, `${packKey}: ${room} is named`);
+    }
+  }
+  // An unknown pack is the green village rather than a village with no colours at all.
+  eq(V.resolveTheme('nope', false), V.resolveTheme(V.DEFAULT_THEME, false), 'an unknown pack falls back');
+  eq(V.placeName('harbour', 'nope'), V.placeName('harbour'), 'and so do its board names');
+});
+
+check('a name board stays readable in every pack, and no board colour can be read as a state badge', () => {
+  for (const packKey of V.THEME_KEYS) {
+    for (const night of [false, true]) {
+      const scheme = `${packKey} ${night ? 'dusk' : 'day'}`;
+      const T = V.resolveTheme(packKey, night);
+      assert(contrast(T.signText, T.signBoard) >= 4.5,
+        `${scheme}: board lettering is ${contrast(T.signText, T.signBoard).toFixed(2)}:1 on the board`);
+      assert(contrast(T.signMuted, T.signBoard) >= 4.5,
+        `${scheme}: the board's second line is ${contrast(T.signMuted, T.signBoard).toFixed(2)}:1`);
+      // The badges are painted on the board, so a board that drifted towards one of them would swallow it. A pale
+      // badge (Idle, Recent) is told from the board by its border instead, which is why either will do.
+      for (const st of Object.values(V.STATE)) {
+        const best = Math.max(de00(T.signBoard, st.color), de00(T.signBoard, st.border));
+        assert(best >= 20, `${scheme}: the ${st.word} badge is only ${best.toFixed(1)} from the board it sits on`);
+      }
+      // The ground a character stands on is not a state colour either, in any pack.
+      for (const [name, hex] of Object.entries(RESERVED)) {
+        assert(de00(T.grass, hex) >= 12, `${scheme}: the ground is only ${de00(T.grass, hex).toFixed(1)} from ${name}`);
+      }
+    }
+  }
+});
+
+check('the frontier kit is the Wild West\'s alone, and its hat lifts the painted badge and the clickable one together', () => {
+  // One look per accessory. look also picks the shape (look % 3), so this covers round, square and tall as well.
+  const LOOKS = [[0, 'none'], [4, 'hat'], [8, 'scarf'], [12, 'antenna'], [16, 'glasses']];
+  const ID = 'local_abababab-0000-4000-8000-00000000c0c0';
+  // Two lanes: one standing, and one lounging on Valhalla. A lounger wears no waistcoat, because a deck chair
+  // cuts across where it would sit, but it is hatted like everyone else: `headroom` lifts every badge in this
+  // pack by one hat, so a look left bare-headed here would hang its badge over a gap.
+  const LANES = ['errored', 'valhalla'];
+
+  // The badge's height above the character's feet, as painted and as hit tested. A body's height varies with its
+  // shape, so the two packs are compared look for look rather than look against look.
+  const badgeLift = (look, packKey, LANE) => {
+    const rows = [row(ID, LANE, { look })];
+    const slot = V.layoutVillage(rows).get(ID);
+    const frame = lastFrame(paintedShapes(rows, { theme: packKey }).shapes, 'day', V.resolveTheme(packKey, false).grass);
+    const discs = frame.filter((sh) => sh.kind === 'fill' && sh.style === V.STATE[LANE].color
+      && sh.radii.some((r) => Math.abs(r - 14) < 0.01));
+    eq(discs.length, 1, `${packKey}/${look}: one painted state badge`);
+    // Steel on this character alone: the village paints plenty elsewhere (the jail's bars, the harbour barrier).
+    const steel = frame.filter((sh) => sh.kind === 'fill' && sh.style === V.resolveTheme(packKey, false).steel
+      && Math.abs((sh.box[0] + sh.box[2]) / 2 - slot.x) < 26 && sh.box[1] > slot.y - 60 && sh.box[3] < slot.y + 4);
+    // The highest thing this character paints below its own badge: its hat if it wears one, else its head. The
+    // badge is lifted by `headroom` whether or not a hat is drawn, so this is the only way to tell that one is.
+    const badgeBottom = (discs[0].box[1] + discs[0].box[3]) / 2 + 14;
+    // An errored session puffs smoke over its own head, in both packs alike, so it would mask the hat underneath.
+    const smoke = V.resolveTheme(packKey, false).smoke;
+    const onBody = frame.filter((sh) => Math.abs((sh.box[0] + sh.box[2]) / 2 - slot.x) < 30
+      && sh.box[1] >= badgeBottom - 0.5 && sh.box[1] < slot.y && !String(sh.style).includes(smoke));
+    const crown = onBody.length ? Math.min(...onBody.map((sh) => sh.box[1])) : slot.y;
+    const v = makeVillage({ theme: packKey });
+    v.village.start();
+    v.village.update(board(rows), { privacy: false });
+    // The village reports its hover point at the badge's centre, which is where a click has to land.
+    const at = v.aim(rows, ID);
+    v.village.destroy();
+    return {
+      painted: slot.y - (discs[0].box[1] + discs[0].box[3]) / 2, clickable: slot.y - at.y, steel,
+      // How far the badge's underside sits above the highest thing this character paints below it.
+      gap: crown - badgeBottom,
+    };
+  };
+
+  for (const LANE of LANES) {
+  for (const [look, accessory] of LOOKS) {
+    const green = badgeLift(look, 'village', LANE);
+    const west = badgeLift(look, 'west', LANE);
+    // Dom's first bug: the lift was written out twice, so a taller hat raised the painted badge and left the
+    // clickable one behind. Both packs are checked, because only one of them changes the hat.
+    near(green.painted, green.clickable, 0.01, `village/${accessory}: the painted badge is where the click lands`);
+    near(west.painted, west.clickable, 0.01, `west/${accessory}: the painted badge is where the click lands`);
+    // In the frontier town everyone is hatted. A look already wearing one in the green village keeps its lift;
+    // every other look gains exactly one hat. That difference is the kit, and it is the Wild West's alone.
+    const alreadyHatted = accessory === 'hat' || accessory === 'antenna';
+    near(west.painted - green.painted, alreadyHatted ? 0 : V.HAT_LIFT, 0.01,
+      `${accessory}: what the frontier hat adds over the green village`);
+
+    // A badge never floats: whatever a look wears, the top of its head or its hat comes up to meet it. This is what
+    // a lift and a hat disagreeing looks like from outside, and it held in both packs at once. In the frontier town
+    // `headroom` lifts every badge by one hat, so a look left bare-headed there opens a gap the width of the hat,
+    // which is exactly what the loungers had: hatless, and their badges hanging over nothing.
+    for (const [packName, m] of [['village', green], ['west', west]]) {
+      assert(m.gap <= 6, `${packName}/${LANE}/${accessory}: the badge floats ${m.gap.toFixed(2)} px over the head under it`);
+    }
+
+    // The buckle and the revolver's butt are the kit's only steel, and neither lane paints a hammer, so steel in
+    // the frame is the gun belt and nothing else. It says the kit is worn here and nowhere else.
+    eq(green.steel.length, 0, `village/${LANE}/${accessory}: no gun belt in the green village`);
+    if (LANE === 'valhalla') {
+      eq(west.steel.length, 0, `west/${accessory}: a lounger wears no gun belt, since its chair cuts across it`);
+    } else {
+      assert(west.steel.length >= 2, `west/${accessory}: the belt's buckle and the revolver's butt are painted`);
+      // Clipped to the body, so nothing hangs off the side of the narrowest one (a tall body is 26 wide).
+      const slotX = V.layoutVillage([row(ID, LANE, { look })]).get(ID).x;
+      for (const sh of west.steel) {
+        assert(sh.box[0] >= slotX - 13 && sh.box[2] <= slotX + 13,
+          `west/${accessory}: the gun belt stays inside the narrowest body (${sh.box[0]}..${sh.box[2]} around ${slotX})`);
+      }
+    }
+  }
+  }
+});
+
 const INK_ON_KHAKI = '#1d2125';
 
 check('the border patrol: booth, barrier and guard sit clear of the harbour, the queue, the boats and the walkways', () => {
@@ -3064,7 +3458,23 @@ check('the border patrol: booth, barrier and guard sit clear of the harbour, the
       for (const part of V.avatarBoxes('open_pr', V.PIER.x, y, k)) for (const name of ['guard', 'booth', 'platform']) assert(!V.boxesOverlap(part, patrol[name]), `a walker at ${k} on the pier at ${y} covers the ${name}`);
     }
   }
-  // Uniform, barrier and booth: khaki, navy-black and white, never a reserved state colour, in either theme.
+  // Whoever stands at the barrier, in every pack: three colours, never a reserved state colour, in either scheme.
+  // A pack may dress them how it likes (the frontier's khaki, the Shire's grey), but a guard that could be read as
+  // a state badge would say a session was blocked when it was only being waved through.
+  for (const pack of V.THEME_KEYS) {
+    for (const night of [false, true]) {
+      const scheme = `${pack} ${night ? 'dusk' : 'day'}`;
+      const R = V.resolveTheme(pack, night);
+      const T = { khaki: R.patrolKhaki, khakiShade: R.patrolKhakiShade, navy: R.patrolNavy, white: R.patrolWhite };
+      for (const [name, hex] of Object.entries(T)) {
+        for (const [state, r] of Object.entries(RESERVED)) {
+          assert(de00(hex, r) >= 12, `${scheme} ${name} ${hex} is too close to ${state} (${de00(hex, r).toFixed(1)})`);
+        }
+      }
+      assert(contrast(T.navy, T.white) >= 4.5 && contrast(INK_ON_KHAKI, T.khaki) >= 4.5,
+        `${scheme}: stripes and the guard's face read`);
+    }
+  }
   for (const theme of ['day', 'dusk']) {
     const T = V.PATROL_COLOURS[theme];
     eq(Object.keys(T).sort(), ['khaki', 'khakiShade', 'navy', 'white'], `${theme}: the patrol colours`);
@@ -3591,7 +4001,7 @@ check('a row sent to the jail walks there, at full rate while it walks and ambie
 
 // The graveyard's ghosts and the night lighting are drawn through geometrySpy, so a check reads what is painted
 // rather than what the constants promise.
-function paintedShapes(rows, { reduce = true, dark = false, seconds = 1, settle = 0.3, mode, island, open, visitors = null, hover = null, privacy = false, select = null, aim = null } = {}) {
+function paintedShapes(rows, { reduce = true, dark = false, seconds = 1, settle = 0.3, mode, island, open, visitors = null, hover = null, privacy = false, select = null, aim = null, theme } = {}) {
   const shapes = [];
   const state = { frames: 0, texts: [], islands: [], scenes: [], hovered: null };
   try {
@@ -3605,7 +4015,7 @@ function paintedShapes(rows, { reduce = true, dark = false, seconds = 1, settle 
         addEventListener(type, fn) { listeners.set(type, fn); }, removeEventListener() {},
       };
       const village = V.createVillage(canvas, {
-        mode, island, onIsland: (r) => state.islands.push(r), onScene: (s) => state.scenes.push(s),
+        mode, island, theme, onIsland: (r) => state.islands.push(r), onScene: (s) => state.scenes.push(s),
         onHover: (id) => { state.hovered = id; },
       });
       village.resize();
@@ -3670,6 +4080,250 @@ const roadBands = V.ROAD_LINES.map(([[x0, y0], [x1, y1]]) => {
   return y0 === y1
     ? [Math.min(x0, x1), y0 - half, Math.abs(x1 - x0), V.ROAD_BAND]
     : [x0 - half, Math.min(y0, y1), V.ROAD_BAND, Math.abs(y1 - y0)];
+});
+
+check('an ent walks the ring the roads make round the workshop, on its roots, and stands still when asked', () => {
+  for (const node of V.ENT_WALK_CIRCUIT) {
+    assert(V.ROAD_NODES.some(([x, y]) => x === node.x && y === node.y),
+      `the circuit turns at ${JSON.stringify(node)}, which is a road junction`);
+  }
+  const half = V.ROAD_BAND / 2;
+  const onRoad = (x, y) => V.ROAD_LINES.some(([[x0, y0], [x1, y1]]) => {
+    const vx = x1 - x0;
+    const vy = y1 - y0;
+    const k = Math.max(0, Math.min(1, ((x - x0) * vx + (y - y0) * vy) / (vx * vx + vy * vy)));
+    return Math.hypot(x - (x0 + vx * k), y - (y0 + vy * k)) <= half;
+  });
+  const [fl, ft, fr, fb] = V.ENT_WALK_FOOT;
+  assert(Math.max(-fl, fr) < half, `the ent's roots (${fr - fl} across) fit the road band (${V.ROAD_BAND})`);
+  const loop = V.ENT_WALK_CIRCUIT.reduce((sum, a, i) => {
+    const b = V.ENT_WALK_CIRCUIT[(i + 1) % V.ENT_WALK_CIRCUIT.length];
+    return sum + Math.hypot(b.x - a.x, b.y - a.y);
+  }, 0);
+  const period = loop / V.ENT_WALK_SPEED;
+  let seen = 0;
+  for (let t = 0; t <= period * 2; t += period / 900) {
+    const e = V.walkingEntAt(t);
+    assert(onRoad(e.x, e.y), `the ent stands off the road at t ${t.toFixed(2)}: ${e.x.toFixed(1)},${e.y.toFixed(1)}`);
+    // Measured across the leg it is on, never along it, for the reason the horse's own check gives: two bands
+    // meeting at a right angle leave the outer corner uncovered, so a box corner tested at a junction fails for
+    // a walker of any size at all. Only the roots are tested: an ent walking the road towers over it the way a
+    // session walking the road does, and nothing holds a walker's body to the band.
+    for (const d of e.axis === 'x' ? [ft, fb] : [fl, fr]) {
+      const p2 = e.axis === 'x' ? { x: e.x, y: e.y + d } : { x: e.x + d, y: e.y };
+      assert(onRoad(p2.x, p2.y),
+        `a root is off the road at t ${t.toFixed(2)}: ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`);
+    }
+    seen += 1;
+  }
+  assert(seen > 1000, 'the whole circuit was walked');
+  assert(period > 60, `it goes at an ent's pace (${period.toFixed(0)} s a lap)`);
+
+  const places = new Set();
+  for (let t = 0; t <= period; t += period / 40) places.add(`${V.walkingEntAt(t).x.toFixed(0)},${V.walkingEntAt(t).y.toFixed(0)}`);
+  assert(places.size > 30, `the ent gets round the circuit (${places.size} places)`);
+  const still = new Set();
+  for (let t = 0; t <= period; t += period / 40) still.add(`${V.walkingEntAt(t, true).x},${V.walkingEntAt(t, true).y}`);
+  eq(still.size, 1, 'reduced motion holds it at one place');
+  const rooted = new Set();
+  for (let t = 0; t <= V.ENT_WALK_BEAT; t += V.ENT_WALK_BEAT / 20) rooted.add(V.entStride(t, true));
+  eq([...rooted], [0], 'and its roots stay down');
+
+  // It is a tree on a footing that moves, so the box that holds a standing ent holds this one too. Under reduced
+  // motion it stands at the circuit's first node, which is in none of the eight boxes the standing ents take: a
+  // tree colour in the frame whose centre is outside all of them is this one.
+  const T = V.resolveTheme('shire', false);
+  const inks = new Set([T.tree, T.treeDark, T.treeLight, T.trunk, T.moss]);
+  const at = V.walkingEntAt(0, true);
+  const box = V.treeBox([at.x, at.y, V.ENT_WALK_R]);
+  const standing = V.TREES.map((tree) => V.treeBox(tree));
+  const mine = lastFrame(paintedShapes([], { reduce: true, theme: 'shire' }).shapes).filter((sh) => {
+    if (!inks.has(sh.style)) return false;
+    const cx = (sh.box[0] + sh.box[2]) / 2;
+    const cy = (sh.box[1] + sh.box[3]) / 2;
+    return !standing.some(([bx, by, bw, bh]) => cx >= bx && cx <= bx + bw && cy >= by && cy <= by + bh);
+  });
+  assert(mine.length >= 8, `the walking ent is painted at all (${mine.length} shapes in the tree's own colours)`);
+  for (const sh of mine) {
+    const pad = sh.kind === 'stroke' ? sh.lw / 2 : 0;
+    const out = Math.max(box[0] - (sh.box[0] - pad), (sh.box[2] + pad) - (box[0] + box[2]),
+      box[1] - (sh.box[1] - pad), (sh.box[3] + pad) - (box[1] + box[3]));
+    assert(out <= 0.01, `the walking ent paints ${out.toFixed(2)} px outside a tree's own box: ${JSON.stringify(sh.box.map((v) => Math.round(v * 10) / 10))}`);
+  }
+});
+
+check('the grey pilgrim sets off fireworks at night, over open water, and they hold when asked', () => {
+  const [sx, sy] = V.FIREWORK_FROM;
+  // They leave from the head of his staff, which is inside the box he declares.
+  const [gx, gy, gw, gh] = V.GUARD_BOX;
+  assert(sx >= gx && sx <= gx + gw && sy >= gy && sy <= gy + gh,
+    `the rockets leave from his staff ${JSON.stringify([sx, sy])}, inside ${JSON.stringify(V.GUARD_BOX)}`);
+
+  const taken = { 'the harbour sign': V.signBox('harbour'), 'the guard': V.GUARD_BOX, 'the booth': V.BOOTH_BOX,
+    'the barrier': V.BARRIER_BOX, 'the platform': V.PATROL_PLATFORM };
+  assert(V.FIREWORKS.length >= 2, 'more than one goes up');
+  for (const [i, f] of V.FIREWORKS.entries()) {
+    const b = V.fireworkBox(f);
+    assert(b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= 1600 && b[1] + b[3] <= 900, `firework ${i} is on the canvas`);
+    // Over open water, so a burst never hangs over the deck, the queue or the land behind them.
+    for (let y = b[1]; y <= b[1] + b[3]; y += 4) {
+      assert(b[0] > V.shoreX(y), `firework ${i} hangs over the land at y ${y.toFixed(0)} (coast ${V.shoreX(y).toFixed(0)})`);
+    }
+    // Clear of the lantern on the point, which is the one thing up there at night that is not theirs.
+    const [lx, ly, lw, lh] = V.LIGHTHOUSE.lantern;
+    assert(!V.boxesOverlap(b, [lx - 24, ly - 20, lw + 48, lh + 120]), `firework ${i} covers the light on the point`);
+    for (const [what, t] of Object.entries(taken)) {
+      assert(!V.boxesOverlap(b, t), `firework ${i} ${JSON.stringify(b)} covers ${what} ${JSON.stringify(t)}`);
+    }
+  }
+
+  // A whole cycle: it rises, it bursts, and there is a stretch with nothing in the sky.
+  const f0 = V.FIREWORKS[0];
+  let rising = 0;
+  let bursting = 0;
+  let dark = 0;
+  for (let t = 0; t < V.FIREWORK_PERIOD; t += V.FIREWORK_PERIOD / 400) {
+    const st = V.fireworkAt(t, false, f0);
+    if (!st) dark += 1;
+    else if (st.burst === 0) rising += 1;
+    else bursting += 1;
+    if (st) {
+      assert(st.rise >= 0 && st.rise <= 1, `the rocket rises from 0 to 1 at t ${t.toFixed(2)} (${st.rise})`);
+      assert(st.burst >= 0 && st.burst <= 1, `the burst opens from 0 to 1 at t ${t.toFixed(2)} (${st.burst})`);
+    }
+  }
+  assert(rising > 20 && bursting > 20 && dark > 20, `it rises, bursts and rests (${rising}/${bursting}/${dark})`);
+  // No two of them go up together, or it reads as one firework drawn twice.
+  const phases = new Set(V.FIREWORKS.map((f) => f.phase));
+  eq(phases.size, V.FIREWORKS.length, 'each goes up at its own moment');
+
+  // Reduced motion holds every one of them open, rather than taking them away: still, not gone.
+  for (const f of V.FIREWORKS) {
+    const held = new Set();
+    for (let t = 0; t < V.FIREWORK_PERIOD * 2; t += V.FIREWORK_PERIOD / 40) {
+      const st = V.fireworkAt(t, true, f);
+      assert(st, 'reduced motion never leaves the sky empty');
+      held.add(`${st.rise},${st.burst}`);
+    }
+    eq(held.size, 1, 'and holds it at one pose');
+  }
+
+  // The same display is shown from inside the White Halls, through its two lancets. Each burst has to sit inside
+  // the pane it is seen through: the draw clips to the lancet, which the spy cannot see, so a burst hung outside
+  // one would be invisible on screen and invisible to every check as well.
+  eq(V.HALL_FIREWORKS.length, V.HALL_WINDOWS.length, 'one through each window');
+  // Both shapes, because the same display is shown through both: a lancet in the White Halls and the round head
+  // the sand castle has always had. The round head springs lower than the lancet's point, so a burst that fits a
+  // lancet does not have to fit an arch.
+  for (const [what, shape] of [['lancet', V.HALL_LANCET_BOX], ['round head', V.HALL_ARCH_BOX]]) {
+    const [bl, bt, bw, bh] = shape;
+    for (const [i, f] of V.HALL_FIREWORKS.entries()) {
+      assert(V.HALL_WINDOWS.includes(f.x), `hall firework ${i} is centred on a window (${f.x})`);
+      const b = V.fireworkBox(f);
+      assert(b[0] >= f.x + bl && b[0] + b[2] <= f.x + bl + bw && b[1] >= bt && b[1] + b[3] <= bt + bh,
+        `hall firework ${i} ${JSON.stringify(b)} sits inside a ${what} ${JSON.stringify([f.x + bl, bt, bw, bh])}`);
+    }
+  }
+  eq(new Set(V.HALL_FIREWORKS.map((f) => f.phase)).size, V.HALL_FIREWORKS.length, 'and each goes up at its own moment');
+
+  // Night only. Nothing of theirs is painted in the day, in either pack that has a barrier.
+  const T = V.resolveTheme('shire', false);
+  const sky = [V.fireworkBox(V.FIREWORKS[0]), V.fireworkBox(V.FIREWORKS[1])];
+  for (const dark2 of [false, true]) {
+    const lit = lastFrame(paintedShapes([], { reduce: true, dark: dark2, theme: 'shire' }).shapes, dark2 ? 'dusk' : 'day')
+      .filter((sh) => (sh.style === T.flame || sh.style === T.flameCore || sh.style === V.resolveTheme('shire', true).flame
+        || sh.style === V.resolveTheme('shire', true).flameCore)
+        && sky.some(([bx, by, bw, bh]) => sh.box[0] >= bx && sh.box[2] <= bx + bw && sh.box[1] >= by && sh.box[3] <= by + bh));
+    if (dark2) assert(lit.length >= 8, `they are painted at night (${lit.length} shapes)`);
+    else eq(lit.length, 0, 'and nothing of them in the day');
+  }
+});
+
+check('the spider keeps inside the lair\'s own plot all the way round, and holds still when asked', () => {
+  const [px, py, pw, ph] = V.JAIL.plot;
+  const loop = V.SPIDER_CIRCUIT.reduce((sum, a, i) => {
+    const b = V.SPIDER_CIRCUIT[(i + 1) % V.SPIDER_CIRCUIT.length];
+    return sum + Math.hypot(b.x - a.x, b.y - a.y);
+  }, 0);
+  const period = loop / V.SPIDER_SPEED;
+  let seen = 0;
+  for (let t = 0; t <= period * 2; t += period / 900) {
+    const sp = V.spiderAt(t);
+    assert(Math.abs(sp.dir) === 1, `the spider faces one way or the other at t ${t.toFixed(2)}`);
+    assert(sp.x - V.SPIDER_REACH >= px && sp.x + V.SPIDER_REACH <= px + pw
+      && sp.y - V.SPIDER_REACH >= py && sp.y + V.SPIDER_REACH <= py + ph,
+      `the spider reaches outside the plot at t ${t.toFixed(2)}: ${sp.x.toFixed(1)},${sp.y.toFixed(1)}`);
+    seen += 1;
+  }
+  assert(seen > 1000, 'the whole circuit was walked');
+
+  const places = new Set();
+  for (let t = 0; t <= period; t += period / 40) places.add(`${V.spiderAt(t).x.toFixed(0)},${V.spiderAt(t).y.toFixed(0)}`);
+  assert(places.size > 30, `the spider gets round the circuit (${places.size} places)`);
+  const still = new Set();
+  for (let t = 0; t <= period; t += period / 40) still.add(`${V.spiderAt(t, true).x},${V.spiderAt(t, true).y}`);
+  eq(still.size, 1, 'reduced motion holds it at one place');
+
+  // And the reach is honest about the drawing. The lair's rock is painted in the same two colours, but that is in
+  // the background layer, which this pass has no document to make: what is left in the plot is the spider.
+  const T = V.resolveTheme('shire', false);
+  const at = V.spiderAt(0, true);
+  const mine = lastFrame(paintedShapes([], { reduce: true, theme: 'shire' }).shapes)
+    .filter((sh) => (sh.style === T.towerStone || sh.style === T.towerEdge)
+      && sh.box[0] >= px && sh.box[2] <= px + pw && sh.box[1] >= py && sh.box[3] <= py + ph);
+  assert(mine.length >= 8, `the spider is painted at all (${mine.length} shapes in the tower's own stone)`);
+  for (const sh of mine) {
+    const out = Math.max(at.x - V.SPIDER_REACH - sh.box[0], sh.box[2] - (at.x + V.SPIDER_REACH),
+      at.y - V.SPIDER_REACH - sh.box[1], sh.box[3] - (at.y + V.SPIDER_REACH));
+    assert(out <= sh.lw / 2, `the spider paints ${out.toFixed(2)} px past its own reach: ${JSON.stringify(sh.box.map((v) => Math.round(v * 10) / 10))}`);
+  }
+});
+
+check('gollum creeps inside the graveyard fence all the way round, and holds still when asked', () => {
+  const [fx, fy, fw, fh] = V.GRAVEYARD.fence;
+  // The rails are drawn 3 px either side of the fence's own lines, so the inside is that rect inset by 3.
+  const inner = [fx + 3, fy + 3, fw - 6, fh - 6];
+  const loop = V.GOLLUM_CIRCUIT.reduce((sum, a, i) => {
+    const b = V.GOLLUM_CIRCUIT[(i + 1) % V.GOLLUM_CIRCUIT.length];
+    return sum + Math.hypot(b.x - a.x, b.y - a.y);
+  }, 0);
+  const period = loop / V.GOLLUM_SPEED;
+  let seen = 0;
+  for (let t = 0; t <= period * 2; t += period / 900) {
+    const g = V.gollumAt(t);
+    assert(Math.abs(g.dir) === 1, `gollum faces one way or the other at t ${t.toFixed(2)}`);
+    // A square reach rather than one measured across the leg: the circuit is a rectangle inside a rectangle, so
+    // this is both simpler than the horse's road maths and stricter at every corner.
+    assert(g.x - V.GOLLUM_REACH >= inner[0] && g.x + V.GOLLUM_REACH <= inner[0] + inner[2]
+      && g.y - V.GOLLUM_REACH >= inner[1] && g.y + V.GOLLUM_REACH <= inner[1] + inner[3],
+      `gollum reaches outside the fence at t ${t.toFixed(2)}: ${g.x.toFixed(1)},${g.y.toFixed(1)}`);
+    seen += 1;
+  }
+  assert(seen > 1000, 'the whole circuit was walked');
+
+  const places = new Set();
+  for (let t = 0; t <= period; t += period / 40) places.add(`${V.gollumAt(t).x.toFixed(0)},${V.gollumAt(t).y.toFixed(0)}`);
+  assert(places.size > 30, `gollum gets round the circuit (${places.size} places)`);
+  const still = new Set();
+  for (let t = 0; t <= period; t += period / 40) still.add(`${V.gollumAt(t, true).x},${V.gollumAt(t, true).y}`);
+  eq(still.size, 1, 'reduced motion holds him at one place');
+
+  // And the reach is honest about the drawing, not just about the circuit. Under reduced motion he stands at the
+  // circuit's first node, so everything he paints there can be measured against it. The board is empty on
+  // purpose: he is drawn whatever is on it, but what haunts the barrows is not, and the orcs' iron caps are the
+  // same steel as his own skin, so with graves on the board they were being measured as him.
+  const T = V.resolveTheme('shire', false);
+  const at = V.gollumAt(0, true);
+  const mine = lastFrame(paintedShapes([], { reduce: true, theme: 'shire' }).shapes)
+    .filter((s) => (s.style === T.steel || s.style === T.flameCore)
+      && s.box[0] >= inner[0] && s.box[2] <= inner[0] + inner[2]
+      && s.box[1] >= inner[1] && s.box[3] <= inner[1] + inner[3]);
+  assert(mine.length >= 8, `gollum is painted at all (${mine.length} shapes in the steel and the flame)`);
+  for (const sh of mine) {
+    const out = Math.max(at.x - V.GOLLUM_REACH - sh.box[0], sh.box[2] - (at.x + V.GOLLUM_REACH),
+      at.y - V.GOLLUM_REACH - sh.box[1], sh.box[3] - (at.y + V.GOLLUM_REACH));
+    assert(out <= sh.lw / 2, `gollum paints ${out.toFixed(2)} px past his own reach: ${JSON.stringify(sh.box.map((v) => Math.round(v * 10) / 10))}`);
+  }
 });
 
 check('the graveyard decides how many ghosts float over it, from two to twelve', () => {
@@ -3759,9 +4413,9 @@ check('every seat in the cottage room is hittable, at capacity', () => {
 // The graveyard sign as painted: the arch, the board with its badge, count and "+N more", and the two hangers,
 // which drawGraveyardSign paints in that order, arch first and hangers last. The arch is a curve, whose control
 // point geometrySpy does not see, but its feet and apex lie inside the board and the hangers' span.
-const FENCE_DARK = { day: '#6f5c47', dusk: '#3b3128' };
-function graveSignShapes(frame, theme = 'day') {
-  const dark = FENCE_DARK[theme];
+// The graveyard sign is picked out of a frame by the fence colour it hangs from, which each pack paints its own.
+function graveSignShapes(frame, theme = 'day', pack = V.DEFAULT_THEME) {
+  const dark = V.resolveTheme(pack, theme === 'dusk').fenceDark;
   const start = frame.findIndex((s) => s.kind === 'stroke' && s.style === dark && s.lw === 3);
   let hangers = 0;
   for (let i = start + 1; i < frame.length; i++) {
@@ -3935,7 +4589,11 @@ const PAINT_COUNTS = [1, 5, 13, 20, 30];
 const r2 = (n) => Math.round(n * 100) / 100;
 // Tall with a hat, round with a hat and square with a hat: the tallest and the widest a character is drawn.
 const PAINT_LOOKS = [5, 6, 7];
-const FENCE_STYLES = { day: ['#adbf98', '#a18a6c', '#6f5c47'], dusk: ['#29362d', '#5d4e3d', '#3b3128'] };
+// The graveyard's own colours, per pack and time of day: it is found by them rather than by the ground it is on.
+const fenceStyles = (pack, dark) => {
+  const T = V.resolveTheme(pack, dark);
+  return [T.graveGrass, T.fence, T.fenceDark];
+};
 // What the other places paint into the background layer, taken as the layer's shapes that lie inside the ground each
 // one is built on: the Porch's house and lantern, the Workshop's shed, the jail's plot, the cottage, the castle, and
 // the Harbour's deck, pier and lighthouse. The graveyard is taken by its fence's own colours instead.
@@ -3964,7 +4622,7 @@ const paintedBox = (s) => {
 // The frames of `seconds` of motion, each as its list of shapes. Smoke and sparks draw from Math.random, which is
 // seeded here so the figures these checks report are the same on every run. With `bg`, the offscreen background
 // layer is painted through the spy into it instead, which needs a document to create that layer.
-function paintFrames(rows, { dark = false, island = false, seconds = 2, bg = null } = {}) {
+function paintFrames(rows, { dark = false, island = false, seconds = 2, bg = null, pack = V.DEFAULT_THEME } = {}) {
   const shapes = [];
   const random = Math.random;
   const hadDocument = 'document' in globalThis;
@@ -3983,7 +4641,7 @@ function paintFrames(rows, { dark = false, island = false, seconds = 2, bg = nul
         getBoundingClientRect: () => ({ left: 0, top: 0, right: 1600, bottom: 900, width: 1600, height: 900 }),
         addEventListener() {}, removeEventListener() {},
       };
-      const village = V.createVillage(canvas, { mode: island ? 'world' : 'village' });
+      const village = V.createVillage(canvas, { mode: island ? 'world' : 'village', theme: pack });
       village.resize();
       village.start();
       village.update(board(rows), { privacy: false });
@@ -4000,7 +4658,7 @@ function paintFrames(rows, { dark = false, island = false, seconds = 2, bg = nul
     if (bg && hadDocument) globalThis.document = priorDocument;
     else if (bg) delete globalThis.document;
   }
-  const grass = GRASS_HEX[dark ? 'dusk' : 'day'];
+  const grass = V.resolveTheme(pack, dark).grass;
   const frames = [];
   for (const s of shapes) {
     if (s.kind === 'fill' && s.style === grass && s.box[0] === 0 && s.box[1] === 0 && s.box[2] === 1600 && s.box[3] === 900) frames.push([]);
@@ -4011,25 +4669,25 @@ function paintFrames(rows, { dark = false, island = false, seconds = 2, bg = nul
 // The whole-canvas orange ring the page draws while anything is blocked belongs to no place.
 const isEdgeRing = (s) => s.kind === 'stroke' && s.box[0] < 8 && s.box[1] < 8 && s.box[2] > 1592 && s.box[3] > 892;
 const paintCache = new Map();
-function paintedScene(theme, island) {
-  const at = `${theme}|${island}`;
+function paintedScene(theme, island, pack = V.DEFAULT_THEME) {
+  const at = `${pack}|${theme}|${island}`;
   if (paintCache.has(at)) return paintCache.get(at);
   const dark = theme === 'dusk';
   const bg = [];
-  paintFrames([], { dark, bg, seconds: 0.1 });
+  paintFrames([], { dark, bg, seconds: 0.1, pack });
   const roads = bg.filter((s) => s.kind === 'stroke' && s.lw === V.ROAD_BAND).map((s) => {
     const [x0, y0, x1, y1] = s.box;
     const h = s.lw / 2;
     return y0 === y1 ? [x0, y0 - h, x1 - x0, s.lw] : [x0 - h, y0, s.lw, y1 - y0];
   });
-  const fence = bg.filter((s) => FENCE_STYLES[theme].includes(s.style));
+  const fence = bg.filter((s) => fenceStyles(pack, dark).includes(s.style));
   // One baseline per anchor, as a multiset of keys per frame.
   const baselines = new Map();
   const baseline = (place) => {
     const anchor = anchorRows(place, island);
     const id = anchor.length ? anchor[0].lane : '';
     if (!baselines.has(id)) {
-      const frames = paintFrames(anchor, { dark, island });
+      const frames = paintFrames(anchor, { dark, island, pack });
       baselines.set(id, frames.map((f) => {
         const m = new Map();
         for (const s of f) m.set(paintKey(s), (m.get(paintKey(s)) || 0) + 1);
@@ -4042,7 +4700,7 @@ function paintedScene(theme, island) {
   // Footprint of `rows` over the anchor's baseline: the shapes it adds, each once.
   const footprint = (place, rows) => {
     const base = baseline(place);
-    const frames = paintFrames([...anchorRows(place, island), ...rows], { dark, island });
+    const frames = paintFrames([...anchorRows(place, island), ...rows], { dark, island, pack });
     assert(frames.length === base.frames.length, `${theme} ${island ? 'island' : 'village'} ${place}: ${frames.length} frames against ${base.frames.length}`);
     const out = new Map();
     frames.forEach((f, i) => {
@@ -4070,7 +4728,7 @@ function paintedScene(theme, island) {
     const empty = baseline(place).last;
     const within = (b, [bx, by, bw, bh]) => b[0] >= bx - 2 && b[1] >= by - 2 && b[2] <= bx + bw + 2 && b[3] <= by + bh + 2;
     if (place === 'graveyard') {
-      for (const s of graveSignShapes(empty, theme)) add(s, 0);
+      for (const s of graveSignShapes(empty, theme, pack)) add(s, 0);
       for (const s of fence) add(s, 'ground');
     } else if (V.PLACES[place]) {
       const [x, y, w, h] = V.signBox(place);
@@ -4136,12 +4794,83 @@ function nearestGap(a, b, reach = 120) {
   return best;
 }
 
-check('what a place paints stays out of every other place and off the road: 0 to 30 rows at 1.5x, both themes, one village and an island', () => {
+// How far what a place paints already reaches past the ground it declares, px, before this check existed. A shape
+// that escapes its ground is invisible to the overlap check above, which only ever attributes a shape that is
+// wholly inside one: that is the gap a reskin could walk straight through.
+// How far what a place paints already reached past the ground it declares, px, before this check existed: an
+// outline drawn on the edge itself, the Workshop's posts standing below its deck, the Harbour's lighthouse rocks.
+// Held at what they measure, in every pack, so nothing can grow past them unnoticed and no reskin can drift out.
+const GROUND_ESCAPES = { porch: 1, workshop: 4, jail: 2.6, cottages: 4.5, castle: 1.08, harbour: 12 };
+
+check('what a place paints into the background stays on the ground it declares, in every theme pack', () => {
   const measured = {};
+  for (const pack of V.THEME_KEYS) {
+    for (const dark of [false, true]) {
+      const label = `${pack} ${dark ? 'dusk' : 'day'}`;
+      const bg = [];
+      paintFrames([], { dark, bg, seconds: 0.1, pack });
+      // The terrain wash: ground, track, flats and the tufts and flowers scattered over them. It sweeps across
+      // every one of these boxes and belongs to none of them, so a place is judged on what it builds, not what it
+      // stands on.
+      const T = V.resolveTheme(pack, dark);
+      const terrain = new Set([...T.flowers, ...[
+        'grass', 'grassLight', 'grassDark', 'tuft', 'path', 'pathEdge', 'pebble', 'sand', 'sandLight', 'sandWet',
+        'sandDot', 'dune', 'water', 'waterDeep', 'ripple', 'shallow', 'foam', 'graveGrass', 'shadow',
+        // Planting belongs to no place either: a flower bed sits across the Porch's ground and the trees have
+        // their own box check above.
+        'tree', 'treeDark', 'treeLight', 'trunk',
+      ].map((k) => T[k])]);
+      for (const [place, grounds] of Object.entries(GROUNDS)) {
+        let seen = 0;
+        for (const [gx, gy, gw, gh] of grounds) {
+          // Attributed by its centre, and only shapes no bigger than the ground itself: the sea, the roads and the
+          // ground wash all sweep across these boxes and belong to none of them. The limit of attributing by the
+          // centre: a shape moved clear off its ground belongs to no place and so is checked against none. This
+          // catches a place growing past its footing, which is what a reskin does; it does not catch one part of a
+          // building being moved somewhere else entirely, which the eye does.
+          const mine = bg.filter((sh) => {
+            if (terrain.has(sh.style)) return false;
+            const [x0, y0, x1, y1] = sh.box;
+            const cx = (x0 + x1) / 2;
+            const cy = (y0 + y1) / 2;
+            return cx >= gx && cx <= gx + gw && cy >= gy && cy <= gy + gh
+              && x1 - x0 <= gw * 1.2 && y1 - y0 <= gh * 1.2;
+          });
+          seen += mine.length;
+          for (const sh of mine) {
+            const pad = sh.kind === 'stroke' ? sh.lw / 2 : 0;
+            const out = Math.max(gx - (sh.box[0] - pad), (sh.box[2] + pad) - (gx + gw),
+              gy - (sh.box[1] - pad), (sh.box[3] + pad) - (gy + gh));
+            if (out > 0) measured[`${pack}/${place}`] = Math.max(measured[`${pack}/${place}`] || 0, +out.toFixed(2));
+            const allowed = GROUND_ESCAPES[place] || 0;
+            assert(out <= allowed + 1e-6,
+              `${label}: the ${place} paints ${sh.kind} ${String(sh.style)} ${JSON.stringify(sh.box.map(r2))} ${out.toFixed(2)} px off its ground ${JSON.stringify([gx, gy, gw, gh])}, ${allowed} allowed`);
+          }
+        }
+        assert(seen > 0, `${label}: the ${place} paints something on its own ground`);
+      }
+    }
+  }
+  // The green village is held to exactly what it measured, so its own figures cannot drift unnoticed. Every other
+  // pack is held to no further than that: a reskin that reaches less far off its ground than the shape it replaces
+  // is strictly safer, and a white tower that stops short of a sand castle's spill should not have to be widened
+  // to satisfy a check.
+  for (const [place, allowed] of Object.entries(GROUND_ESCAPES)) {
+    eq(measured[`${V.DEFAULT_THEME}/${place}`], allowed, `the ${place} still reaches exactly as far off its ground as it did`);
+    for (const pack of V.THEME_KEYS) {
+      const got = measured[`${pack}/${place}`] || 0;
+      assert(got <= allowed + 1e-6, `${pack}: the ${place} reaches ${got} px off its ground, past the ${allowed} the green village does`);
+    }
+  }
+});
+
+check('what a place paints stays out of every other place and off the road: 0 to 30 rows at 1.5x, every theme pack, both schemes, one village and an island', () => {
+  const measured = {};
+  for (const pack of V.THEME_KEYS) {
   for (const theme of ['day', 'dusk']) {
     for (const island of [false, true]) {
-      const label = `${theme}, ${island ? 'inside an island' : 'one village'}`;
-      const { roads, places, footprint } = paintedScene(theme, island);
+      const label = `${pack}, ${theme}, ${island ? 'inside an island' : 'one village'}`;
+      const { roads, places, footprint } = paintedScene(theme, island, pack);
       eq(roads.length, V.ROAD_LINES.length, `${label}: every road is read off the painted layer`);
       // No rows, nothing painted: the empty board is its own baseline, so 0 rows adds no shape to any place, and a
       // place at 0 is its sign alone, which is in `places` below.
@@ -4163,7 +4892,9 @@ check('what a place paints stays out of every other place and off the road: 0 to
           const depth = Math.max(0, ...places[name].filter((p) => p.n !== 'ground').map((p) => overlapDepth(p.box, r)));
           const allowed = (ROAD_CONTACTS[name] || {})[ri] || 0;
           assert(depth <= allowed + 1e-6, `${label}: the ${name} reaches ${depth.toFixed(2)} px into the road ${JSON.stringify(V.ROAD_LINES[ri])}, ${allowed} allowed`);
-          if (allowed) measured[`${name}/road${ri}`] = Math.max(measured[`${name}/road${ri}`] || 0, +depth.toFixed(2));
+          // Recorded for the green village alone. A pack may reach less far into a road, never further, which is
+          // what the inequality above holds every pack to.
+          if (allowed && pack === V.DEFAULT_THEME) measured[`${name}/road${ri}`] = Math.max(measured[`${name}/road${ri}`] || 0, +depth.toFixed(2));
         });
       }
       // The Porch, which is where this came from: every shape it paints is below the road's lower edge.
@@ -4172,12 +4903,15 @@ check('what a place paints stays out of every other place and off the road: 0 to
       assert(top > roadFoot, `${label}: the Porch paints up to y ${top.toFixed(2)}, over the road's edge at ${roadFoot}`);
       assert(top >= V.PORCH_CEILING - 1e-6, `${label}: nothing on the Porch rises above PORCH_CEILING (${top.toFixed(2)})`);
       const gap = nearestGap(places.porch, places.graveyard);
-      measured[`${theme}|${island ? 'island' : 'village'}`] = { porchTop: +top.toFixed(2), porchToRoad: +(top - roadFoot).toFixed(2), porchToGraveyard: +gap.toFixed(2) };
+      measured[`${pack}|${theme}|${island ? 'island' : 'village'}`] = { porchTop: +top.toFixed(2), porchToRoad: +(top - roadFoot).toFixed(2), porchToGraveyard: +gap.toFixed(2) };
     }
   }
-  // Paint is geometry: the two themes and the two maps put every place in exactly the same spot.
+  }
+  // Paint is geometry, and a pack is paint: every pack, both schemes and both maps put every place in exactly
+  // the same spot. This is the whole reason a frontier town could be laid over a village with a large geometry
+  // suite without moving a single crowd, sign or clickable door.
   const figures = Object.entries(measured).filter(([k]) => k.includes('|')).map(([, v]) => JSON.stringify(v));
-  eq(new Set(figures).size, 1, `the same clearances in both themes and both maps (${figures.join(' ')})`);
+  eq(new Set(figures).size, 1, `the same clearances in every pack, both schemes and both maps (${figures.join(' ')})`);
   for (const [name, roads] of Object.entries(ROAD_CONTACTS)) {
     for (const [ri, allowed] of Object.entries(roads)) eq(measured[`${name}/road${ri}`], allowed, `the ${name} still reaches exactly as far into road ${ri} as it did`);
   }
@@ -4515,8 +5249,11 @@ check('the alpha the beam is measured at is the alpha it is drawn with', () => {
 check('the beam never washes out an avatar, the harbour, the border patrol or a boat', () => {
   const blend = (top, base, a) => `#${hexRgb(top).map((c, i) => Math.round(c * a + hexRgb(base)[i] * (1 - a)))
     .map((c) => Math.min(255, Math.max(0, c)).toString(16).padStart(2, '0')).join('')}`;
-  // WARM_LIGHT in the village: the one warm colour the windows, the lantern and the beam are all made of.
-  const WARM = '#f6dea0';
+  // The light a pack sweeps: the green village's and the frontier's warm lantern, and Middle-earth's red Eye.
+  // The beam's alphas are the same in every pack, so the colour is the only thing that changes what it does to
+  // what it falls on, and a redder light shifts a body further than a warm one at the same alpha.
+  const lightOf = (pack) => `#${V.resolveTheme(pack, true).beamLight.split(',')
+    .map((n) => Number(n.trim()).toString(16).padStart(2, '0')).join('')}`;
   // The most of the beam that can fall anywhere in a box, whatever the beam's angle.
   const peakOver = ([x, y, w, h]) => {
     let out = 0;
@@ -4566,28 +5303,42 @@ check('the beam never washes out an avatar, the harbour, the border patrol or a 
 
   // A body under the beam has to stay its own repo's colour. The palette's closest pair is 21.5 apart, so a lit
   // body that stays 18 from every other entry cannot be read as another repo.
-  let shift = { d: 0 };
-  let other = { d: Infinity };
-  let ink = { c: Infinity };
-  for (const e of V.REPO_PALETTE) {
-    const body = blend(WARM, e.dark, avatar.a);
-    const face = blend(WARM, e.ink, avatar.a);
-    if (de00(e.dark, body) > shift.d) shift = { d: de00(e.dark, body), e: e.name };
-    if (contrast(face, body) < ink.c) ink = { c: contrast(face, body), e: e.name };
-    for (const o of V.REPO_PALETTE) {
-      if (o !== e && de00(body, o.dark) < other.d) other = { d: de00(body, o.dark), e: e.name, o: o.name };
-    }
-  }
   assert(avatar.a <= 0.09, `the most beam a body ever sits in is low (${avatar.a.toFixed(4)} at the ${avatar.spot})`);
-  assert(shift.d <= 6, `a lit body barely shifts (${shift.d.toFixed(2)} on ${shift.e})`);
-  assert(other.d >= 18, `and stays ${other.d.toFixed(2)} from every other repo colour (${other.e} against ${other.o})`);
-  assert(ink.c >= 3, `its face still reads on it (${ink.c.toFixed(2)}:1 on ${ink.e})`);
+  // The worst any pack does, which is what the recorded figures below hold.
+  const worst = { shift: 0, other: Infinity, ink: Infinity };
+  for (const pack of V.THEME_KEYS) {
+    const WARM = lightOf(pack);
+    let shift = { d: 0 };
+    let other = { d: Infinity };
+    let ink = { c: Infinity };
+    for (const e of V.REPO_PALETTE) {
+      const body = blend(WARM, e.dark, avatar.a);
+      const face = blend(WARM, e.ink, avatar.a);
+      if (de00(e.dark, body) > shift.d) shift = { d: de00(e.dark, body), e: e.name };
+      if (contrast(face, body) < ink.c) ink = { c: contrast(face, body), e: e.name };
+      for (const o of V.REPO_PALETTE) {
+        if (o !== e && de00(body, o.dark) < other.d) other = { d: de00(body, o.dark), e: e.name, o: o.name };
+      }
+    }
+    assert(shift.d <= 6, `${pack}: a lit body barely shifts (${shift.d.toFixed(2)} on ${shift.e})`);
+    assert(other.d >= 18, `${pack}: and stays ${other.d.toFixed(2)} from every other repo colour (${other.e} against ${other.o})`);
+    assert(ink.c >= 3, `${pack}: its face still reads on it (${ink.c.toFixed(2)}:1 on ${ink.e})`);
+    worst.shift = Math.max(worst.shift, shift.d);
+    worst.other = Math.min(worst.other, other.d);
+    worst.ink = Math.min(worst.ink, ink.c);
+  }
   assert(harbour <= 0.1 && boat.a <= 0.09 && sign <= 0.1,
     `the harbour ${harbour.toFixed(4)}, a boat ${boat.a.toFixed(4)} and the harbour sign ${sign.toFixed(4)} stay dim`);
 
-  // The border patrol's uniform keeps the 12 it holds from every reserved state colour, under the beam too.
+  // Whoever stands at the barrier keeps the 12 they hold from every reserved state colour, under the beam too,
+  // in every pack: the Shire's grey robe stands in the same light the frontier's khaki does.
   let uniform = { d: Infinity };
-  for (const [name, hex] of Object.entries(V.PATROL_COLOURS.dusk)) {
+  const lit4 = V.THEME_KEYS.flatMap((pack) => {
+    const R = V.resolveTheme(pack, true);
+    return [['khaki', R.patrolKhaki], ['khakiShade', R.patrolKhakiShade], ['navy', R.patrolNavy], ['white', R.patrolWhite]]
+      .map(([name, hex]) => [`${pack}/${name}`, hex, lightOf(pack)]);
+  });
+  for (const [name, hex, WARM] of lit4) {
     const lit = blend(WARM, hex, patrol);
     for (const [state, colour] of Object.entries(RESERVED)) {
       if (de00(lit, colour) < uniform.d) uniform = { d: de00(lit, colour), name, state };
@@ -4637,7 +5388,7 @@ check('the beam never washes out an avatar, the harbour, the border patrol or a 
     avatar: +avatar.a.toFixed(4), avatarSpot: avatar.spot, harbour: +harbour.toFixed(4),
     boat: +boat.a.toFixed(4), harbourSign: +sign.toFixed(4), patrol: +patrol.toFixed(4),
     fixtureBadges: fixtures.length, litBadges,
-    bodyShift: +shift.d.toFixed(2), nearestOtherRepo: +other.d.toFixed(2), faceInk: +ink.c.toFixed(2),
+    bodyShift: +worst.shift.toFixed(2), nearestOtherRepo: +worst.other.toFixed(2), faceInk: +worst.ink.toFixed(2),
     uniformFromState: +uniform.d.toFixed(2),
   };
 });
@@ -5946,10 +6697,13 @@ check('one village mode draws exactly the scene it drew before the world of isla
   // does not move, and the hall digest below is rendered in day mode, where the disco (dusk-only) never draws.
   // It moved to b32b876b, same 157 shapes, when the tables grew to show their games and the seats moved to the
   // tables' sides and far rim.
+  // It moved to dd1ec513 (165 shapes) when fillEllipse started honouring the stroke its callers pass. Diffed
+  // shape for shape: the eight new shapes are the eight game pieces' own '#2b2b2b' outlines, which that call has
+  // asked for since the tables shipped and silently did not get. Nothing else moved, in any of the three scenes.
   eq(results.oneVillage, {
     village: { shapes: 1070, digest: 'e62d4286', ink: '33/60929b59', words: 'd00b4209' },
     hall: { shapes: 104, digest: '207527e9', ink: '3/f513068', words: '29cbbb2d' },
-    room: { shapes: 157, digest: 'b32b876b', ink: '7/6ec12c21', words: 'db3b0380' },
+    room: { shapes: 165, digest: 'dd1ec513', ink: '7/6ec12c21', words: 'db3b0380' },
   }, 'one village draws the same scene, shape for shape and word for word');
 });
 

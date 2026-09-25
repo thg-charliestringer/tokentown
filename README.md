@@ -183,9 +183,9 @@ Cursor you have installed.
 |---|---|
 | **The Porch** | **Blocked** by the door, waving under an orange light. **Needs input** on the swings (finished a turn in the last 2 hours). **Errored** (a puff of smoke) and **Stopped** (a pause sign) on the steps. One sign names all four, and orange on the Porch always means blocked |
 | **The Workshop** | **Running**: busy, or idle while a task it started in the background still runs (`background task · N min`) |
-| **The Cottages** | **Idle** (live, quiet for 2 hours or more) and **Recent** (active in the last 7 days). One cottage with lit windows and a count on its sign. Click it to go inside, where the sessions wander and sit down to chess, ludo, snakes and ladders or cards |
+| **The Cottages** | **Idle** (live, quiet for 2 hours or more) and **Recent** (active in the last 7 days). One cottage with lit windows and a count on its sign. Click it to go inside, where the sessions wander and sit down to chess, ludo, snakes and ladders or cards. In the Wild West it is **The Bank**, and the room behind it is the counting room |
 | **The Harbour** | **PR open**. Sessions queue behind the border patrol. When a PR merges, the guard stamps that character's passport, the barrier lifts, and it walks down the pier to a boat |
-| **Valhalla island** | A PR merged with none still open, or you sent it there. For 14 days they lounge on the beach with margaritas, then move into the **sand castle**. Click the castle to go inside |
+| **Valhalla island** | A PR merged with none still open, or you sent it there. For 14 days they lounge on the beach with margaritas, then move into the **sand castle**. Click the castle to go inside. In the Wild West the island is a mesa, the castle is a mine, and they lounge under a brush ramada with whiskey |
 | **The Jail** | Every PR was closed without merging. They stand in a barred yard. A merge always beats a closure |
 | **The Graveyard** | Archived, a terminal or VS Code session that has ended, or no activity for 30+ days. One headstone per session, newest first, with friendly ghosts floating over them: two from the first grave, up to twelve in a full graveyard |
 | **The immigration desk** | Not sessions: PRs waiting on your review, as visitors (see below) |
@@ -228,11 +228,76 @@ otherwise the World.
 The **count pills** in the top bar always count the whole board, every repo, even while an island is open. The list
 beside the village follows what is on screen. Both say which they are showing.
 
+### Themes
+
+The **Theme** dropdown in the top bar picks how the village is painted. Your choice is remembered.
+
+- **Village**: the green village, as it has always been.
+- **Wild West**: a frontier town. Its sessions wear cowboy kit, its village is desert, its two rooms are a bank's
+  counting room and a mine, and a locomotive hauls merged PRs across the flats.
+- **Middle-earth**: a green country. Its sessions are hobbits, its trees are ents, the cottage is a hobbit hole,
+  the guard at the border is a grey pilgrim, and a dark tower watches the coast with a burning eye.
+
+A theme is paint and lettering only. Every building stands on the footing it replaces, so nothing moves: the
+Board's columns, the Repos legend, the count pills and every clickable door read the same whichever theme you
+pick. Only the name painted on a board changes.
+
+| Place | Village | Wild West |
+|---|---|---|
+| The Workshop | Workbenches under an awning | **The Depot**: a platform under the canopy, with a baggage cart and a water column |
+| The Cottages | A cottage on the green | **The Bank**: a stone front, a stepped parapet, a hitching rail |
+| The Porch | A porch house with a lantern | **The Saloon**: a false front and batwing doors |
+| The Harbour | A deck and a pier | **The Rail Yard**, under a water tower |
+| Valhalla island | Sand, dune grass, shells | **Valhalla mesa**: a mine driven into the rock |
+| The sand castle | A sand castle | The mine's timbered portal, with rails and an ore cart |
+| The sea | Water, ripples, foam | Dry flats, a gulch cut through them, cracked mud |
+| The trees | Eight trees | Eight saguaros |
+| The Jail, the Graveyard | Unchanged | Unchanged |
+
+| Place | Village | Middle-earth |
+|---|---|---|
+| The open ground | A wash of grass | **Farmland**: hedged fields of standing corn, ploughed earth and pasture with ponies grazing, a hillside with another hole in it, and the Misty Mountains on the horizon. All of it north of the road: the ground below belongs to the Porch |
+| The Workshop | Workbenches under an awning | **The Forge**: a timber-framed smithy on a stone footing, under a tiled roof, with an anvil and a lit hearth |
+| The Cottages | A cottage on the green | **Bag End**: a green hill with a round door, leaded round windows, a paling fence and a bench by the gate |
+| The Porch | A porch house with a lantern | **The Green Dragon**: a half-timbered inn under thatch, with a sign on the gable |
+| The Harbour | A deck and a pier | **The Grey Havens** |
+| Valhalla island | Sand, dune grass, a sand castle | **The Undying Lands**, under a white tower |
+| The sea | Water, ripples, foam | Unchanged: this pack keeps its sea |
+| The trees | Eight trees | Eight ents, each leaning its own way, and each dancing to its own beat |
+| The roads | Nothing walks them | A ninth ent walks the ring the four roads make round the workshop, where the frontier has its horse. About a minute and a half to get round |
+| The lighthouse | A lighthouse sweeping its beam | A dark tower, and at night an Eye that sweeps it instead |
+| The border patrol | A guard in uniform | A grey pilgrim with a staff, who decides what passes, and sends up fireworks at night |
+| The Jail | A stone block under a slate roof | **Shelob's**: the same block cut into dark rock under a broken brow, a mouth in place of the door, silk in place of the bars, webs in the corners of the cage and a spider walking the plot |
+| The windows | Glass with a glazing bar | Leaded diamond panes, on every opening in the pack |
+| The Graveyard | Headstones | Barrows, each with a standing stone at its head. Orcs haunt them in place of ghosts, and something creeps round inside the fence that never leaves |
+| The Cottages room | A parlour with square windows | **The Parlour**: round windows onto the country, and a dresser of plates |
+| The hearth | A pot over three logs | The same hearth, lit: embers, flames and a pot on a crane. The green village's hearth is lit too |
+| The castle hall | A sand castle hall | **The White Halls**: an arcade of pointed arches, lancets over a gorge and its fall, a terrace archway onto the valley, a flagstone floor with a star laid in it, and stone benches |
+
+
+In Middle-earth a session is a hobbit: curly hair, pointed ears, a waistcoat with brass buttons and big bare
+feet. It keeps the green village's five looks. Merged sessions cross to the Undying Lands in a grey ship with a
+star on its sail, the flower beds are mushrooms, and a lounger smokes a pipe under a mallorn rather than drinking
+under a parasol.
+
+In the Wild West a session wears a hat, a waistcoat, a gun belt and a holstered revolver, with a sheriff's star,
+a bandana, a feather in the hatband, glasses or the hat alone to tell five sessions of one repo apart. Its
+colour, size, badge and lane are untouched. A horse trots the circuit the roads make, a range on the horizon has
+a tunnel driven through it, and the crossing runs straight from the berth to the jetty rather than taking the
+voyage's long way round.
+
 ### At night
 
 Night means dark mode, not the clock: the scene follows your Mac's appearance setting. At night the sand castle's
 windows glow, the lighthouse sweeps its beam round, and the sand castle hall has a disco with a mirror ball and
-coloured spotlights. The beam, the disco and the ghosts hold still when your Mac is set to reduce motion.
+coloured spotlights, with fireworks going up over the sea through its two windows. In the Wild West the mine has a band instead, and every five seconds two of the crowd go at
+it: a brawl with a **POW!**, then a shootout with a **BANG!**. In Middle-earth the hall has starlight, and the
+dark tower's Eye sweeps where the lighthouse beam did, and the eyes of the thing in the graveyard catch the
+light, and the grey pilgrim sends up fireworks from the head of his staff over the water beyond the Havens. Go
+inside the White Halls and you see the same display through its two lancets, over the gorge, as the sand castle
+hall sees it over the sea. The
+beam, the disco, the band, the fights, the starlight, the fireworks, the horse, the creeper, the spider, the
+walking ent, the dancing ents and the ghosts all hold still when your Mac is set to reduce motion.
 
 ### Visitors: PRs waiting on your review
 
@@ -292,6 +357,7 @@ and merged sessions are already there.
   [Wherever Claude keeps its files](#wherever-claude-keeps-its-files)), and when `gh` is not signed in.
 - **The update banner**, under the top bar: a new release of Tokentown is out, with **What's new** and **Update
   now**. See [Updates](#updates).
+- **Theme**: how the village is painted, Village, Wild West or Middle-earth. See [Themes](#themes).
 - **Privacy** (`p`): hides titles and shows `repo / worktree` instead, for screen sharing.
 
 ## Keys

@@ -28,9 +28,9 @@ town/actions.py      open a session in Claude or its editor (VS Code, Insiders, 
 town/server.py       ThreadingHTTPServer, scan thread, PR, review and update threads, Update now and its restart
 town/check.py        `tokentown check` report
 web/index.html       page shell, keys overlay and the How it works page
-web/app.js           claim, polling, top bar, update banner, What's new, list, Board, card, keys
+web/app.js           claim, polling, top bar, theme picker, update banner, What's new, list, Board, card, keys
 web/app.css          styles
-web/village.js       the Village canvas: places, characters, world of islands, interiors, visitors
+web/village.js       the Village canvas: places, characters, world of islands, interiors, visitors, theme packs
 tests/fixtures.py    synthetic home builder
 tests/test_*.py      unittest suites, one per module (test_status.py also covers board.py and check.py, and
                      test_updates.py covers actions.update_command)
@@ -140,6 +140,36 @@ again.
 
 ## Things that bite
 
+- **The theme contract spans two files and a pack's own palette.** A pack is a name, colours laid over the base
+  day and dusk themes, and the words painted on the place boards and over an interior's door. `village.js` owns
+  `THEME_PACKS`, `resolveTheme`, `placeName` and `roomName`; `app.js` keeps its own copy of the list and of both
+  room names, because village.js loads lazily and the top bar has to offer the choice before it arrives.
+  `tests/test_web.py`'s `ThemeContractTests` holds the two in step, and a pack that names a colour the base theme
+  has no use for is a typo that would silently do nothing, so the harness checks that too. A new pack needs a key,
+  a name, a note, `hatted`, two override maps and any board names it renames, and nothing else: it must not touch
+  a lane. Three packs in, the checks that hold one hold all of them: a pack is added to `THEME_PACKS` and the
+  suite starts judging it that moment, with no new check written.
+- **A pack says what it is, rather than the code asking which one it is.** `headroom` once asked whether the pack
+  was 'west' to decide that everyone is hatted, which was a guess about every pack that would ever exist. A third
+  pack made it `themePack(pack).hatted`. Any rule that would branch on a pack's name belongs on the pack instead.
+- **Anything a pack recolours has to be checked in every pack.** Three checks were written against one pack's
+  colours and had to be opened up when a second and a third changed them: the guard at the barrier (whose colours
+  must clear every state badge, or a guard reads as a blocked session), the beam (whose light must not shift a lit
+  body towards another repo's colour), and the graveyard's own fence colours, which is how the painted checks find
+  it. `slate` is the ghosts' outline, the jail's roof and a chessboard's dark squares as well as the tower's, which
+  is why a pack that wanted a black tower got `towerStone` and `towerEdge` of its own rather than darkening it.
+- **A pack is paint, never geometry.** Every building stands on the footing it replaces, which is the only reason
+  a frontier town could be laid over a village with this large a geometry suite without moving a crowd, a sign or
+  a clickable door. Three painted checks hold it: what a place paints stays out of every other place and off the
+  road, in every pack, with the clearances asserted equal across all of them; what a place paints into the
+  background stays on the ground it declares; and what a tree paints stays inside its `treeBox`. The one thing a
+  pack does decide beyond paint is which line the crossing takes (`sailLane`), and a journey already under way
+  keeps the line it was planned on.
+- **A merged theme is a new object.** Nothing may ask whether a theme is `THEMES.dusk` by identity: every such
+  test would be false. The theme carries its own `night` and `pack`, and every cached layer is keyed by both, or
+  switching keeps the village, the sea or an open interior the last pack painted.
+- **The badge lift is written once.** `headroom` is read by the draw and by hit testing alike. A hat that raised
+  only one of them would paint a badge where no click lands, which is what a taller frontier hat would have done.
 - **The lane contract spans three files.** `board.py`'s lane order, `app.js` (`LANE_WORD`, `LANE_HELP`,
   `COLUMN_LANES`, `HUD_PILL_KEYS`) and `village.js` (the place and badge for each lane) must agree.
   `tests/test_web.py` reads all three and fails if a lane is missing anywhere. A new lane needs a word, help text,
@@ -159,7 +189,54 @@ again.
   real movement (`anyMotion`: a character walking or sailing, guests wandering an open interior) earns a faster
   rate. Bobbing, swaying and sweeping belong on the ambient tick.
 - **Night means the dusk theme, not the clock** (`env.night`). Night-only art that moves (the lighthouse beam, the
-  disco) must hold still under reduced motion.
+  disco, the frontier mine's band and its fights) must hold still under reduced motion. So must anything else that
+  is scenery rather than a session going somewhere: the horse on the frontier's roads is on the ambient tick, and
+  `tests/test_web.py` keeps all of it out of `anyMotion` and `nextMotionAt`.
+- **A clip eats the path you were going to stroke.** The hall's windows fill a pane, `save`, `clip`, draw the
+  view, `restore` and then `stroke` to frame it. Every draw inside the clip calls `beginPath` of its own, so by
+  the `stroke` the current path is the last shape drawn in the view, not the pane: the frames were never painted
+  in any pack, and an 8 px outline appeared round a wave or a puff of mist instead. A path wanted on both sides
+  of a clip is laid as a closure and called twice (`pane`, `archway` in `paintHall`).
+- **`fillEllipse` takes a stroke, like `fillRR` and `fillPoly`.** It did not, and dropped one silently: around
+  thirty calls asked for an outline and went without, and one passed `null` for the fill with an outline asked
+  for, which filled the shape in whatever colour was last set and painted over its own view. A drawing helper
+  that takes a fill takes `(fill, stroke, lineWidth = 1.5)` in that order, and skips the fill when it is falsy.
+- **A pack that wants something to move has to take it out of the background layer.** The background is painted
+  once and kept until the theme or the size changes, so anything in it is still by construction. Middle-earth's
+  ents dance, so in that pack `paintTrees` paints no tree at all and `drawEnts` draws them per frame instead.
+  That moves them out of reach of every check that reads the layer: `tests/web_harness.mjs` now reads the frame
+  as well, over a whole ent beat, and takes two passes to do it (with a background layer the village blits it and
+  the frames come back empty; without one there is no document to make a layer at all).
+- **Scenery that walks needs a circuit, a reach and two checks.** The frontier's horse, the creature in the
+  graveyard, the spider in the lair and the ent on the ring road are the same shape of thing, and share
+  `walkAt(circuit, speed, t, reduced, facing)`. `facing` is the one thing they do not share: 'leg' faces the way
+  the leg runs, which is a horse, and 'corner' faces the way the next corner takes it, so a walker on an upright
+  leg has turned rather than sliding along sideways. Each one is: a closed circuit, a speed, a `*_REACH` that
+  is half of everything it paints, an `*At(t, reduced)` that holds it at one place under reduced motion, and its
+  name banned from `anyMotion` and `nextMotionAt` in `tests/test_web.py`. The checks come in pairs: one walks the
+  circuit twice and fails if the reach leaves the ground it is allowed, the other measures what is painted under
+  reduced motion against that same reach, so the reach cannot quietly become a lie. On the roads, measure across
+  the leg and never along it: two bands meeting at a right angle leave the outer corner uncovered, so a box
+  corner tested at a junction fails for a walker of any size at all. And what has to stay on the road is what the
+  thing stands on, not all of it: the ent is 52 tall on a 38 px band, as a session walking the road is. Note the
+  slack: the spy
+  records a stroke's path box and its `lw` apart, so a painted check has half a line width of give, and a
+  mutation smaller than that will not be caught.
+- **Two of them in one place will find each other's colours.** The orcs' iron caps are the same `steel` as the
+  creature's skin, so with graves on the board his painted check was measuring their helmets. Both checks run on
+  an empty board, where the walker is drawn and nothing else in that colour is.
+- **A hash off a position is a hash off a footing.** `paintEnt` takes which way it leans, how tall it stands, how
+  thick its bole is and which bough it raises from two hashes of its own x and y, which is what makes eight
+  standing ents eight ents. Give the same routine a walker and every one of those re-rolls on every frame: the
+  one that walks the ring road was flickering between a stout 1.3r stump and a slim 1.53r tree three times a
+  frame. It takes a `seed` now, and the seed is chosen rather than inherited, because the point it starts from
+  happened to hash to the shortest, stoutest ent there is.
+- **Hand-placed dressing has no box of its own, so give it one.** The Shire's fields, hillsides and ponies are
+  laid into "open ground", which is the only thing on the map that nothing declares. Four field quads and a
+  hillside went straight over the Porch's swings: its spots start at y 734, so the ground above looked free, but
+  a swing frame reaches 90 px above its row and a row's badge reaches `PORCH_CEILING`, and none of that is in any
+  rect the layout checks reason about. `PORCH_GROUND` says it once, and a check holds every quad, hillside and
+  pony clear of it, of every spot, sign, tree box and road band. It found four more overlaps the moment it ran.
 - **Transcripts are big.** Token counts and PR links are read incrementally with a byte budget per scan. Never
   re-read whole transcripts on each scan.
 - **Claude's files are not always where they are on this Mac.** Claude Code uses `CLAUDE_CONFIG_DIR` instead of

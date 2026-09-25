@@ -108,6 +108,35 @@ export const RELOADED_FOR_KEY = 'town.reloadedFor';
 // village module owns which of the two is on screen and which island is open; the page owns the remembered choice.
 // Every name below is app.js's own copy of a village.js export, because village.js loads lazily and the page has to
 // work before it arrives: MODES, MODE_SHARE, NO_REPO_KEY, NO_REPO_LABEL, ISLAND_PREFIX, WORLD_BADGE_LANES.
+// How the village is painted. village.js owns the palettes and every place they rename; the page owns the
+// remembered choice, the dropdown's words, and the two room names that appear outside the canvas (an interior's
+// crumb, and what a hover calls a room) because village.js loads lazily and the top bar has to offer the choice
+// before it arrives. tests/test_web.py holds this copy and village.js's THEME_PACKS in step.
+export const THEME_KEY = 'town.theme';
+export const DEFAULT_THEME = 'village';
+export const THEMES = Object.freeze([
+  Object.freeze({ key: 'village', name: 'Village', note: 'The green village' }),
+  Object.freeze({ key: 'west', name: 'Wild West', note: 'A frontier town on the dry flats' }),
+  Object.freeze({ key: 'shire', name: 'Middle-earth', note: 'A green country, and a grey ship west' }),
+]);
+export const THEME_KEYS = Object.freeze(THEMES.map((t) => t.key));
+// Both rooms, spelled out per theme rather than as overrides, so a reader can see what every theme calls them.
+export const THEME_ROOMS = Object.freeze({
+  village: Object.freeze({ castle: 'Valhalla sand castle', cottages: 'The Cottages' }),
+  west: Object.freeze({ castle: 'Valhalla mine', cottages: 'The Counting Room' }),
+  shire: Object.freeze({ castle: 'The White Halls', cottages: 'The Parlour' }),
+});
+
+export function themeFrom(key) {
+  return THEME_KEYS.includes(key) ? key : DEFAULT_THEME;
+}
+
+// What a theme calls one of the two rooms. Unknown scenes have no room and answer ''.
+export function roomWord(scene, theme = DEFAULT_THEME) {
+  const rooms = THEME_ROOMS[themeFrom(theme)];
+  return Object.prototype.hasOwnProperty.call(rooms, scene) ? rooms[scene] : '';
+}
+
 export const MODE_KEY = 'town.mode';
 export const ISLAND_KEY = 'town.island';
 export const MODES = Object.freeze(['village', 'world']);
@@ -138,6 +167,7 @@ const ICONS = {
   merge: 'M21 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM9 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM6 21V9a9 9 0 0 0 9 9',
   clock: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0zM12 6v6l4 2',
   eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
+  paint: 'M12 3a9 9 0 0 0 0 18 2 2 0 0 0 2-2 2 2 0 0 1 2-2h1.5a3.5 3.5 0 0 0 3.5-3.5A10.5 10.5 0 0 0 12 3zM8 9h.01M7.5 13.5h.01M12 7h.01M15.5 8.5h.01',
   eyeOff: 'M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-2.8 3.6M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2',
   help: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0zM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01',
   info: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0zM12 16v-5M12 8h.01',
@@ -205,6 +235,7 @@ const state = {
   inflight: false,
   view: 'village',
   privacy: false,
+  theme: DEFAULT_THEME,
   selectedId: null,
   village: null,
   clocks: [],
@@ -589,17 +620,18 @@ export function restText(s) {
 }
 
 // What hovering the sand castle from outside shows.
-export function castleHallModel(count) {
+export function castleHallModel(count, theme = DEFAULT_THEME) {
   const n = int(count);
+  const title = roomWord('castle', theme);
   const line = `${n} ${n === 1 ? 'session' : 'sessions'} merged or marked done over 14 days ago.`;
   const hint = 'Click to go inside.';
-  return { title: 'Valhalla sand castle', count: n, line, hint, text: `Valhalla sand castle: ${line} ${hint}` };
+  return { title, count: n, line, hint, text: `${title}: ${line} ${hint}` };
 }
 
 // What hovering the cottages from outside shows. Both lanes are inside the room, so both are counted: the number a
 // hover promises has to be the number behind the door. A Recent row of 0 is left out, so a purely idle cottage
 // reads as it always did.
-export function cottageRoomModel(idleCount, recentCount) {
+export function cottageRoomModel(idleCount, recentCount, theme = DEFAULT_THEME) {
   const idle = int(idleCount);
   const recent = int(recentCount);
   const sessions = (n) => `${n} ${n === 1 ? 'session' : 'sessions'}`;
@@ -607,7 +639,8 @@ export function cottageRoomModel(idleCount, recentCount) {
   if (recent > 0) rows.push({ key: 'Recent', lane: 'recent', text: sessions(recent) });
   const hint = 'Click to look inside.';
   const said = rows.map((r) => `${r.key}: ${r.text}`).join('. ');
-  return { title: 'The Cottages', count: idle + recent, rows, hint, text: `The Cottages. ${said}. ${hint}` };
+  const title = roomWord('cottages', theme);
+  return { title, count: idle + recent, rows, hint, text: `${title}. ${said}. ${hint}` };
 }
 
 // counts.open_pr counts sessions, not PRs: a session can have several open PRs and still queue once. `reviews` is
@@ -749,14 +782,14 @@ export function islandTipModel(island, reviews = 0) {
 // The scene bar's crumbs and back button. `name` is the open island's name, or null. One village reads exactly as it
 // did: Village › <scene>. The World gains a level, so an interior inside an island is World › <repo> › <scene>.
 // `action` says what clicking a crumb leaves: 'root' the island and any interior, 'island' the interior only.
-export function crumbModel(mode, repo, scene) {
+export function crumbModel(mode, repo, scene, theme = DEFAULT_THEME) {
   const here = SCENES[sceneName(scene)] || null;
   const world = mode === 'world';
   const inside = world && typeof repo === 'string';
   if (!here && !inside) return { open: false, crumbs: [], back: '', tone: 'muted' };
   const crumbs = [{ text: world ? 'World' : 'Village', action: 'root' }];
   if (inside) crumbs.push({ text: worldLabel(repo), action: here ? 'island' : null });
-  if (here) crumbs.push({ text: here.crumb, action: null });
+  if (here) crumbs.push({ text: roomWord(sceneName(scene), theme), action: null });
   return {
     open: true,
     crumbs,
@@ -3280,11 +3313,12 @@ function pointAtVisitor(v, waits, where = '') {
 
 // ---------- interior scenes: the sand castle hall and the cottage room ----------
 
-// One entry per scene you can be inside: its crumb, the state pill its bar borrows, and the village calls that
-// leave it. The village names its exit per scene, so the scene's own name is tried before a generic one.
+// One entry per scene you can be inside: the state pill its bar borrows, and the village calls that leave it.
+// The village names its exit per scene, so the scene's own name is tried before a generic one. What the crumb
+// calls the room is the theme's, in THEME_ROOMS.
 const SCENES = Object.freeze({
-  castle: Object.freeze({ crumb: 'Valhalla sand castle', tone: 'castle', exits: ['leaveCastle', 'leaveScene'] }),
-  cottages: Object.freeze({ crumb: 'The Cottages', tone: 'idle', exits: ['leaveCottages', 'leaveCottage', 'leaveScene'] }),
+  castle: Object.freeze({ tone: 'castle', exits: ['leaveCastle', 'leaveScene'] }),
+  cottages: Object.freeze({ tone: 'idle', exits: ['leaveCottages', 'leaveCottage', 'leaveScene'] }),
 });
 
 // 'cottage' as well as 'cottages', so a village that names that scene either way is understood.
@@ -3490,7 +3524,7 @@ function renderRailScope() {
 // Rebuilt only when it changes: a crumb can hold keyboard focus, and the board arrives every two seconds.
 function renderSceneBar() {
   const key = openIslandKey();
-  const model = crumbModel(state.mode, key, state.scene);
+  const model = crumbModel(state.mode, key, state.scene, state.theme);
   const signature = JSON.stringify(model);
   if (signature === state.crumbKey) return;
   state.crumbKey = signature;
@@ -3541,6 +3575,32 @@ function leaveToRoot() {
 function leaveOneLevel() {
   if (state.scene !== 'village') leaveScene();
   else if (openIslandKey() !== null) leaveIsland();
+}
+
+// The theme picker's options, built once: a theme is paint, so the list never changes with the board.
+function fillThemePick() {
+  const pick = $('theme-select');
+  pick.replaceChildren(...THEMES.map((t) => {
+    const opt = el('option', null, t.name);
+    opt.value = t.key;
+    opt.title = t.note;
+    return opt;
+  }));
+}
+
+// Paint alone: the village repaints, the crumb and the hovers take the theme's words, and nothing is re-laid out.
+function setTheme(next, persist) {
+  state.theme = themeFrom(next);
+  if (persist) storeSet('localStorage', THEME_KEY, state.theme);
+  const pick = $('theme-select');
+  if (pick.value !== state.theme) pick.value = state.theme;
+  // A village from an older build has no setTheme, and a picker that breaks the canvas would be worse than one
+  // that only renames the rooms, so it is asked for rather than assumed.
+  withVillage((v) => {
+    if (typeof v.setTheme === 'function') v.setTheme(state.theme);
+  });
+  renderSceneBar();
+  refreshTip();
 }
 
 function setPrivacy(on, persist) {
@@ -3796,7 +3856,7 @@ function laneCount(lane) {
 
 function buildCastleTip() {
   const node = $('village-tip');
-  const m = castleHallModel(laneCount('castle'));
+  const m = castleHallModel(laneCount('castle'), state.theme);
   node.replaceChildren();
   node.className = 'village-tip st-castle';
   node.setAttribute('aria-label', m.text);
@@ -3828,7 +3888,7 @@ function buildPatrolTip() {
 
 function buildCottageTip() {
   const node = $('village-tip');
-  const m = cottageRoomModel(laneCount('idle'), laneCount('recent'));
+  const m = cottageRoomModel(laneCount('idle'), laneCount('recent'), state.theme);
   node.replaceChildren();
   node.className = 'village-tip st-idle';
   node.setAttribute('aria-label', m.text);
@@ -4096,6 +4156,7 @@ async function initVillage() {
       },
       onIsland: (repo) => islandFromVillage(repo),
       mode: state.mode,
+      theme: state.theme,
       // The remembered island. The village tries it once, on its first board, and answers through onIsland.
       island: state.islandWanted,
     });
@@ -4254,6 +4315,7 @@ function wire() {
   $('view-village').addEventListener('click', () => setView('village', true));
   $('view-board').addEventListener('click', () => setView('board', true));
   $('privacy-btn').addEventListener('click', () => setPrivacy(!state.privacy, true));
+  $('theme-select').addEventListener('change', (e) => setTheme(e.target.value, true));
   $('help-btn').addEventListener('click', () => toggleHelp(true));
   $('help-close').addEventListener('click', () => toggleHelp(false));
   $('help').addEventListener('click', (e) => { if (e.target === $('help')) toggleHelp(false); });
@@ -4336,6 +4398,8 @@ function init() {
   for (const slot of document.querySelectorAll('[data-icon]')) slot.append(icon(slot.dataset.icon));
   createPills();
   wire();
+  fillThemePick();
+  setTheme(storeGet('localStorage', THEME_KEY), false);
   state.privacy = storeGet('localStorage', 'town.privacy') === '1';
   setPrivacy(state.privacy, false);
   setRail(railStateFrom(storeGet('localStorage', RAIL_KEY)), false);

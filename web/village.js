@@ -52,6 +52,10 @@ export const HULL = Object.freeze({ l: -60, r: 60, t: -10, b: 17, drop: 4, bob: 
 // The mast, sail and flag reach local y -96 under sail (see drawRowboat), 86 above the hull's own top, so a box that
 // asks what is drawn is not the box that asks what water the hull needs.
 export const BOAT_TOP = -96;
+// What the locomotive reaches, in the boat's own local units: its back sheet, its nose, its chimney cap, its wheel
+// bottoms and the top of its plume. The draw reads these for its extremes, and `theme packs` checks them against
+// the hull the boat declares, so a locomotive cannot grow past the footing it stands on.
+export const LOCO = Object.freeze({ back: -58, nose: 60, cap: -62, wheels: 16, plume: -92 });
 function boatExtent(x, y, top) {
   let x0 = Infinity;
   let y0 = Infinity;
@@ -2471,6 +2475,17 @@ export const JETTY_FOOT = Object.freeze({ x: JETTY.x, y: JETTY.foot - 2 });
 // planBoats already keeps opposite directions off the lane at the same time, so a second lane would only have put
 // two boats closer together than one lane does.
 export const RETURN_WAYPOINTS = Object.freeze([...SAIL_WAYPOINTS].reverse());
+// The frontier's crossing is a rail line, and four straight legs meeting at angles no rail could take is not one.
+// Sweeping the corners into arcs would have fixed the kinks but not the shape: the sail waypoints go the long way
+// round on purpose, since that is what makes a crossing a voyage rather than a hop. So the line runs straight from
+// the berth to the jetty instead, about a third of the voyage's length. Everything downstream is already generic
+// over whatever journey it is handed, so the gate windows, the lane keeping and the berths needed no touching.
+export const STRAIGHT_LANE = Object.freeze([]);
+
+// Which waypoints a pack crosses by. SAIL_WAYPOINTS is still the default, so every other pack keeps the voyage.
+export function sailLane(pack = DEFAULT_THEME) {
+  return pack === 'west' ? STRAIGHT_LANE : SAIL_WAYPOINTS;
+}
 const BERTH_NEAR = 4;
 // Hulls are 84 wide; boats are planned to stay at least this far apart, centre to centre.
 export const BOAT_CLEAR = 96;
@@ -2504,12 +2519,12 @@ function pastBarrier(p) {
 // Returns legs [{ kind: 'walk' | 'gate' | 'sail', area, pts, dur, ... }]. Walk legs shorter than a pixel are dropped.
 // With stamp (a session whose PR merged, leaving the harbour queue), a voyage from land stops at the barrier: the guard
 // stamps its passport, then lifts the barrier (a 'gate' leg). Everyone else is waved through without stopping.
-export function planJourney(from, to, { stamp = false } = {}) {
+export function planJourney(from, to, { stamp = false, lane = SAIL_WAYPOINTS } = {}) {
   const a = { x: px(from), y: py(from) };
   const b = { x: px(to), y: py(to) };
   const fromArea = from.area === 'island' || from.area === 'water' ? from.area : 'land';
   const toArea = to.area === 'island' ? 'island' : 'land';
-  const outward = [BOAT_BERTH, ...SAIL_WAYPOINTS, JETTY_BERTH].map((p) => ({ x: p.x, y: p.y }));
+  const outward = [BOAT_BERTH, ...lane, JETTY_BERTH].map((p) => ({ x: p.x, y: p.y }));
   const legs = [];
   if (fromArea === 'water') {
     const berth = toArea === 'island' ? JETTY_BERTH : BOAT_BERTH;
@@ -2695,8 +2710,9 @@ export function holdForGate(journey, others) {
 // pier, and before a passenger leaves the island a boat sails out to fetch it. A fetch that cannot reach the jetty in
 // time (the walk there is shorter than the sail) makes the passenger wait at the jetty end, so the journey is changed
 // in place. Returns [{ kind: 'return' | 'fetch', pts, route, t0, dur }].
-export function scheduleFerries(journey, now) {
+export function scheduleFerries(journey, now, lane = SAIL_WAYPOINTS) {
   const trips = [];
+  const back10 = [...lane].reverse();
   const legs = journey.legs;
   const trip = (kind, pts) => ({ kind, pts, route: makeRoute(pts), t0: 0, dur: sailDuration(routeLength(pts)) });
   for (let i = 0; i < legs.length; i++) {
@@ -2704,11 +2720,11 @@ export function scheduleFerries(journey, now) {
     if (leg.kind !== 'sail') continue;
     if (leg.toArea === 'island') {
       const end = leg.pts[leg.pts.length - 1];
-      const back = trip('return', [xy(end), ...RETURN_WAYPOINTS.map(xy), xy(BOAT_BERTH)]);
+      const back = trip('return', [xy(end), ...back10.map(xy), xy(BOAT_BERTH)]);
       back.t0 = leg.t0 + leg.dur;
       trips.push(back);
     } else if (leg.fromArea === 'island' && leg.board) {
-      const fetch = trip('fetch', [xy(BOAT_BERTH), ...[...RETURN_WAYPOINTS].reverse().map(xy), xy(leg.pts[0])]);
+      const fetch = trip('fetch', [xy(BOAT_BERTH), ...lane.map(xy), xy(leg.pts[0])]);
       const late = now - (leg.t0 - fetch.dur);
       if (late > 1e-9) {
         const wait = { kind: 'wait', area: leg.fromArea, pts: [xy(leg.board)], dur: late, t0: leg.t0 };
@@ -2934,7 +2950,7 @@ export function boatsKeepClear(journeys, mine, ferries, t) {
 // it finishes its crossing instead: `pending` is where to go once it has landed.
 // others: [{ id, journey }] for every other character with a journey; ferries: owner-tagged trips. Other journeys and
 // trips may be changed. Returns { journey, pending, ferries }.
-export function turnBack({ id, boat, journey: was, to, opts = {} }, others, ferries, t) {
+export function turnBack({ id, boat, journey: was, to, opts = {}, lane = SAIL_WAYPOINTS }, others, ferries, t) {
   const withOthers = others.filter((o) => o.id !== id && o.journey);
   const boarding = (j) => j.legs.find((l) => l.kind === 'sail' && l.board);
   const waiting = withOthers
@@ -2959,12 +2975,12 @@ export function turnBack({ id, boat, journey: was, to, opts = {} }, others, ferr
 
   for (const hold of TURN_HOLDS) {
     let fleet = cancelTrips(restore(), id, t);
-    const journey = scheduleJourney(planJourney({ x: boat.x, y: boat.y, area: 'water' }, to), t + hold, opts);
-    const trips = scheduleFerries(journey, t).map((trip) => ({ owner: id, ...trip }));
+    const journey = scheduleJourney(planJourney({ x: boat.x, y: boat.y, area: 'water' }, to, { lane }), t + hold, opts);
+    const trips = scheduleFerries(journey, t, lane).map((trip) => ({ owner: id, ...trip }));
     const mineLanes = laneWindows(journey);
     for (const f of fleet) {
-      const lane = f.t0 > t ? laneWindows(null, [f])[0] : null;
-      if (lane && mineLanes.some((m) => crossing(m, lane))) keepAtJetty(f);
+      const window = f.t0 > t ? laneWindows(null, [f])[0] : null;
+      if (window && mineLanes.some((m) => crossing(m, window))) keepAtJetty(f);
     }
     const theirLanes = [...withOthers.flatMap((o) => laneWindows(o.journey)), ...laneWindows(null, fleet)];
     for (const f of trips) {
@@ -3043,6 +3059,7 @@ const THEMES = {
     tree: '#8dad85', treeDark: '#789873', treeLight: '#a7c29b', trunk: '#8b6c50',
     flowers: ['#d8c6e2', '#f4eedc', '#e2c8c8', '#c8d5e7'],
     lighthouse: '#ece7db', slate: '#7c8a96', lanternGlass: '#ddd6c3', cat: '#8f8176',
+    towerStone: '#ece7db', towerEdge: '#7c8a96', beamLight: '246, 222, 160',
     shadow: 'rgba(45, 50, 38, 0.17)',
     signBoard: '#ebdec4', signBorder: '#86664a', signText: '#3a3027', signMuted: '#65594b',
     plateBg: 'rgba(255, 255, 255, 0.96)', plateBorder: 'rgba(33, 37, 41, 0.2)', plateText: '#212529', plateMuted: '#565e66',
@@ -3063,6 +3080,7 @@ const THEMES = {
     roomWall: '#f0e2c8', roomWallShade: '#ddcba9', roomFloor: '#c79a63', roomFloorLine: '#ab7f4b', rug: '#a8544a',
     hallSky: '#cfe3e4', hallSea: '#9fc4c7', torchIron: '#5f5244', flame: '#f4cf78', flameCore: '#fcf0c8',
     tapestry: '#c7b28a', tapestryEdge: '#8e7a55',
+    baize: '#5c8163', baizeEdge: '#3f5c46', coin: '#d8b45c', coinEdge: '#a07f32',
     patrolKhaki: PATROL_COLOURS.day.khaki, patrolKhakiShade: PATROL_COLOURS.day.khakiShade,
     patrolNavy: PATROL_COLOURS.day.navy, patrolWhite: PATROL_COLOURS.day.white,
   },
@@ -3077,6 +3095,7 @@ const THEMES = {
     tree: '#36493c', treeDark: '#2d3e32', treeLight: '#41584a', trunk: '#4e3e30',
     flowers: ['#8f7fa1', '#b9b3a2', '#a08989', '#8898ad'],
     lighthouse: '#9a958b', slate: '#56616b', lanternGlass: '#6a665b', cat: '#6f655d',
+    towerStone: '#9a958b', towerEdge: '#56616b', beamLight: '246, 222, 160',
     shadow: 'rgba(0, 0, 0, 0.3)',
     signBoard: '#d9caab', signBorder: '#5c4530', signText: '#2e261e', signMuted: '#5c5144',
     plateBg: 'rgba(33, 37, 41, 0.95)', plateBorder: 'rgba(255, 255, 255, 0.2)', plateText: '#f1f3f5', plateMuted: '#b4bcc4',
@@ -3097,10 +3116,439 @@ const THEMES = {
     roomWall: '#544c3d', roomWallShade: '#463f33', roomFloor: '#5a452e', roomFloorLine: '#493626', rug: '#6e3a35',
     hallSky: '#34475a', hallSea: '#233847', torchIron: '#2b2620', flame: '#f1c86c', flameCore: '#fbe7b0',
     tapestry: '#6b5f49', tapestryEdge: '#473d2d',
+    baize: '#38503e', baizeEdge: '#26382b', coin: '#9c8144', coinEdge: '#6d5827',
     patrolKhaki: PATROL_COLOURS.dusk.khaki, patrolKhakiShade: PATROL_COLOURS.dusk.khakiShade,
     patrolNavy: PATROL_COLOURS.dusk.navy, patrolWhite: PATROL_COLOURS.dusk.white,
   },
 };
+
+// ---------------------------------------------------------------------------------------------
+// Theme packs
+// ---------------------------------------------------------------------------------------------
+
+// A pack is a name, a set of colours laid over the base day and dusk themes, and the words painted on the place
+// boards and over an interior's door. It changes paint and lettering only. Lanes, spots, footings, hit boxes and
+// journeys are the same objects in every pack, which is why the Board's columns, the Repos legend and the count
+// pills read the same whichever one is picked. A pack that leaves a colour out keeps the base theme's.
+//
+// Adding a pack: give it a key, a name, the two override maps, and any board names it renames. `themeChecks` in
+// tests/web_harness.mjs then holds it to the same contrast and containment rules as the others, so a pack cannot
+// ship a board nobody can read or a saguaro hanging off its island.
+
+// The frontier town. Its ground colours point at dry ground and its sea colours at cracked flats, which is what
+// repaints the water, the island and both interiors without a line of drawing code. Only what stayed nautical is
+// branched on `env.west`: the shells, the starfish, the ripples, the palm and the lighthouse.
+const WEST_DAY = {
+  grass: '#d9c49a', grassLight: '#e3d1ab', grassDark: '#c6ad80', tuft: '#b49a70',
+  path: '#e9ddc0', pathEdge: '#cbb894', pebble: '#cdba96',
+  sand: '#e4d2a8', sandLight: '#eee0bb', sandWet: '#d2bc90', sandDot: '#dccaa2', dune: '#c6b083',
+  water: '#cbb68d', waterDeep: '#bca57a', ripple: '#dbc99f', shallow: '#d3bf94', foam: 'rgba(255, 249, 233, 0.6)',
+  wood: '#a8835f', woodDark: '#77593d', woodLight: '#c9ad86', plank: '#b08c66',
+  wall: '#e8d7b6', wallShade: '#d2be98', roofs: ['#9c6f57', '#8c7c6a', '#a8855f', '#7f6b57'],
+  windowDark: '#8d8477', porchWindow: '#8d8477', door: '#7c5a3f',
+  stone: '#c6b699', stoneDark: '#9d8d72',
+  tree: '#7f9a6b', treeDark: '#67805a', treeLight: '#96ae7e', trunk: '#8b6c50',
+  flowers: ['#e0b2bf', '#f4eedc', '#dcab79', '#c7b0d4'],
+  lighthouse: '#d9c6a4', slate: '#8a7b66', cat: '#8f8176',
+  towerStone: '#d9c6a4', towerEdge: '#8a7b66',
+  shadow: 'rgba(84, 62, 36, 0.18)',
+  signBoard: '#e7d7b4', signBorder: '#7d5a38', signText: '#3a2f22', signMuted: '#6a5a45',
+  castle: '#c98f62', castleShade: '#ae7850', castleDark: '#875a3a', castleDoor: '#4a3526',
+  shell: '#e0cbb0', shellEdge: '#b89878', starfish: '#cf8f63',
+  stripeBase: '#f2e6cd', stripes: ['#a4785a', '#c4a06a', '#8d8d72', '#b5673f'],
+  palm: '#7f9a6b', palmDark: '#67805a', palmTrunk: '#8f7450', palmRing: '#74593c', coconut: '#6b512f',
+  thatch: '#c9a468', thatchDark: '#a1803f', bamboo: '#c2ac78',
+  drink: '#c9923f',
+  flag: '#b5673f', flagAlt: '#efe3c6', sailCloth: '#efe0c2',
+  graveGrass: '#c3ad84', graveMound: '#b49b72', moss: '#9a8f66',
+  graveStone: '#c0b39d', graveStoneLight: '#d3c7b2', graveEdge: '#8b8070',
+  fence: '#a8875f', fenceDark: '#735a3c', yew: '#7c8f66', yewDark: '#64764f',
+  hallWall: '#c9a577', hallBrick: '#bb9668', hallBrickEdge: '#a17d52', hallFloor: '#b08d63', hallFloorLine: '#977650',
+  roomWall: '#e9dcc0', roomWallShade: '#d5c5a1', roomFloor: '#a97d4e', roomFloorLine: '#8b6137', rug: '#8a4a3c',
+  hallSky: '#cfe1ea', hallSea: '#cbb68d',
+  tapestry: '#bfa377', tapestryEdge: '#8a7047',
+  baize: '#5a7f5f', baizeEdge: '#3d5a43',
+};
+
+const WEST_DUSK = {
+  grass: '#3a3227', grassLight: '#443b2e', grassDark: '#322b21', tuft: '#4a4032',
+  path: '#4f4739', pathEdge: '#3f382d', pebble: '#5a5142',
+  sand: '#4b4234', sandLight: '#584e3d', sandWet: '#443c30', sandDot: '#4e4536', dune: '#463f31',
+  water: '#3a3227', waterDeep: '#2e2820', ripple: '#4a4133', shallow: '#413930', foam: 'rgba(226, 214, 190, 0.28)',
+  wood: '#6f5742', woodDark: '#4b3a2c', woodLight: '#8b7056', plank: '#7b624b',
+  wall: '#5e5344', wallShade: '#4f4639', roofs: ['#5a4238', '#4c453b', '#5b4b36', '#4a3f33'],
+  windowDark: '#332c24', porchWindow: '#e8c985', door: '#40301f',
+  stone: '#625849', stoneDark: '#4b4337',
+  tree: '#38492f', treeDark: '#2d3b27', treeLight: '#44583a', trunk: '#4e3e30',
+  flowers: ['#8e7480', '#b9b3a2', '#93765a', '#7f7391'],
+  lighthouse: '#968a76', slate: '#5e5344', cat: '#6f655d',
+  towerStone: '#968a76', towerEdge: '#5e5344',
+  shadow: 'rgba(0, 0, 0, 0.32)',
+  signBoard: '#d9caab', signBorder: '#54402a', signText: '#2e261e', signMuted: '#5c5144',
+  castle: '#6d5340', castleShade: '#5b4534', castleDark: '#402f23', castleDoor: '#201913',
+  shell: '#857363', shellEdge: '#5a4c3f', starfish: '#84644b',
+  stripeBase: '#726752', stripes: ['#5b4436', '#6b573b', '#54513f', '#6a4030'],
+  palm: '#3f5033', palmDark: '#32412b', palmTrunk: '#5a4632', palmRing: '#433527', coconut: '#3c2e21',
+  thatch: '#6c5a39', thatchDark: '#52442b', bamboo: '#6a5c40',
+  drink: '#8a6631',
+  flag: '#78452f', flagAlt: '#a39b87', sailCloth: '#b3a68d',
+  graveGrass: '#372f24', graveMound: '#322b21', moss: '#4c4630',
+  graveStone: '#675e50', graveStoneLight: '#796f60', graveEdge: '#443d33',
+  fence: '#5b4836', fenceDark: '#392e22', yew: '#33412c', yewDark: '#273323',
+  hallWall: '#5d4c38', hallBrick: '#534331', hallBrickEdge: '#453729', hallFloor: '#4d3f2e', hallFloorLine: '#413526',
+  roomWall: '#544736', roomWallShade: '#463a2c', roomFloor: '#584228', roomFloorLine: '#473421', rug: '#6e3a35',
+  hallSky: '#34405a', hallSea: '#3a3227',
+  tapestry: '#6a5c44', tapestryEdge: '#463c2b',
+  baize: '#36503b', baizeEdge: '#243629',
+};
+
+// Only the name painted on a board changes: the lane behind it is the same object, so nothing downstream moves.
+const WEST_NAMES = Object.freeze({
+  workshop: 'The Depot', cottages: 'The Bank', porch: 'The Saloon',
+  harbour: 'The Rail Yard', beach: 'Valhalla mesa',
+});
+const WEST_ROOMS = Object.freeze({ castle: 'Valhalla mine', cottages: 'The Counting Room' });
+
+// The frontier kit. Everyone in the Wild West wears a hat, so the crown stands where the plain village hat's
+// does and one lift serves every look: see `headroom`, which the draw and hit testing both read.
+export const HAT_LIFT = 9;
+// Read off the body box, as fractions of its height. A body here is mostly face: the lowest thing the face paints
+// is the mouth, at 0.63 of a round or square body and 0.50 of a tall one, so the waistcoat's collar sits at 0.62
+// and clears all three. The lapels meet low, at 0.80. Converging any higher reads as a bib rather than a
+// waistcoat, which only shows at magnification.
+export const WEST_KIT = Object.freeze({
+  collar: 0.62, lapel: 0.80, belt: 0.84, beltH: 4.5, star: 0.71,
+  brimRX: 0.62, brimRY: 3.6, crownW: 0.52, seat: 2, seatRound: 5,
+});
+
+// Two of the mine's crowd go at it every WEST_FIGHT_PERIOD seconds, for WEST_FIGHT_S of it, brawl and shootout
+// turn and turn about. Like the mirror ball and the lighthouse beam, it is night-only art that moves, so reduced
+// motion holds it at nothing at all rather than at a frozen punch.
+export const WEST_FIGHT_PERIOD = 5;
+export const WEST_FIGHT_S = 1.5;
+export const WEST_FIGHT_KINDS = Object.freeze(['brawl', 'shootout']);
+
+export function fightAt(t, reduced = false) {
+  if (reduced || !(t >= 0)) return null;
+  const cycle = Math.floor(t / WEST_FIGHT_PERIOD);
+  const local = t - cycle * WEST_FIGHT_PERIOD;
+  if (local >= WEST_FIGHT_S) return null;
+  return { cycle, local, k: local / WEST_FIGHT_S, kind: WEST_FIGHT_KINDS[cycle % WEST_FIGHT_KINDS.length] };
+}
+
+// The two standing nearest each other. With a thin crowd the nearest two can still be half the hall apart, which
+// is why the dust ball's width is measured off the pair rather than fixed: a cloud hanging between two figures
+// standing clear of it reads as neither of them fighting.
+export function fightPair(points) {
+  if (!Array.isArray(points) || points.length < 2) return null;
+  let best = null;
+  let bestD = Infinity;
+  for (let i = 0; i < points.length; i += 1) {
+    for (let j = i + 1; j < points.length; j += 1) {
+      const d = Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y);
+      if (d < bestD) {
+        bestD = d;
+        best = points[i].x <= points[j].x ? [points[i], points[j]] : [points[j], points[i]];
+      }
+    }
+  }
+  return best;
+}
+
+// The band on its stage, where the green hall hangs its mirror ball. Low enough that the archway still reads above
+// the players' heads.
+export const MINE_STAGE = Object.freeze({ x: 800, y: 356, w: 200, h: 22 });
+
+// A horse trots the circuit the four roads make, clockwise from the south west corner. It rides the village's own
+// ambient tick, like the lighthouse beam: a stray on the road is scenery, not a session going anywhere, and
+// nothing that only moves the scenery is allowed to hold the canvas at full rate.
+export const HORSE_CIRCUIT = Object.freeze([
+  Object.freeze({ x: 460, y: 560 }), Object.freeze({ x: 1174, y: 560 }),
+  Object.freeze({ x: 1174, y: 320 }), Object.freeze({ x: 460, y: 320 }),
+]);
+export const HORSE_SPEED = 55;
+// Half of what the horse paints, measured across the leg it is on. The road band is 38 wide, so this has to stay
+// under 19 or a hoof lands on the grass, and it is why the horse's head is carried forward rather than up.
+export const HORSE_REACH = 15;
+
+// Where anything walking a closed circuit is at t: which way it faces, and which axis it is on, so a check knows
+// which way to measure its width. Reduced motion holds it at the node it starts from. `facing` is how it turns:
+// 'leg' faces the way the leg it is on runs, which is what a horse does, and 'corner' faces the way the next
+// corner will take it, so a walker on an upright leg has already turned rather than sliding along sideways.
+// Four things walk a circuit now, and this is the part all four of them had a copy of.
+function walkAt(circuit, speed, t, reduced, facing = 'corner') {
+  const legs = circuit.map((a, i) => {
+    const b = circuit[(i + 1) % circuit.length];
+    return { a, b, len: Math.hypot(b.x - a.x, b.y - a.y) };
+  });
+  const dirs = legs.map((l, i) => {
+    if (facing === 'leg') return l.b.x < l.a.x ? -1 : 1;
+    for (let k = 0; k < legs.length; k += 1) {
+      const m = legs[(i + k) % legs.length];
+      if (m.b.x !== m.a.x) return m.b.x < m.a.x ? -1 : 1;
+    }
+    return 1;
+  });
+  const loop = legs.reduce((sum, l) => sum + l.len, 0);
+  let d = reduced ? 0 : ((t * speed) % loop + loop) % loop;
+  for (let i = 0; i < legs.length; i += 1) {
+    const l = legs[i];
+    if (d > l.len) {
+      d -= l.len;
+      continue;
+    }
+    const k = l.len ? d / l.len : 0;
+    return {
+      x: l.a.x + (l.b.x - l.a.x) * k, y: l.a.y + (l.b.y - l.a.y) * k, dir: dirs[i],
+      axis: Math.abs(l.b.x - l.a.x) >= Math.abs(l.b.y - l.a.y) ? 'x' : 'y',
+    };
+  }
+  return { x: circuit[0].x, y: circuit[0].y, dir: dirs[0], axis: 'x' };
+}
+
+export function horseAt(t, reduced = false) {
+  return walkAt(HORSE_CIRCUIT, HORSE_SPEED, t, reduced, 'leg');
+}
+
+// An ent walks the same ring the four roads make round the workshop, which is the circuit the frontier's horse
+// trots. It goes at an ent's pace: about a minute and a half to get round, slower than anything else on the map.
+export const ENT_WALK_CIRCUIT = HORSE_CIRCUIT;
+export const ENT_WALK_SPEED = 22;
+// It walks at 25, which is 52 tall and the size of the middling standing ones. That is as big as the road will
+// take: its two roots reach 0.72r either side once one has stepped, and the band is only 19 either side of the
+// line. At 13 it was a sapling beside the sessions at the benches.
+export const ENT_WALK_R = 25;
+// One stride, in seconds.
+export const ENT_WALK_BEAT = 2.6;
+// What has to stay on the road is what it stands on: its two roots. A root is planted at 0.4r, steps 0.12r and
+// splays 0.2r, so it reaches 0.72r either side, and its poly rises 0.45r up the bole. The ground shadow and the
+// whole tree above them overhang the band, the way a session walking the road does, and the shadow is a soft
+// wash at 18 per cent either way.
+// Derived from the radius, never written out: as a pair of literals it did not move when the ent grew, so an
+// ent too big for the road passed every check it has.
+export const ENT_WALK_FOOT = Object.freeze([
+  -0.72 * ENT_WALK_R, -0.45 * ENT_WALK_R, 0.72 * ENT_WALK_R, 0,
+]);
+
+// The one point its own look is taken from, so it stays the same ent all the way round. It is chosen rather than
+// inherited: the two hashes at this point give turn 0.359 and turn2 0.942, which is a bole standing 1.525r and
+// only 0.430r thick, with a modest lean and its left bough raised. Seeded on its own starting node it came out
+// 1.299r and 0.456r, which is the shortest and near the stoutest an ent can be, and read as a stump.
+export const ENT_WALK_SEED = Object.freeze([189, 113]);
+
+export function walkingEntAt(t, reduced = false) {
+  return walkAt(ENT_WALK_CIRCUIT, ENT_WALK_SPEED, t, reduced);
+}
+
+// Where it is in its stride at t, from -1 to 1. Reduced motion stands it still, roots down.
+export function entStride(t, reduced) {
+  return reduced ? 0 : Math.sin((TAU * (Number(t) || 0)) / ENT_WALK_BEAT);
+}
+
+// Something creeps round the inside of the graveyard fence in Middle-earth, keeping to the wall and never
+// leaving. It rides the village's ambient tick, like the beam and the frontier's horse: a creature skulking round
+// the barrows is scenery, not a session going anywhere, and nothing that only moves the scenery may hold the
+// canvas at full rate.
+export const GOLLUM_CIRCUIT = Object.freeze([
+  Object.freeze({ x: 56, y: 392 }), Object.freeze({ x: 396, y: 392 }),
+  Object.freeze({ x: 396, y: 508 }), Object.freeze({ x: 56, y: 508 }),
+]);
+export const GOLLUM_SPEED = 18;
+// Half of what he paints, in any direction rather than across the leg: the circuit is a rectangle inside a
+// rectangle, so a square reach is both simpler than the road maths and stricter at the corners. It is 24 because
+// the head has to be half again the body for anyone to know what he is, and the fence is what allows it: the
+// circuit is inset far enough that 26 still clears every rail.
+export const GOLLUM_REACH = 26;
+
+// Where he is at t and which way he faces. On the two upright legs he already faces the way the next corner
+// takes him, so he turns before he walks rather than sliding along sideways.
+export function gollumAt(t, reduced = false) {
+  return walkAt(GOLLUM_CIRCUIT, GOLLUM_SPEED, t, reduced);
+}
+
+// What keeps the lair. It walks the inside of the jail's own plot, on the village's ambient tick like the beam
+// and the frontier's horse: something patrolling a web is scenery, not a session going anywhere.
+export const SPIDER_CIRCUIT = Object.freeze([
+  Object.freeze({ x: 92, y: 68 }), Object.freeze({ x: 308, y: 68 }),
+  Object.freeze({ x: 308, y: 230 }), Object.freeze({ x: 92, y: 230 }),
+]);
+export const SPIDER_SPEED = 26;
+// Half of what it paints, in any direction: the legs reach furthest, at 14.7 from the body plus a step and half
+// a line, which is 17.2 of the 18 the plot leaves once the circuit is inset.
+export const SPIDER_REACH = 18;
+
+export function spiderAt(t, reduced = false) {
+  return walkAt(SPIDER_CIRCUIT, SPIDER_SPEED, t, reduced);
+}
+
+// The grey pilgrim's fireworks, night only, over the water east of the Grey Havens. Each one rises from the head
+// of his staff and bursts. Like the beam, the disco and the mine's band, it rides the village's ambient tick and
+// never asks for a frame of its own, and reduced motion holds every burst open rather than taking them away.
+export const FIREWORK_PERIOD = 7;
+export const FIREWORK_RISE = 1.1;
+export const FIREWORK_BURST = 1.6;
+// Where a rocket leaves from: the knot at the head of the staff, which `drawGuard` paints at (x - 16, top - 12)
+// and `top` is the guard's own 38 tall body 6 above its feet.
+export const FIREWORK_FROM = Object.freeze([GUARD.x - 16, GUARD.y - 6 - 38 - 12]);
+// Each burst, and the box it is allowed. They hang over open water: east of the pier, below the harbour board,
+// clear of the dark tower on the point and inside the canvas.
+export const FIREWORKS = Object.freeze([
+  Object.freeze({ x: 1462, y: 196, r: 38, phase: 0, rays: 14 }),
+  Object.freeze({ x: 1548, y: 268, r: 28, phase: 3.4, rays: 11 }),
+]);
+// How far the sparks fall as the burst opens. A ring that holds its shape all the way out reads as a star cut
+// out of paper: this is what makes it a firework.
+export const FIREWORK_DROOP = 9;
+export function fireworkBox(f) {
+  return [f.x - f.r - 4, f.y - f.r - 4, (f.r + 4) * 2, (f.r + 4) * 2 + FIREWORK_DROOP];
+}
+
+// Where a firework is in its cycle at t: how far the rocket has risen, and how far the burst has opened. Null
+// between shows. Reduced motion holds them all open, the way the disco holds its ball: still, not gone.
+export function fireworkAt(t, reduced, f) {
+  if (reduced) return { rise: 1, burst: 0.45 };
+  const k = ((((Number(t) || 0) + f.phase) % FIREWORK_PERIOD) + FIREWORK_PERIOD) % FIREWORK_PERIOD;
+  if (k < FIREWORK_RISE) return { rise: k / FIREWORK_RISE, burst: 0 };
+  if (k < FIREWORK_RISE + FIREWORK_BURST) return { rise: 1, burst: (k - FIREWORK_RISE) / FIREWORK_BURST };
+  return null;
+}
+
+// A green country: the Shire's own hills and hedgerows, oak and thatch, and a road west to the sea. The sea stays
+// a sea here, which is the point of a pack being colours rather than a rewrite: nothing nautical needed branching.
+// The trees are mallorns, silver-trunked and gold-crowned, which one palette line does across all eight of them.
+const SHIRE_DAY = {
+  grass: '#8fae74', grassLight: '#a4c188', grassDark: '#77985e', tuft: '#5f8049',
+  path: '#dcc9a5', pathEdge: '#bda87e', pebble: '#c7b493',
+  sand: '#e6dcc2', sandLight: '#f0e8d2', sandWet: '#d3c6a6', sandDot: '#dbd0b4', dune: '#aebb8c',
+  water: '#8fb9c4', waterDeep: '#79a3b0', ripple: '#c6e0e6', shallow: '#a7ccd3',
+  wood: '#9c7b52', woodDark: '#68512f', woodLight: '#c3a678', plank: '#a98b60',
+  wall: '#ece4d0', wallShade: '#d6cbb0', roofs: ['#c19a5e', '#6f7a80', '#ad8a52', '#7b6a50'],
+  windowDark: '#7e8a90', porchWindow: '#7e8a90', door: '#5f7d4e',
+  stone: '#cdc3a6', stoneDark: '#9c9072',
+  tree: '#d9c06a', treeDark: '#bda152', treeLight: '#eddf96', trunk: '#8a7358',
+  flowers: ['#e6c6dc', '#f6f0e0', '#d6dfa6', '#c6d0ea'],
+  lighthouse: '#f0ece0', slate: '#8a93a0', lanternGlass: '#e4dcc4', cat: '#8a7f70',
+  towerStone: '#3e3c44', towerEdge: '#221f28', beamLight: '255, 96, 40',
+  patrolKhaki: '#8e8c84', patrolKhakiShade: '#6d6b63', patrolNavy: '#33312c',
+  shadow: 'rgba(40, 52, 34, 0.18)',
+  signBoard: '#eee3c6', signBorder: '#7a6238', signText: '#33301f', signMuted: '#5f5a42',
+  castle: '#e9e6dc', castleShade: '#d3cfc0', castleDark: '#a09a88', castleDoor: '#5c5647',
+  shell: '#f2dcd3', shellEdge: '#c7a296', starfish: '#dca58a',
+  stripeBase: '#f4eedc', stripes: ['#7f9fb4', '#b0894f', '#9aa478', '#c0a86a'],
+  palm: '#a8bb7a', palmDark: '#879c5e', palmTrunk: '#cdc7b8', palmRing: '#a49d8c', coconut: '#6f5f42',
+  thatch: '#cfae6f', thatchDark: '#a98a55', bamboo: '#c6b17c',
+  flag: '#5a7fa8', flagAlt: '#efe8d2', sailCloth: '#eceadf',
+  graveGrass: '#8fa87a', graveMound: '#7f9a6c', moss: '#7d9463',
+  fence: '#9c8058', fenceDark: '#6b5238', yew: '#5f7d5c', yewDark: '#4a6649',
+  hallWall: '#ded8c6', hallBrick: '#d1cab5', hallBrickEdge: '#b9b198', hallFloor: '#e6e0cd', hallFloorLine: '#cfc7ae',
+  roomWall: '#ecdfc2', roomWallShade: '#d8c9a6', roomFloor: '#a9814f', roomFloorLine: '#8a6539', rug: '#7a4a52',
+  hallSky: '#cfe3ea', hallSea: '#8fb9c4',
+  tapestry: '#b9a06a', tapestryEdge: '#8a7448',
+};
+
+const SHIRE_DUSK = {
+  grass: '#212e23', grassLight: '#2a3a2c', grassDark: '#1a251c', tuft: '#31422f',
+  path: '#463f33', pathEdge: '#383227', pebble: '#524a3c',
+  sand: '#443f34', sandLight: '#504a3d', sandWet: '#3d382e', sandDot: '#474234', dune: '#333d2e',
+  water: '#1f3642', waterDeep: '#182c37', ripple: '#375260', shallow: '#28414c',
+  wood: '#65502f', woodDark: '#42351f', woodLight: '#8a7050', plank: '#75603f',
+  wall: '#565244', wallShade: '#48453a', roofs: ['#5e4a34', '#454e55', '#544330', '#4b4335'],
+  windowDark: '#2b3238', porchWindow: '#e8c985', door: '#33452b',
+  stone: '#5e5644', stoneDark: '#453f31',
+  tree: '#6b5c2f', treeDark: '#564a26', treeLight: '#877443', trunk: '#4a3d2e',
+  flowers: ['#8a6f82', '#b9b3a2', '#7e8558', '#71789a'],
+  lighthouse: '#9b968a', slate: '#565e69', lanternGlass: '#6a665b', cat: '#6b6157',
+  towerStone: '#2a2830', towerEdge: '#151319', beamLight: '255, 110, 50',
+  patrolKhaki: '#9c998e', patrolKhakiShade: '#6a675e', patrolNavy: '#211f1c',
+  shadow: 'rgba(0, 0, 0, 0.32)',
+  signBoard: '#ded0ad', signBorder: '#54442a', signText: '#2c2718', signMuted: '#5a5340',
+  castle: '#6d6a60', castleShade: '#5b584f', castleDark: '#403e37', castleDoor: '#22201a',
+  shell: '#8a7a74', shellEdge: '#5e524d', starfish: '#86695a',
+  stripeBase: '#74705f', stripes: ['#42586a', '#6a533a', '#5d6350', '#6f6446'],
+  palm: '#3d4d33', palmDark: '#303f2a', palmTrunk: '#5e5b52', palmRing: '#45423a', coconut: '#3a3226',
+  thatch: '#6f5e3e', thatchDark: '#54472f', bamboo: '#6a5d42',
+  flag: '#33506d', flagAlt: '#a39b87', sailCloth: '#b7b5a9',
+  graveGrass: '#24302a', graveMound: '#1f2b24', moss: '#3f523a',
+  fence: '#5b4a34', fenceDark: '#392e20', yew: '#2b3d2a', yewDark: '#213021',
+  hallWall: '#5a5648', hallBrick: '#514d40', hallBrickEdge: '#454236', hallFloor: '#4d4a3d', hallFloorLine: '#413e33',
+  roomWall: '#544b38', roomWallShade: '#463e2e', roomFloor: '#584228', roomFloorLine: '#473421', rug: '#5c3339',
+  hallSky: '#2c3f52', hallSea: '#1f3642',
+  tapestry: '#665a41', tapestryEdge: '#443b2a',
+};
+
+// The Jail and the Graveyard keep their names in every pack: a cell is a cell and a grave is a grave.
+const SHIRE_NAMES = Object.freeze({
+  workshop: 'The Forge', cottages: 'Bag End', porch: 'The Green Dragon',
+  harbour: 'The Grey Havens', beach: 'Undying Lands', jail: "Shelob's",
+});
+const SHIRE_ROOMS = Object.freeze({ castle: 'The White Halls', cottages: 'The Parlour' });
+
+// The hobbit kit. Read off the body box like the frontier one, and held to what a character declares: the body
+// box reaches 19 either side of the feet and the widest body is 18, so an ear may tip at 19 and no further, and
+// the leg box reaches 9, which is what sizes a foot.
+export const SHIRE_KIT = Object.freeze({
+  collar: 0.62, lapel: 0.78, earTip: 19, footHalf: 9, hairRows: 6,
+});
+
+export const DEFAULT_THEME = 'village';
+
+export const THEME_PACKS = Object.freeze([
+  Object.freeze({
+    key: 'village', name: 'Village', note: 'The green village',
+    day: Object.freeze({}), dusk: Object.freeze({}),
+    names: Object.freeze({}), rooms: Object.freeze({}), hatted: false,
+  }),
+  Object.freeze({
+    key: 'west', name: 'Wild West', note: 'A frontier town on the dry flats',
+    day: Object.freeze(WEST_DAY), dusk: Object.freeze(WEST_DUSK),
+    names: WEST_NAMES, rooms: WEST_ROOMS, hatted: true,
+  }),
+  Object.freeze({
+    key: 'shire', name: 'Middle-earth', note: 'A green country, and a grey ship west',
+    day: Object.freeze(SHIRE_DAY), dusk: Object.freeze(SHIRE_DUSK),
+    names: SHIRE_NAMES, rooms: SHIRE_ROOMS, hatted: false,
+  }),
+]);
+
+export const THEME_KEYS = Object.freeze(THEME_PACKS.map((p) => p.key));
+
+export function themePack(key) {
+  return THEME_PACKS.find((p) => p.key === key) || THEME_PACKS[0];
+}
+
+// Resolved themes are cached: there are only two per pack, and every frame reads one.
+const themeCache = new Map();
+
+// The base theme with the pack's colours over it. `pack` and `night` ride on the object itself, so nothing has to
+// compare it against THEMES.dusk by identity: a merged theme is a new object and every such test would be false.
+export function resolveTheme(key, night) {
+  const pack = themePack(key);
+  const id = `${pack.key}|${night ? 'dusk' : 'day'}`;
+  let out = themeCache.get(id);
+  if (out) return out;
+  out = Object.freeze({
+    ...(night ? THEMES.dusk : THEMES.day),
+    ...(night ? pack.dusk : pack.day),
+    pack: pack.key, night: !!night,
+  });
+  themeCache.set(id, out);
+  return out;
+}
+
+// The word on a place's board, and the one over an interior's door. The place and the scene keep their own keys.
+export function placeName(place, pack = DEFAULT_THEME) {
+  const spec = hasOwn(PLACES, place) ? PLACES[place] : null;
+  if (!spec) return '';
+  const named = themePack(pack).names;
+  return hasOwn(named, place) ? named[place] : spec.name;
+}
+
+export function roomName(scene, pack = DEFAULT_THEME) {
+  const spec = hasOwn(SCENE_ART, scene) ? SCENE_ART[scene] : null;
+  if (!spec) return '';
+  const named = themePack(pack).rooms;
+  return hasOwn(named, scene) ? named[scene] : spec.title;
+}
 
 const BODY = {
   round: { w: 36, h: 34 },
@@ -3200,11 +3648,21 @@ function fillPoly(g, points, fill, stroke, lineWidth = 1.5) {
   }
 }
 
-function fillEllipse(g, x, y, rx, ry, fill) {
+// Takes a stroke like fillRR and fillPoly do. It did not, and silently dropped one: a fill of null with an outline
+// asked for filled the shape in whatever colour was last set instead, which is how the parlour's round window
+// painted over its own view.
+function fillEllipse(g, x, y, rx, ry, fill, stroke, lineWidth = 1.5) {
   g.beginPath();
   g.ellipse(x, y, Math.max(0.1, rx), Math.max(0.1, ry), 0, 0, TAU);
-  g.fillStyle = fill;
-  g.fill();
+  if (fill) {
+    g.fillStyle = fill;
+    g.fill();
+  }
+  if (stroke) {
+    g.lineWidth = lineWidth;
+    g.strokeStyle = stroke;
+    g.stroke();
+  }
 }
 
 function line(g, x1, y1, x2, y2, stroke, width) {
@@ -3303,6 +3761,30 @@ function drawMargarita(g, T, x, y, tilt = 0, s = 1) {
   g.translate(x, y);
   g.rotate(tilt);
   g.scale(s, s);
+  if (T.pack === 'west') {
+    fillRR(g, -5, -9, 10, 13, 1.5, T.glass, T.glassEdge, 1.2);
+    fillRR(g, -4, -4, 8, 7.5, 1, T.drink);
+    line(g, -5, -9, 5, -9, T.glassEdge, 1.4);
+    g.restore();
+    return;
+  }
+  if (T.pack === 'shire') {
+    // A pipe, with three rings going up. Pipe-weed is the Shire's one contribution to the arts.
+    line(g, -7, 2, 3, -1, T.woodDark, 2.4);
+    fillRR(g, 2, -8, 6, 9, 2, T.woodDark);
+    fillEllipse(g, 5, -8, 3.2, 1.6, T.flame);
+    g.globalAlpha = 0.5;
+    for (let i = 0; i < 3; i += 1) {
+      g.beginPath();
+      g.arc(6 + i * 1.5, -14 - i * 5, 2.2 + i * 1.1, 0, TAU);
+      g.strokeStyle = `rgb(${T.smoke})`;
+      g.lineWidth = 1.2;
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+    g.restore();
+    return;
+  }
   fillPoly(g, [[-7.5, -9], [7.5, -9], [2, -2.5], [-2, -2.5]], T.drink, T.glassEdge, 1);
   line(g, -7.5, -9, 7.5, -9, T.glass, 1.8);
   line(g, 0, -2.5, 0, 4.5, T.glassEdge, 1.4);
@@ -3315,11 +3797,117 @@ function drawMargarita(g, T, x, y, tilt = 0, s = 1) {
   g.restore();
 }
 
+// The frontier's crossing runs on rails, so the boat is a locomotive on the boat's own footing: the passenger
+// stands on the footplate between the tender behind and the boiler in front, exactly as a passenger sits between a
+// boat's two gunwales, and the plume goes up for the long haul where a boat raises its sail. Everything it paints
+// stays inside BOAT_TOP and the hull's own length.
+function drawLocomotive(g, T, { sail, part }) {
+  const wheel = (wx, r) => {
+    fillEllipse(g, wx, LOCO.wheels - r, r, r, T.steel, T.woodDark, 2);
+    fillEllipse(g, wx, LOCO.wheels - r, r * 0.32, r * 0.32, T.woodDark);
+  };
+  if (part !== 'front') {
+    // The tender: a coal box on two wheels, its back sheet where the boat's stern is.
+    fillRR(g, LOCO.back, -36, 42, 48, 3, T.plank, T.woodDark, 2);
+    fillRR(g, LOCO.back, -40, 42, 7, 2, T.woodDark);
+    wheel(-48, 7.5);
+    wheel(-24, 7.5);
+    fillRR(g, -20, -30, 8, 42, 2, T.woodDark);
+  }
+  if (part !== 'back') {
+    // The boiler, the smokebox and the chimney, and the frame they all stand on.
+    fillRR(g, 6, -34, 46, 42, 18, T.steel, T.woodDark, 2);
+    for (const bx of [20, 36]) fillRR(g, bx, -34, 5, 42, 2, T.woodDark);
+    fillRR(g, 46, -38, 12, 50, 4, T.woodDark);
+    fillRR(g, 34, -58, 15, 24, 2, T.woodDark);
+    fillRR(g, 31, LOCO.cap, 21, 7, 3, T.woodDark);
+    fillRR(g, 2, -14, 54, 22, 2, T.woodDark);
+    wheel(18, 8.5);
+    wheel(42, 8.5);
+    // The cowcatcher, on the bow's own line.
+    fillPoly(g, [[LOCO.nose, -8], [LOCO.nose, LOCO.wheels], [44, LOCO.wheels]], T.steel, T.woodDark, 1.5);
+  }
+  if (sail && part !== 'front') {
+    // The plume, rising to where a sail's flag flies and no higher.
+    for (let i = 0; i < 4; i += 1) {
+      const r = 9 + i * 3.5;
+      const cy = LOCO.cap - 8 - i * 7;
+      fillEllipse(g, 40 - i * 5, Math.max(LOCO.plume + r, cy), r, r * 0.8, `rgba(${T.smoke}, ${0.5 - i * 0.08})`);
+    }
+  }
+}
+
+// A grey ship on the boat's own hull: the passenger sits between the same two gunwales, and the swan's neck and
+// the sail stand where the rowboat's mast and sail do, inside HULL and BOAT_TOP.
+function drawGreyShip(g, T, { sail, part }) {
+  const hull = () => {
+    g.beginPath();
+    g.moveTo(-60, -10);
+    g.quadraticCurveTo(-30, -16, 30, -16);
+    g.quadraticCurveTo(52, -14, 60, -10);
+    g.quadraticCurveTo(52, 14, 32, 17);
+    g.lineTo(-36, 17);
+    g.quadraticCurveTo(-56, 13, -60, -10);
+    g.closePath();
+  };
+  if (part !== 'front') {
+    if (sail) {
+      line(g, 4, -10, 4, -86, T.woodDark, 3);
+      fillPoly(g, [[6, -82], [6, -18], [46, -22], [40, -74]], T.sailCloth, T.towerEdge, 1.5);
+      fillPoly(g, [[2, -82], [2, -24], [-28, -26]], T.sailCloth, T.towerEdge, 1.5);
+      // A white star on the sail, which is the one device a grey ship carries.
+      const star = [];
+      for (let i = 0; i < 10; i += 1) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const d = i % 2 ? 2.4 : 6;
+        star.push([24 + Math.cos(a) * d, -50 + Math.sin(a) * d]);
+      }
+      fillPoly(g, star, T.flagAlt, T.slate, 0.8);
+    }
+    hull();
+    g.fillStyle = T.lighthouse;
+    g.fill();
+    g.strokeStyle = T.slate;
+    g.lineWidth = 2;
+    g.stroke();
+    fillEllipse(g, 0, -13, 52, 4.5, T.slate);
+  }
+  if (part !== 'back') {
+    g.save();
+    g.beginPath();
+    g.rect(-70, -8, 140, 33);
+    g.clip();
+    hull();
+    g.fillStyle = T.lighthouse;
+    g.fill();
+    g.strokeStyle = T.slate;
+    g.lineWidth = 2;
+    g.stroke();
+    g.restore();
+    line(g, -54, -6, 54, -6, T.slate, 1.6);
+    // The swan's neck at the bow, inside the hull's own length.
+    line(g, 52, -14, 57, -34, T.lighthouse, 5);
+    line(g, 52, -14, 57, -34, T.slate, 1.4);
+    fillEllipse(g, 55, -37, 6, 4.5, T.lighthouse, T.slate, 1.4);
+    fillPoly(g, [[59, -37], [66, -35], [59, -33]], T.flag);
+  }
+}
+
 function drawRowboat(g, T, x, y, { tilt = 0, s = 1, dir = 1, sail = false, part = 'all' } = {}) {
   g.save();
   g.translate(x, y);
   g.rotate(tilt);
   g.scale(s * (dir < 0 ? -1 : 1), s);
+  if (T.pack === 'west') {
+    drawLocomotive(g, T, { sail, part });
+    g.restore();
+    return;
+  }
+  if (T.pack === 'shire') {
+    drawGreyShip(g, T, { sail, part });
+    g.restore();
+    return;
+  }
   const hull = () => {
     g.beginPath();
     g.moveTo(-60, -10);
@@ -3405,6 +3993,9 @@ function paintBackground(g, T) {
     fillEllipse(g, x, y, rx, rx * (0.3 + rand() * 0.3), rand() < 0.5 ? T.grassLight : T.grassDark);
   }
   g.globalAlpha = 1;
+  if (T.pack === 'shire') paintShireCountry(g, T);
+  if (T.pack === 'west') paintHorizonRange(g, T);
+  if (T.pack === 'shire') paintMistyMountains(g, T);
 
   paintWater(g, T, rand);
   paintIsland(g, T, rand);
@@ -3422,6 +4013,228 @@ function paintBackground(g, T) {
   paintFlowers(g, T, rand);
 }
 
+// A range along the top of the map with a tunnel driven through it, painted before the sea so the water covers
+// its eastern end rather than the range running out over the flats.
+function paintHorizonRange(g, T) {
+  const peaks = [[-40, 58], [90, 6], [220, 46], [330, 2], [470, 52], [610, 12], [760, 48], [900, 4], [1040, 44],
+    [1180, 14], [1320, 50], [1460, 18], [1640, 56]];
+  const pts = [[-60, 62], ...peaks, [1660, 62]];
+  fillPoly(g, pts, T.castleShade, T.castleDark, 2);
+  // The snow, or what passes for it up there: the lit western face of each peak.
+  for (const [x, y] of peaks) {
+    if (y > 20) continue;
+    fillPoly(g, [[x, y], [x - 16, y + 18], [x + 16, y + 18]], T.wallShade);
+  }
+  // The tunnel, clear of every tree and of the cottage.
+  const tx = 300;
+  g.beginPath();
+  g.moveTo(tx - 20, 62);
+  g.lineTo(tx - 20, 40);
+  g.arc(tx, 40, 20, Math.PI, TAU);
+  g.lineTo(tx + 20, 62);
+  g.closePath();
+  g.fillStyle = T.castleDoor;
+  g.fill();
+  g.strokeStyle = T.woodDark;
+  g.lineWidth = 4;
+  g.stroke();
+  for (const dx of [-26, 26]) fillRR(g, tx + dx - 4, 26, 8, 36, 2, T.wood, T.woodDark, 1.5);
+}
+
+// The open ground between the places, which is most of the map and which a wash of ellipses leaves saying
+// nothing. Hedged fields, a hillside with doors in it and a lane's own verges say where this is. Every patch is
+// hand-placed in ground no place declares and no road band crosses, so none of it is any place's to answer for.
+// Four of these used to lie below the graveyard, which looked like open ground and is not: the Porch's three
+// spots stand there, its swing frames reach 90 px above their rows and a row's badge reaches PORCH_CEILING, so
+// everything from y 581 down and x 666 west belongs to it. They were laid over the swings. `PORCH_GROUND` below
+// says so once, and a check holds every quad, hole and pony to it.
+export const SHIRE_FIELDS = Object.freeze([
+  // Top left, under the jail's own ground, which ends at y 250, and above the y 320 road.
+  Object.freeze([[10, 266], [210, 262], [222, 298], [16, 302]]),
+  Object.freeze([[232, 262], [430, 266], [430, 300], [240, 298]]),
+  // West of the jail's ground, which starts at x 70.
+  Object.freeze([[10, 120], [50, 112], [54, 178], [14, 182]]),
+  // Top middle, west of Bag End.
+  Object.freeze([[500, 48], [676, 44], [682, 120], [506, 126]]),
+  Object.freeze([[506, 134], [712, 128], [718, 250], [512, 252]]),
+  // Top right, east of Bag End and short of the coast.
+  Object.freeze([[944, 46], [1084, 50], [1080, 116], [938, 110]]),
+  Object.freeze([[938, 186], [1130, 190], [1122, 254], [932, 250]]),
+]);
+
+// The ground the Porch takes, which no dressing may touch: from its own ceiling down, and from the west end of
+// the steps to the east end of its door spot, with a wide body's half-width either side.
+export const PORCH_GROUND = Object.freeze([6, PORCH_CEILING, 660, 900 - PORCH_CEILING]);
+
+// Hillsides with a door in them, in open ground away from every place: Bag End is not the only hole in the hill.
+export const SHIRE_HOLES = Object.freeze([
+  Object.freeze({ x: 372, y: 236, r: 42 }),
+]);
+
+// Where a field's own edges sit on a horizontal line, so a drill row can be drawn across it without reaching the
+// hedge. Null when the line misses the field, which is how the top and bottom rows fall away on a sloped edge.
+function fieldSpan(field, y) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let e = 0; e < field.length; e += 1) {
+    const [ax, ay] = field[e];
+    const [bx, by] = field[(e + 1) % field.length];
+    if ((ay <= y && by > y) || (by <= y && ay > y)) {
+      const x = ax + ((y - ay) / (by - ay)) * (bx - ax);
+      lo = Math.min(lo, x);
+      hi = Math.max(hi, x);
+    }
+  }
+  return hi > lo ? [lo, hi] : null;
+}
+
+// A pony with its head down, standing in a pasture. Scenery in the background layer, so it never moves at all:
+// the one thing on the roads that does (the frontier's horse) is on the ambient tick and is drawn per frame.
+function paintPony(g, T, x, y, dir) {
+  g.save();
+  g.translate(x, y);
+  g.scale(dir < 0 ? -1 : 1, 1);
+  fillEllipse(g, 1, 11, 16, 3.5, T.shadow);
+  for (const lx of [-10, -5, 5, 10]) line(g, lx, -2, lx, 10, T.woodDark, 2.6);
+  fillRR(g, -13, -12, 26, 13, 6, T.cat, T.woodDark, 1.5);
+  // Neck and muzzle angled down into the grass, which is what makes a pony read as grazing rather than as a pig.
+  fillPoly(g, [[6, -12], [14, -11], [16, 2], [9, 2]], T.cat, T.woodDark, 1.5);
+  fillRR(g, 9, 0, 10, 6, 3, T.cat, T.woodDark, 1.5);
+  fillPoly(g, [[7, -12], [9, -16], [11, -11]], T.woodDark);
+  // Mane down the neck and a tail behind: without them the outline is a loaf on legs.
+  line(g, 4, -13, 13, -9, T.woodDark, 3);
+  line(g, -13, -11, -18, -1, T.woodDark, 2.6);
+  g.restore();
+}
+
+// What a pony paints about the point it stands on, as [left, top, right, bottom]: the tail reaches 18 back, the
+// muzzle 19 forward, the ear 16 up and the ground shadow 15 down.
+export const PONY_BOX = Object.freeze([-20, -17, 20, 16]);
+
+// Ponies grazing, in two of the pastures and well inside their hedges.
+export const SHIRE_PONIES = Object.freeze([
+  Object.freeze({ x: 1000, y: 94, dir: 1 }), Object.freeze({ x: 1054, y: 72, dir: -1 }),
+]);
+
+// What is growing in a field. Fields take it in turn: standing corn, ploughed earth, then pasture, which is the
+// green the field already was. Everything is laid on drill rows read off the field's own edges, so a crop cannot
+// reach its hedge however the quad is skewed.
+function paintFieldCrop(g, T, field, kind) {
+  if (kind === 2) return;
+  const ys = field.map((pt) => pt[1]);
+  const y0 = Math.min(...ys);
+  const y1 = Math.max(...ys);
+  for (let y = y0 + 15; y <= y1 - 13; y += 15) {
+    const span = fieldSpan(field, y);
+    if (!span) continue;
+    const [lo, hi] = span;
+    const a = lo + 15;
+    const b = hi - 15;
+    if (b - a < 20) continue;
+    if (kind === 1) {
+      // Ploughed: the furrow itself, with the ridge beside it.
+      line(g, a, y, b, y, T.pathEdge, 3);
+      line(g, a, y + 3.5, b, y + 3.5, T.path, 2);
+      continue;
+    }
+    // Standing corn: the drill row, then an ear every few paces along it.
+    g.globalAlpha = 0.7;
+    line(g, a, y + 5, b, y + 5, T.thatchDark, 2);
+    g.globalAlpha = 1;
+    for (let x = a; x <= b; x += 14) {
+      line(g, x, y + 5, x, y - 3, T.thatchDark, 1.6);
+      fillEllipse(g, x, y - 5, 2.6, 4.4, T.thatch);
+    }
+  }
+}
+
+function paintShireCountry(g, T) {
+  // Fields: corn, plough or pasture inside a hedge, which is what makes country read as farmed rather than wild.
+  SHIRE_FIELDS.forEach((field, i) => {
+    const crop = i % 3;
+    g.globalAlpha = crop === 1 ? 0.72 : 0.55;
+    fillPoly(g, field, crop === 1 ? T.path : i % 2 ? T.grassLight : T.grassDark);
+    g.globalAlpha = 1;
+    paintFieldCrop(g, T, field, crop);
+    // The hedge itself: a run of small dark clumps around the field's edge rather than a drawn line.
+    for (let e = 0; e < field.length; e += 1) {
+      const [ax, ay] = field[e];
+      const [bx, by] = field[(e + 1) % field.length];
+      const len = Math.hypot(bx - ax, by - ay);
+      const n = Math.max(2, Math.round(len / 13));
+      for (let k = 0; k <= n; k += 1) {
+        const t = k / n;
+        const hx = ax + (bx - ax) * t;
+        const hy = ay + (by - ay) * t;
+        fillEllipse(g, hx, hy + 1.5, 7.5, 4.2, T.yewDark);
+        fillEllipse(g, hx, hy, 7, 4, T.yew);
+        fillEllipse(g, hx - 1.6, hy - 1.4, 3, 1.8, T.tuft);
+      }
+    }
+  });
+  for (const { x, y, dir } of SHIRE_PONIES) paintPony(g, T, x, y, dir);
+  // Bag End's garden: a paling fence with a gate on the door's own centre line, and the path up to the step.
+  const gateX = COTTAGE.x;
+  fillRR(g, gateX - 7, 220, 14, 26, 2, T.path, T.pathEdge, 1.5);
+  for (let fx = 754; fx < 908; fx += 13) {
+    if (Math.abs(fx - gateX) < 16) continue;
+    fillRR(g, fx, 228, 5, 20, 2, T.woodLight, T.woodDark, 1);
+  }
+  for (const rail of [232, 242]) {
+    fillRR(g, 752, rail, 62, 4, 1, T.woodDark);
+    fillRR(g, 846, rail, 64, 4, 1, T.woodDark);
+  }
+  for (const px of [gateX - 18, gateX + 14]) {
+    fillRR(g, px, 222, 7, 30, 2, T.wood, T.woodDark, 1.2);
+    fillEllipse(g, px + 3.5, 221, 5, 3.5, T.wood, T.woodDark, 1.2);
+  }
+  // A bench by the gate, which is the one thing everyone knows is outside that door.
+  fillRR(g, 928, 236, 34, 5, 1.5, T.wood, T.woodDark, 1.2);
+  fillRR(g, 930, 226, 30, 4, 1.5, T.wood, T.woodDark, 1.2);
+  for (const bx of [931, 956]) fillRR(g, bx, 240, 4, 9, 1, T.woodDark);
+
+  // Two more holes in the hill, each with its door, its round window and a step.
+  for (const { x, y, r } of SHIRE_HOLES) {
+    fillEllipse(g, x + 5, y + 3, r * 0.95, 8, T.shadow);
+    g.beginPath();
+    g.ellipse(x, y, r, r * 0.86, 0, Math.PI, TAU);
+    g.closePath();
+    g.fillStyle = T.grassDark;
+    g.fill();
+    g.beginPath();
+    g.ellipse(x, y, r - 4, r * 0.86 - 6, 0, Math.PI, TAU);
+    g.closePath();
+    g.fillStyle = T.grass;
+    g.fill();
+    g.globalAlpha = 0.5;
+    fillEllipse(g, x - r * 0.3, y - r * 0.5, r * 0.34, r * 0.12, T.grassLight);
+    g.globalAlpha = 1;
+    const dr = r * 0.3;
+    fillEllipse(g, x, y - dr * 0.9, dr + 3, dr + 3, T.wood);
+    fillEllipse(g, x, y - dr * 0.9, dr, dr, T.door, T.woodDark, 1.4);
+    fillEllipse(g, x, y - dr * 0.9, 2.2, 2.2, T.thatch);
+    fillRR(g, x + r * 0.46, y - r * 0.5, 15, 13, 6.5, T.wood, T.woodDark, 1.2);
+    fillRR(g, x - r * 0.62, y - r * 0.44, 13, 12, 6, T.wood, T.woodDark, 1.2);
+    fillRR(g, x - dr - 4, y - 2, (dr + 4) * 2, 6, 2, T.stone, T.stoneDark, 1);
+  }
+}
+
+// The mountains east of here, along the top of the map, painted before the sea so the water takes their far end.
+// The same band the frontier's range uses, so nothing above the buildings has to move.
+function paintMistyMountains(g, T) {
+  const peaks = [[-40, 64], [110, 10], [250, 52], [400, 4], [540, 46], [690, 14], [830, 50], [980, 2],
+    [1120, 44], [1270, 16], [1420, 52], [1560, 20], [1660, 62]];
+  fillPoly(g, [[-60, 68], ...peaks, [1680, 68]], T.stoneDark, T.castleDark, 2);
+  for (const [x, y] of peaks) {
+    if (y > 22) continue;
+    fillPoly(g, [[x, y], [x - 17, y + 20], [x - 6, y + 15], [x + 3, y + 21], [x + 17, y + 20]], T.wall);
+  }
+  // A second, paler line behind the first: distance, which one row of peaks cannot say on its own.
+  g.globalAlpha = 0.45;
+  fillPoly(g, [[-60, 40], [180, 4], [420, 34], [680, 0], [930, 30], [1180, 2], [1430, 32], [1680, 8], [1680, 44], [-60, 44]], T.stone);
+  g.globalAlpha = 1;
+}
+
 function paintWater(g, T, rand) {
   const band = (offset, wobble) => {
     const pts = [[W + 3000, -1000]];
@@ -3433,6 +4246,41 @@ function paintWater(g, T, rand) {
   fillPoly(g, band(0, () => 0), T.water);
   fillPoly(g, band(95, (y) => 12 * Math.sin(y / 83)), T.waterDeep);
   g.lineCap = 'round';
+  if (T.pack === 'west') {
+    // A gulch cut down the flats, on the deep band's own wobble so it never wanders onto the island or the deck.
+    g.lineWidth = 26;
+    g.strokeStyle = T.stoneDark;
+    g.beginPath();
+    for (let y = -40; y <= H + 40; y += 20) {
+      const x = shoreX(y) + 138 + 34 * Math.sin(y / 132);
+      if (y <= -40) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.stroke();
+    g.lineWidth = 14;
+    g.strokeStyle = T.sandWet;
+    g.stroke();
+    // Cracked mud where the ripples were, on the same seed and the same guards.
+    g.strokeStyle = T.ripple;
+    g.lineWidth = 1.6;
+    for (let i = 0; i < 90; i++) {
+      const y = rand() * H;
+      const x = shoreX(y) + 24 + rand() * (W - shoreX(y) - 10);
+      if (onIsland(x, y, 40) || nearHarbour(x, y, 0)) continue;
+      const r = 8 + rand() * 14;
+      g.globalAlpha = 0.3 + rand() * 0.3;
+      g.beginPath();
+      // Three cracks off one point, which is what dried mud does and what an arc plainly does not.
+      for (let k = 0; k < 3; k++) {
+        const a = rand() * TAU;
+        g.moveTo(x, y);
+        g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+      }
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+    return;
+  }
   g.strokeStyle = T.ripple;
   g.lineWidth = 2;
   for (let i = 0; i < 90; i++) {
@@ -3495,6 +4343,13 @@ function paintIsland(g, T, rand) {
 }
 
 function paintShell(g, T, x, y, r, rot) {
+  if (T.pack === 'west') {
+    // A weathered stone where the shell is, on the shell's own footing.
+    fillEllipse(g, x, y + r * 0.35, r * 0.95, r * 0.35, T.shadow);
+    fillEllipse(g, x, y, r * 0.95, r * 0.7, T.stone);
+    fillEllipse(g, x - r * 0.25, y - r * 0.2, r * 0.4, r * 0.28, T.wallShade);
+    return;
+  }
   g.save();
   g.translate(x, y);
   g.rotate(rot);
@@ -3512,6 +4367,21 @@ function paintShell(g, T, x, y, r, rot) {
 }
 
 function paintStarfish(g, T, x, y, r, rot) {
+  if (T.pack === 'west') {
+    // A horseshoe, open end down, inside the starfish's own radius.
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    g.beginPath();
+    g.arc(0, 0, r * 0.68, Math.PI * 0.85, Math.PI * 0.15);
+    g.strokeStyle = T.steel;
+    g.lineWidth = Math.max(1.6, r * 0.34);
+    g.lineCap = 'butt';
+    g.stroke();
+    g.lineCap = 'round';
+    g.restore();
+    return;
+  }
   const pts = [];
   for (let i = 0; i < 10; i++) {
     const a = rot + (i / 10) * TAU - Math.PI / 2;
@@ -3601,7 +4471,160 @@ function paintTufts(g, T, rand) {
   }
 }
 
-function paintTree(g, T, x, y, r) {
+// A saguaro on the tree's own footing and inside the same `treeBox`: the trunk tops out at 1.95r against the
+// box's 2.08r, and the far arm reaches 0.68r against its 1.07r.
+function paintSaguaro(g, T, x, y, r) {
+  fillEllipse(g, x + 4, y + 2, r * 0.9, r * 0.3, T.shadow);
+  // An arm is the elbow out from the trunk at `joinY` and the limb standing up from it to `topY`.
+  const arm = (ax, joinY, topY) => {
+    const w = r * 0.24;
+    fillRR(g, ax - w / 2, topY, w, joinY - topY + w, w / 2, T.treeDark);
+    fillRR(g, Math.min(ax, x) - w / 2, joinY, Math.abs(ax - x) + w, w, w / 2, T.treeDark);
+  };
+  arm(x - r * 0.55, y - r * 0.95, y - r * 1.5);
+  arm(x + r * 0.5, y - r * 1.15, y - r * 1.65);
+  fillRR(g, x - r * 0.17, y - r * 1.95, r * 0.34, r * 1.95 + 2, r * 0.17, T.tree);
+  line(g, x - r * 0.06, y - r * 1.85, x - r * 0.06, y - r * 0.2, T.treeDark, 1.2);
+  line(g, x + r * 0.06, y - r * 1.85, x + r * 0.06, y - r * 0.2, T.treeLight, 1.2);
+  fillEllipse(g, x, y - r * 1.95, r * 0.17, r * 0.1, T.treeLight);
+}
+
+// How far an ent's dance may move it, as a fraction of r. It is the crown that binds, not the bole: the crown's
+// outer lobe sits 0.72r from the lean and the box allows 1.07r, and the lean is already up to 0.22r of that on
+// its own, which leaves 0.13r. There is almost nothing to spare above either, the tallest ent already taking
+// 2.05r of 2.08r, so the dance is a lean and a wave and never a stretch: at 0.18 a crown went 0.02 px out.
+export const ENT_SWAY = 0.12;
+export const ENT_BEAT = 3.7;
+
+// Where an ent is in its dance at t, from -1 to 1, with its own phase off its own position so eight of them are
+// never in step. Reduced motion holds every one of them at rest.
+export function entSway(t, reduced, x, y) {
+  if (reduced) return 0;
+  const phase = ((Math.sin(x * 3.117 + y * 9.431) * 27644.6) % 1 + 1) % 1;
+  return Math.sin((TAU * (Number(t) || 0)) / ENT_BEAT + phase * TAU);
+}
+
+// An ent on the tree's own footing, inside the same `treeBox`: a bole with a face in it, two boughs for arms,
+// roots for feet and a mallorn's gold crown for hair. Which way it leans and which arm it lifts come off its own
+// position, so eight of them are eight different ents rather than one drawn eight times. Unlike every other tree
+// they are drawn per frame rather than into the background layer, because they dance: it rides the village's own
+// ambient tick, like the beam and the frontier's horse, and holds still under reduced motion.
+// `seed` is what the ent's own two hashes are taken from, and it is the footing rather than the position for a
+// reason: which way it leans, how tall it stands, how thick its bole is and which bough it has raised all come
+// off those hashes, so a walking ent seeded on where it currently is re-rolls all four of them every frame and
+// flickers. One that stands still never showed it, because for those two the footing and the position are the
+// same point.
+function paintEnt(g, T, x, y, r, sway = 0, stride = 0, seed = null) {
+  const [sx, sy] = seed || [x, y];
+  const turn = ((Math.sin(sx * 12.9898 + sy * 78.233) * 43758.5453) % 1 + 1) % 1;
+  const turn2 = ((Math.sin(sx * 4.898 + sy * 21.773) * 19483.1234) % 1 + 1) % 1;
+  // The dance is added to the lean it already had: both together reach 0.34r, which puts the far edge of the
+  // crown at 1.06r of the 1.07r the box allows.
+  const lean = (turn - 0.5) * 0.44 * r + sway * ENT_SWAY * r;
+  const tx = x + lean;
+  // Eight ents standing the same height in the same stance read as one ent drawn eight times. How tall it stands
+  // and how thick its bole is come off its own position, inside the box either way. The tallest bole takes 1.54r
+  // and its crown sits 0.18r above that with a half-height of up to 0.33r, which is 2.05r of the 2.08r the box
+  // allows. Raising the bole any further is what pushed a crown out of it.
+  const stand = 1.28 + turn2 * 0.26;
+  const top = y - r * stand;
+  const w = r * (0.38 + turn * 0.14);
+  fillEllipse(g, x + 4, y + 2, r * 0.85, r * 0.3, T.shadow);
+  // Roots: two splayed feet, inside the box's own width. One steps forward as the other steps back, which at
+  // 0.12r keeps the far edge of a foot at 0.72r of the 1.07r the box allows.
+  for (const side of [-1, 1]) {
+    const rx = x + side * r * 0.4 + side * stride * r * 0.12;
+    fillPoly(g, [[x + side * w * 0.3, y - r * 0.45], [rx + side * r * 0.2, y], [rx - side * r * 0.16, y]], T.trunk);
+  }
+  // The bole, leaning the way this one leans.
+  fillPoly(g, [
+    [x - w * 0.62, y - r * 0.1], [x + w * 0.62, y - r * 0.1], [tx + w * 0.5, top], [tx - w * 0.5, top],
+  ], T.trunk, T.treeDark, 1.4);
+  // Grain, so the bole reads as bark rather than as a plank.
+  g.globalAlpha = 0.45;
+  for (const k of [-0.22, 0.2]) {
+    line(g, x + w * k, y - r * 0.2, tx + w * k, top + r * 0.12, T.treeDark, Math.max(1, r * 0.045));
+  }
+  g.globalAlpha = 1;
+  // Two boughs for arms, one lifted higher than the other, swapping by which way it leans.
+  const high = turn > 0.5 ? 1 : -1;
+  for (const side of [-1, 1]) {
+    // The boughs rise and fall out of phase with each other, which is what turns a sway into a dance. Only the
+    // lift moves: the reach is fixed, because the arms already come within 0.09r of the side of the box.
+    const wave = sway * side * ENT_SWAY * r;
+    const lift = (side === high ? r * 1.25 : r * 0.85) + wave;
+    const reach = side === high ? r * 0.82 : r * 0.7;
+    // Bent at an elbow rather than run straight out: a bough that leaves the bole in a line is a broom handle.
+    // The ends are where they always were, so nothing about the box changes.
+    const ex = x + side * reach;
+    const ey = y - lift;
+    const sx2 = tx + side * w * 0.4;
+    const sy2 = y - r * 0.95;
+    strokePolyline(g, [
+      [sx2, sy2], [sx2 + (ex - sx2) * 0.55, sy2 - (sy2 - ey) * 0.72], [ex, ey],
+    ], T.trunk, Math.max(2, r * 0.13));
+    for (const k of [-0.3, 0.3]) {
+      line(g, x + side * reach, y - lift, x + side * (reach + r * 0.16), y - lift - r * (0.16 + k * 0.2), T.treeDark, Math.max(1.4, r * 0.07));
+    }
+  }
+  // The face: two eyes under a heavy brow, and a beard of moss.
+  const fy = y - r * 1.12;
+  // The beard first, so the face is laid over it rather than the other way round. Three hanging strands of moss
+  // inside the span a solid wedge took: as one shape it read as a bib rather than as something growing on bark.
+  for (const [k, drop] of [[-0.3, 0.46], [0.02, 0.58], [0.3, 0.42]]) {
+    const bx = tx + w * k;
+    strokePolyline(g, [
+      [bx, fy + r * 0.12], [bx + w * 0.08, fy + r * 0.3], [bx - w * 0.05, y - r * drop],
+    ], T.moss, Math.max(1.6, r * 0.1));
+  }
+  for (const side of [-1, 1]) {
+    fillEllipse(g, tx + side * w * 0.36, fy, r * 0.1, r * 0.12, T.treeLight);
+    fillEllipse(g, tx + side * w * 0.36, fy + r * 0.02, r * 0.05, r * 0.07, T.woodDark);
+    // A heavy brow over each eye, which is most of what makes bark read as a face.
+    line(g, tx + side * w * 0.14, fy - r * 0.15, tx + side * w * 0.56, fy - r * 0.19, T.treeDark, Math.max(1.6, r * 0.075));
+  }
+  // Two twigs up into the crown, so it grows out of the bole rather than sitting on it like a hat.
+  for (const side of [-1, 1]) {
+    line(g, tx, top + r * 0.1, tx + side * r * 0.3, top - r * 0.16, T.trunk, Math.max(1.4, r * 0.07));
+  }
+  // The crown, which is a mallorn's. The bole already stands 1.55r up, so the crown has 0.53r of headroom left in
+  // the box and takes 0.50r of it: centre 0.16r above the bole, half-height 0.34r. Broken into lobes at
+  // different heights rather than domed: one smooth ellipse over a bole is a mushroom, whatever colour it is.
+  // Narrow. A crown reaching 0.72r either side of a bole 0.43r thick is a cap on a stalk, whatever it is made
+  // of: these reach 0.55r, so the canopy is nearer round than wide and the thing reads as a tree.
+  for (const [dx, dy, rx2, ry2] of [[-0.3, 0.0, 0.25, 0.19], [0.3, -0.03, 0.24, 0.18], [-0.1, -0.08, 0.26, 0.2], [0.14, -0.1, 0.24, 0.19]]) {
+    fillEllipse(g, tx + r * dx, top + r * dy, r * rx2, r * ry2, T.treeDark);
+  }
+  for (const [dx, dy, rx2, ry2] of [[-0.2, -0.16, 0.26, 0.19], [0.18, -0.19, 0.24, 0.18], [0, -0.28, 0.24, 0.18], [-0.31, -0.08, 0.2, 0.14], [0.31, -0.1, 0.18, 0.13]]) {
+    fillEllipse(g, tx + r * dx, top + r * (dy - turn2 * 0.04), r * rx2, r * ry2, T.tree);
+  }
+  fillEllipse(g, tx - r * 0.12, top - r * (0.33 + turn2 * 0.04), r * 0.16, r * 0.1, T.treeLight);
+  fillEllipse(g, tx + r * 0.2, top - r * 0.22, r * 0.11, r * 0.08, T.treeLight);
+}
+
+// A mallorn on the tree's own footing: a silver bole and a gold crown, inside the same `treeBox`. The crown tops
+// out at 2.04r against the box's 2.08r, and reaches 0.98r wide against its 1.07r.
+function paintMallorn(g, T, x, y, r) {
+  fillEllipse(g, x + 4, y + 2, r * 0.9, r * 0.3, T.shadow);
+  fillRR(g, x - r * 0.13, y - r * 1.5, r * 0.26, r * 1.5 + 2, r * 0.13, T.trunk);
+  // Two boughs lifting away from the bole, which is what keeps a tall tree from reading as a lollipop.
+  line(g, x, y - r * 1.15, x - r * 0.42, y - r * 1.5, T.trunk, Math.max(1.6, r * 0.09));
+  line(g, x, y - r * 1.3, x + r * 0.4, y - r * 1.62, T.trunk, Math.max(1.6, r * 0.09));
+  fillEllipse(g, x - r * 0.42, y - r * 1.62, r * 0.46, r * 0.34, T.treeDark);
+  fillEllipse(g, x + r * 0.42, y - r * 1.7, r * 0.44, r * 0.32, T.treeDark);
+  fillEllipse(g, x, y - r * 1.6, r * 0.62, r * 0.44, T.tree);
+  fillEllipse(g, x - r * 0.16, y - r * 1.78, r * 0.3, r * 0.2, T.treeLight);
+}
+
+function paintTree(g, T, x, y, r, sway = 0) {
+  if (T.pack === 'west') {
+    paintSaguaro(g, T, x, y, r);
+    return;
+  }
+  if (T.pack === 'shire') {
+    paintEnt(g, T, x, y, r, sway);
+    return;
+  }
   fillEllipse(g, x + 4, y + 2, r * 0.9, r * 0.3, T.shadow);
   fillRR(g, x - 5, y - r * 0.9, 10, r * 0.9 + 2, 3, T.trunk);
   fillEllipse(g, x - r * 0.45, y - r * 1.05, r * 0.62, r * 0.58, T.treeDark);
@@ -3625,24 +4648,117 @@ export function treeBox([x, y, r]) {
   return [left, y - 2.08 * r, right - left, 2.08 * r + 2 + 0.3 * r];
 }
 
+// Every tree but an ent. An ent dances, so it cannot live in a layer that is painted once: the village draws
+// those per frame instead (`drawEnts`), on the ambient tick.
 function paintTrees(g, T) {
+  if (T.pack === 'shire') return;
   for (const [x, y, r] of TREES) paintTree(g, T, x, y, r);
 }
 
 function paintFlowers(g, T, rand) {
   const beds = [[150, 890], [300, 886], [470, 250], [680, 884], [760, 612], [1150, 300]];
+  const shire = T.pack === 'shire';
   for (const [bx, by] of beds) {
     for (let i = 0; i < 9; i++) {
       const x = bx + (rand() - 0.5) * 42;
       const y = by + (rand() - 0.5) * 12;
+      if (shire) {
+        // Mushrooms on the flowers' own beds and the same seed, which the Shire has rather more of than flowers.
+        fillEllipse(g, x, y + 3, 2.8, 1.2, T.shadow);
+        fillRR(g, x - 1, y - 1, 2, 5, 1, T.wall);
+        fillEllipse(g, x, y - 1, 3.4, 2.4, T.flowers[i % T.flowers.length]);
+        fillEllipse(g, x - 1, y - 2, 1, 0.7, T.wall);
+        continue;
+      }
       fillEllipse(g, x, y + 3, 2.6, 1.2, T.treeDark);
       fillEllipse(g, x, y, 2.6, 2.6, T.flowers[i % T.flowers.length]);
     }
   }
 }
 
+// The bank, built around the cottage's own rect and door: a stone front with a stepped parapet where the pitch
+// was, and a hitching rail where the window box is. The parapet tops out at 74, inside the roof's own apex at 68.
+function paintBank(g, T) {
+  const bx = COTTAGE.x;
+  const by = COTTAGE.y;
+  fillEllipse(g, bx + 6, by + 4, 82, 10, T.shadow);
+  // The stepped front: three courses rising to the middle, all inside the roof's triangle.
+  fillRR(g, bx - 78, 110, 156, 20, 2, T.stoneDark);
+  fillRR(g, bx - 52, 92, 104, 22, 2, T.stone, T.stoneDark, 2);
+  fillRR(g, bx - 24, 74, 48, 22, 2, T.stone, T.stoneDark, 2);
+  fillRR(g, bx - 68, 122, 136, 92, 3, T.stone);
+  fillRR(g, bx - 68, 200, 136, 14, 2, T.stoneDark);
+  // Two pilasters either side of the door, which is what makes a stone front read as a bank and not a warehouse.
+  for (const px of [bx - 46, bx + 34]) fillRR(g, px, 128, 12, 78, 1, T.wallShade, T.stoneDark, 1);
+  fillRR(g, bx - 16, 166, 32, 48, 3, T.door);
+  fillEllipse(g, bx + 10, 192, 1.8, 1.8, T.steel);
+  for (const [x, y, w, h] of COTTAGE_WINDOWS) {
+    fillRR(g, x, y, w, h, 2, T.windowDark, T.woodDark, 2);
+    // A teller's grille rather than a cottage's glazing bars.
+    for (let i = 1; i < 4; i++) line(g, x + (w * i) / 4, y + 2, x + (w * i) / 4, y + h - 2, T.steel, 1.2);
+    line(g, x, y + h / 2, x + w, y + h / 2, T.steel, 1.2);
+  }
+  fillRR(g, bx - 22, by, 44, 8, 2, T.stone, T.stoneDark, 1);
+  // The hitching rail, on the window box's footing.
+  for (const px of [bx - 62, bx - 30]) fillRR(g, px, 168, 5, 30, 1, T.woodDark);
+  fillRR(g, bx - 66, 168, 44, 5, 2, T.wood, T.woodDark, 1);
+  fillRR(g, bx + 74, 178, 22, 36, 3, T.wood, T.woodDark, 1.5);
+  fillEllipse(g, bx + 85, 178, 11, 4, T.woodLight);
+}
+
 // The cottage on the green: one small house with a door to click. Idle and recent rows are inside, not in front.
+// Bag End, built around the cottage's own rect, door and windows: a green hill where the walls and the pitch
+// were, a round door on the door's own footing, and round panes in the same two openings, so the lit-window
+// drawing that follows the crowd inside still fills exactly what is painted.
+function paintBagEnd(g, T) {
+  const bx = COTTAGE.x;
+  const by = COTTAGE.y;
+  fillEllipse(g, bx + 6, by + 4, 82, 10, T.shadow);
+  // The hill: the upper half of an ellipse, so it stops on the cottage's own base line rather than running down
+  // past the ground the place declares.
+  const dome = (inset, fill) => {
+    g.beginPath();
+    g.ellipse(bx, by, 80 - inset, 138 - inset * 1.7, 0, Math.PI, TAU);
+    g.closePath();
+    g.fillStyle = fill;
+    g.fill();
+  };
+  dome(0, T.grassDark);
+  dome(5, T.grass);
+  g.globalAlpha = 0.5;
+  for (const [dx, dy, rx] of [[-46, 46, 22], [30, 30, 26], [-10, 76, 30]]) {
+    fillEllipse(g, bx + dx, by - dy, rx, rx * 0.34, T.grassLight);
+  }
+  g.globalAlpha = 1;
+  fillRR(g, bx + 54, 76, 15, 34, 2, T.stoneDark);
+  fillEllipse(g, bx + 61.5, 74, 10, 4, T.stone);
+  // The round door, on the square door's own centre.
+  fillEllipse(g, bx, 190, 27, 27, T.wood);
+  fillEllipse(g, bx, 190, 23, 23, T.door, T.woodDark, 1.5);
+  line(g, bx, 167, bx, 213, T.woodDark, 1.2);
+  fillEllipse(g, bx, 190, 3.2, 3.2, T.thatch, T.woodDark, 1);
+  // The same two openings, as round panes: `litWindow` fills each box as a capsule, which is this shape.
+  for (const [x, y, w, h] of COTTAGE_WINDOWS) {
+    const r = Math.min(w, h) / 2;
+    fillRR(g, x - 4, y - 4, w + 8, h + 8, r + 4, T.wood, T.woodDark, 1.5);
+    paintLeadedWindow(g, T, x, y, w, h, r);
+  }
+  fillRR(g, bx - 22, by, 44, 8, 2, T.stone, T.stoneDark, 1);
+  fillRR(g, bx + 74, 178, 22, 36, 3, T.wood, T.woodDark, 1.5);
+  fillEllipse(g, bx + 85, 178, 11, 4, T.woodLight);
+  fillRR(g, bx - 60, 168, 34, 10, 2, T.woodDark);
+  for (let i = 0; i < 4; i++) fillEllipse(g, bx - 55 + i * 9, 166, 3, 3, T.flowers[i % T.flowers.length]);
+}
+
 function paintCottage(g, T) {
+  if (T.pack === 'west') {
+    paintBank(g, T);
+    return;
+  }
+  if (T.pack === 'shire') {
+    paintBagEnd(g, T);
+    return;
+  }
   const bx = COTTAGE.x;
   const by = COTTAGE.y;
   fillEllipse(g, bx + 6, by + 4, 82, 10, T.shadow);
@@ -3665,16 +4781,44 @@ function paintCottage(g, T) {
 }
 
 function paintWorkshop(g, T) {
+  const west = T.pack === 'west';
   fillEllipse(g, 830, 544, 356, 12, T.shadow);
-  fillRR(g, 486, 386, 672, 152, 6, T.woodLight, T.woodDark, 2);
-  g.globalAlpha = 0.45;
-  for (let x = 520; x < 1158; x += 34) line(g, x, 388, x, 536, T.plank, 1.5);
-  g.globalAlpha = 1;
+  const shire = T.pack === 'shire';
+  fillRR(g, 486, 386, 672, 152, 6, shire ? T.wallShade : T.woodLight, T.woodDark, 2);
+  if (shire) {
+    // A smithy's back wall: a stone footing, timber posts with braces between them, and a rail across the top.
+    fillRR(g, 486, 492, 672, 46, 4, T.stone, T.stoneDark, 2);
+    g.globalAlpha = 0.4;
+    for (let x = 512; x < 1150; x += 42) line(g, x, 494, x, 536, T.stoneDark, 1.2);
+    for (let y = 504; y < 536; y += 14) line(g, 490, y, 1154, y, T.stoneDark, 1.2);
+    g.globalAlpha = 1;
+    fillRR(g, 486, 386, 672, 9, 1, T.woodDark);
+    fillRR(g, 486, 440, 672, 8, 1, T.woodDark);
+    for (let x = 500; x < 1150; x += 74) {
+      fillRR(g, x, 386, 9, 106, 1, T.woodDark);
+      line(g, x + 9, 486, x + 34, 450, T.woodDark, 5);
+      line(g, x + 68, 486, x + 44, 450, T.woodDark, 5);
+    }
+  } else {
+    g.globalAlpha = 0.45;
+    for (let x = 520; x < 1158; x += 34) line(g, x, 388, x, 536, T.plank, 1.5);
+    g.globalAlpha = 1;
+  }
   g.fillStyle = 'rgba(0, 0, 0, 0.1)';
   g.fillRect(488, 386, 668, 12);
-  fillRR(g, 481, 352, 12, 190, 2, T.woodDark);
-  fillRR(g, 1151, 352, 12, 190, 2, T.woodDark);
+  fillRR(g, 481, 352, 12, 190, 2, shire ? T.stoneDark : T.woodDark);
+  fillRR(g, 1151, 352, 12, 190, 2, shire ? T.stoneDark : T.woodDark);
   fillRR(g, 472, 340, 700, 46, 6, T.roofs[1], 'rgba(0, 0, 0, 0.2)', 2);
+  if (shire) {
+    // Tiles on the canopy's own slab: three courses, each lapping the one below, and a ridge over the top.
+    g.globalAlpha = 0.55;
+    for (let row = 0; row < 3; row += 1) {
+      const ty = 350 + row * 12;
+      for (let x = 476 + (row % 2) * 9; x + 16 <= 1168; x += 18) fillRR(g, x, ty, 16, 11, 3, T.stone, T.stoneDark, 0.8);
+    }
+    g.globalAlpha = 1;
+    fillRR(g, 473, 336, 698, 9, 3, T.stoneDark);
+  }
   g.globalAlpha = 0.35;
   g.strokeStyle = 'rgba(0, 0, 0, 0.55)';
   g.lineWidth = 1.5;
@@ -3685,6 +4829,36 @@ function paintWorkshop(g, T) {
   }
   line(g, 480, 352, 1164, 352, 'rgba(255, 255, 255, 0.5)', 2);
   g.globalAlpha = 1;
+  if (T.pack === 'shire') {
+    // A smith's shop on the shed's own footing: an anvil where the sawhorse stood and a hearth where the cabinet
+    // did, both inside the shed's own numbers, so the Workshop's two road contacts are untouched.
+    fillRR(g, 500, 508, 34, 20, 2, T.woodDark);
+    fillPoly(g, [[496, 494], [540, 494], [534, 502], [530, 508], [504, 508], [500, 502]], T.steel, T.stoneDark, 1.5);
+    fillPoly(g, [[534, 494], [548, 490], [540, 500]], T.steel, T.stoneDark, 1.5);
+    fillRR(g, 1104, 486, 48, 42, 3, T.stone, T.stoneDark, 2);
+    fillRR(g, 1112, 500, 32, 24, 2, T.castleDoor);
+    fillEllipse(g, 1128, 518, 13, 7, T.flame);
+    fillEllipse(g, 1128, 520, 7, 4, T.flameCore);
+    fillPoly(g, [[1100, 486], [1156, 486], [1146, 466], [1110, 466]], T.stoneDark);
+    fillRR(g, 1120, 440, 16, 28, 2, T.stoneDark);
+    return;
+  }
+  if (west) {
+    // A depot's valance under the canopy, and the platform edge with the rails beyond it. Both stay inside the
+    // shed's own numbers, so the Workshop's two road contacts are untouched.
+    for (let x = 484; x + 24 <= 1156; x += 24) fillPoly(g, [[x, 386], [x + 24, 386], [x + 12, 398]], T.woodDark);
+    fillRR(g, 486, 524, 672, 6, 1, T.stoneDark);
+    line(g, 490, 534, 1154, 534, T.steel, 2);
+    for (let x = 496; x < 1154; x += 28) line(g, x, 530, x, 538, T.woodDark, 2.5);
+    // A baggage cart on the sawhorse's footing, and a water column where the cabinet stood.
+    fillRR(g, 496, 494, 44, 26, 2, T.wood, T.woodDark, 1.5);
+    fillEllipse(g, 506, 524, 7, 7, T.woodDark);
+    fillEllipse(g, 532, 524, 7, 7, T.woodDark);
+    fillRR(g, 1118, 470, 20, 54, 3, T.plank, T.woodDark, 1.5);
+    fillRR(g, 1108, 458, 40, 16, 4, T.wood, T.woodDark, 1.5);
+    line(g, 1128, 500, 1146, 512, T.woodDark, 3);
+    return;
+  }
   line(g, 500, 530, 510, 498, T.woodDark, 3);
   line(g, 530, 530, 520, 498, T.woodDark, 3);
   fillRR(g, 496, 494, 40, 7, 2, T.wood, T.woodDark, 1.2);
@@ -3694,15 +4868,88 @@ function paintWorkshop(g, T) {
 }
 
 function paintPorchHouse(g, T) {
+  const west = T.pack === 'west';
   g.save();
   g.translate(HOUSE_DX, 0);
   fillEllipse(g, 1120, 830, 150, 12, T.shadow);
   fillRR(g, 1188, 614, 16, 44, 2, T.stoneDark);
   fillRR(g, 1012, 684, 222, 118, 3, T.wall);
-  fillPoly(g, [[994, 694], [1123, 604], [1252, 694]], T.roofs[0], 'rgba(0, 0, 0, 0.2)', 2);
-  fillRR(g, 1040, 734, 34, 68, 3, T.door);
-  fillEllipse(g, 1067, 770, 2, 2, T.stone);
+  if (T.pack === 'shire') {
+    // Timber framing over the plaster: posts, two rails and a brace each side, all inside the wall's own rect.
+    // Half-timbering is most of the difference between a cottage and an inn here.
+    fillRR(g, 1012, 684, 222, 7, 1, T.woodDark);
+    fillRR(g, 1012, 750, 222, 6, 1, T.woodDark);
+    fillRR(g, 1012, 796, 222, 6, 1, T.woodDark);
+    for (const px of [1012, 1084, 1156, 1227]) fillRR(g, px, 684, 7, 118, 1, T.woodDark);
+    line(g, 1090, 794, 1150, 758, T.woodDark, 5);
+    line(g, 1221, 794, 1162, 758, T.woodDark, 5);
+  }
+  if (T.pack === 'shire') {
+    // Thatch on the pitch's own triangle, and the inn's sign hanging under the porch beam.
+    fillPoly(g, [[994, 694], [1123, 604], [1252, 694]], T.thatch, T.thatchDark, 2);
+    g.globalAlpha = 0.45;
+    for (let i = 1; i < 7; i += 1) {
+      const k = i / 7;
+      line(g, 994 + (1123 - 994) * k, 694 - (694 - 604) * k, 1252 - (1252 - 1123) * k, 694 - (694 - 604) * k, T.thatchDark, 2);
+    }
+    g.globalAlpha = 1;
+    // The sign on the gable, where a dark board reads against thatch. On the wall below it was cream on cream.
+    fillRR(g, 1086, 650, 76, 38, 3, T.woodDark, T.signBoard, 2);
+    // A dragon: tail, body, a long neck and a snout, with one wing over it. Drawn as a curve rather than a row of
+    // points, because straight edges at this size read as a mountain, which is what the first attempt looked like.
+    g.beginPath();
+    g.moveTo(1092, 682);
+    g.quadraticCurveTo(1108, 678, 1120, 679);
+    g.quadraticCurveTo(1134, 679, 1137, 668);
+    g.quadraticCurveTo(1140, 657, 1150, 657);
+    g.lineTo(1157, 661);
+    g.lineTo(1148, 663);
+    g.quadraticCurveTo(1143, 665, 1141, 673);
+    g.quadraticCurveTo(1130, 670, 1119, 672);
+    g.quadraticCurveTo(1105, 671, 1092, 682);
+    g.closePath();
+    g.fillStyle = T.signBoard;
+    g.fill();
+    fillPoly(g, [[1118, 673], [1127, 654], [1137, 671]], T.signBoard);
+  } else if (west) {
+    // A false front where the pitch was, inside the same triangle: flat to the roof's own apex at 604, so nothing
+    // here rises any nearer the road than the porch house already did.
+    fillRR(g, 994, 604, 258, 92, 2, T.wallShade, T.woodDark, 2);
+    fillRR(g, 994, 604, 258, 13, 2, T.woodDark);
+    fillRR(g, 994, 638, 258, 5, 1, T.woodDark);
+    g.globalAlpha = 0.4;
+    for (let x = 1012; x < 1250; x += 22) line(g, x, 620, x, 694, T.woodDark, 1.4);
+    g.globalAlpha = 1;
+    // The two brackets that hold a false front up, which is what says it is a front and not a wall.
+    for (const bx of [1006, 1232]) fillPoly(g, [[bx, 696], [bx + 14, 696], [bx, 682]], T.woodDark);
+  } else if (T.pack !== 'shire') {
+    fillPoly(g, [[994, 694], [1123, 604], [1252, 694]], T.roofs[0], 'rgba(0, 0, 0, 0.2)', 2);
+  }
+  if (west) {
+    // Batwing doors: the opening is dark all the way down, and the two leaves cover its middle only.
+    fillRR(g, 1040, 734, 34, 68, 3, T.windowDark);
+    fillRR(g, 1040, 748, 16, 38, 2, T.wood, T.woodDark, 1.5);
+    fillRR(g, 1058, 748, 16, 38, 2, T.wood, T.woodDark, 1.5);
+  } else if (T.pack === 'shire') {
+    fillRR(g, 1040, 734, 34, 68, 3, T.door, T.woodDark, 2);
+    g.globalAlpha = 0.5;
+    for (const dx of [11, 22]) line(g, 1040 + dx, 736, 1040 + dx, 800, T.woodDark, 1.4);
+    g.globalAlpha = 1;
+    for (const dy of [744, 790]) fillRR(g, 1042, dy, 30, 4, 1, T.woodDark);
+    g.beginPath();
+    g.arc(1066, 770, 4, 0, TAU);
+    g.strokeStyle = T.thatch;
+    g.lineWidth = 2;
+    g.stroke();
+  } else {
+    fillRR(g, 1040, 734, 34, 68, 3, T.door);
+    fillEllipse(g, 1067, 770, 2, 2, T.stone);
+  }
   for (const x of [1104, 1172]) {
+    if (T.pack === 'shire') {
+      paintLeadedWindow(g, T, x, 712, 42, 34, 2);
+      continue;
+    }
     fillRR(g, x, 712, 42, 34, 2, T.porchWindow, T.woodDark, 2);
     line(g, x + 21, 712, x + 21, 746, T.woodDark, 1.5);
   }
@@ -3757,6 +5004,26 @@ function paintHarbour(g, T) {
     fillEllipse(g, x, y, 7, 6, T.woodDark);
     fillEllipse(g, x, y - 2, 5, 3.5, T.wood);
   }
+  if (T.pack === 'shire') {
+    // Two slim arches at the head of the pier, on the deck's own footing: a quay you sail from, not a jetty.
+    for (const ax of [dx + 52, dx + 138]) {
+      for (const cx2 of [ax - 26, ax + 26]) fillRR(g, cx2 - 5, dy + 6, 10, 82, 3, T.lighthouse, T.slate, 1.5);
+      g.beginPath();
+      g.moveTo(ax - 31, dy + 30);
+      g.quadraticCurveTo(ax - 31, dy - 2, ax, dy - 14);
+      g.quadraticCurveTo(ax + 31, dy - 2, ax + 31, dy + 30);
+      g.lineTo(ax + 21, dy + 30);
+      g.quadraticCurveTo(ax + 21, dy + 8, ax, dy - 2);
+      g.quadraticCurveTo(ax - 21, dy + 8, ax - 21, dy + 30);
+      g.closePath();
+      g.fillStyle = T.lighthouse;
+      g.fill();
+      g.strokeStyle = T.slate;
+      g.lineWidth = 1.5;
+      g.stroke();
+      fillEllipse(g, ax, dy - 18, 6, 6, T.flagAlt, T.slate, 1.2);
+    }
+  }
   paintPatrolBooth(g, T);
 
   // The lighthouse on its rocks, top right.
@@ -3765,18 +5032,42 @@ function paintHarbour(g, T) {
     fillEllipse(g, x - rx * 0.2, y - ry * 0.35, rx * 0.55, ry * 0.45, T.stone);
   }
   const lh = [[1530, 172], [1568, 172], [1561, 82], [1537, 82]];
-  fillPoly(g, lh, T.lighthouse, T.slate, 1.5);
+  fillPoly(g, lh, T.towerStone, T.towerEdge, 1.5);
   g.save();
   g.beginPath();
   lh.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
   g.closePath();
   g.clip();
-  g.fillStyle = T.slate;
-  g.fillRect(1520, 108, 60, 12);
-  g.fillRect(1520, 142, 60, 12);
+  if (T.pack === 'west') {
+    // A water tower's iron hoops where the lighthouse has its bands, inside the tower's own outline. The lantern
+    // above is left exactly where it is: the night beam is aimed from it, and moving it would move the beam.
+    g.fillStyle = T.steel;
+    for (const y of [100, 124, 148]) g.fillRect(1520, y, 60, 5);
+    g.strokeStyle = T.woodDark;
+    g.lineWidth = 1.2;
+    for (let x = 1528; x < 1576; x += 8) line(g, x, 82, x, 172, T.woodDark, 1.2);
+  } else if (T.pack === 'shire') {
+    // A dark tower: buttresses up the shaft instead of painted bands, and no light of its own. What burns at the
+    // top is drawn with the night lighting, where the beam is aimed from.
+    g.fillStyle = T.towerEdge;
+    for (const x of [1528, 1546, 1564]) g.fillRect(x, 82, 5, 90);
+    g.fillStyle = T.towerStone;
+    for (const y of [96, 122, 148]) g.fillRect(1520, y, 60, 4);
+  } else {
+    g.fillStyle = T.slate;
+    g.fillRect(1520, 108, 60, 12);
+    g.fillRect(1520, 142, 60, 12);
+  }
   g.restore();
-  fillRR(g, 1536, 66, 26, 17, 3, T.lanternGlass, T.slate, 1.5);
-  fillPoly(g, [[1532, 68], [1549, 52], [1566, 68]], T.roofs[1]);
+  if (T.pack === 'shire') {
+    fillRR(g, 1536, 66, 26, 17, 3, T.towerStone, T.towerEdge, 1.5);
+    // Two horns either side of the socket the Eye sits in, on the cap's own footing.
+    fillPoly(g, [[1532, 68], [1536, 46], [1541, 68]], T.towerEdge);
+    fillPoly(g, [[1557, 68], [1562, 46], [1566, 68]], T.towerEdge);
+  } else {
+    fillRR(g, 1536, 66, 26, 17, 3, T.lanternGlass, T.slate, 1.5);
+    fillPoly(g, [[1532, 68], [1549, 52], [1566, 68]], T.roofs[1]);
+  }
 
   g.lineCap = 'round';
   for (const [x, y] of [[1296, 500], [1300, 146], [1158, 690], [1150, 820]]) {
@@ -3805,16 +5096,33 @@ function paintPatrolBooth(g, T) {
 function paintSandCastle(g, T) {
   const cx = CASTLE.x;
   const by = CASTLE.y;
+  const west = T.pack === 'west';
+  const shire = T.pack === 'shire';
   g.save();
   g.translate(cx, by);
   g.scale(CASTLE.s, CASTLE.s);
   g.translate(-cx, -by);
   fillEllipse(g, cx + 6, by + 4, 88, 12, T.shadow);
   fillEllipse(g, cx, by + 3, 82, 9, T.sandWet);
+  // In the frontier town the same run of merlons is a broken rock line: same span, same 11 px of headroom, so the
+  // mesa stands exactly as tall as the castle did and the openings below it do not move.
   const merlons = (x0, x1, y, w = 10, gap = 6) => {
     const n = Math.max(1, Math.floor((x1 - x0 + gap) / (w + gap)));
     const start = x0 + (x1 - x0 - (n * w + (n - 1) * gap)) / 2;
-    for (let i = 0; i < n; i++) fillRR(g, start + i * (w + gap), y - 9, w, 11, 2, T.castle, T.castleDark, 1.2);
+    // A white tower caps each run once rather than toothing it, so the same merlon numbers raise a spire.
+    if (shire) {
+      fillPoly(g, [[x0 - 3, y + 2], [(x0 + x1) / 2, y - 24], [x1 + 3, y + 2]], T.castle, T.castleDark, 1.4);
+      return;
+    }
+    for (let i = 0; i < n; i++) {
+      const x = start + i * (w + gap);
+      if (!west) {
+        fillRR(g, x, y - 9, w, 11, 2, T.castle, T.castleDark, 1.2);
+        continue;
+      }
+      const lift = i % 2 ? 4 : 9;
+      fillPoly(g, [[x - gap / 2, y + 2], [x + w / 2, y - lift], [x + w + gap / 2, y + 2]], T.castle, T.castleDark, 1.2);
+    }
   };
   const ridges = (x0, x1, ys) => {
     g.globalAlpha = 0.7;
@@ -3840,22 +5148,48 @@ function paintSandCastle(g, T) {
     merlons(tx - 17, tx + 17, by - 96, 8, 5);
     fillRR(g, tx - 4, by - 84, 8, 14, 4, T.castleDoor);
   }
-  // Door with a scalloped arch.
-  g.beginPath();
-  g.moveTo(cx - 13, by);
-  g.lineTo(cx - 13, by - 22);
-  g.arc(cx, by - 22, 13, Math.PI, TAU);
-  g.lineTo(cx + 13, by);
-  g.closePath();
-  g.fillStyle = T.castleDoor;
-  g.fill();
-  g.strokeStyle = T.castleDark;
-  g.lineWidth = 2;
-  g.stroke();
-  for (const [x, y, r, rot] of [[cx - 34, by - 34, 5, -0.2], [cx + 32, by - 40, 4.5, 0.3], [cx - 58, by - 46, 4, 0], [cx + 58, by - 14, 4, 0.2]]) {
-    paintShell(g, T, x, y, r, rot);
+  if (west) {
+    // The mine's timbered portal on the door's own opening: two posts, a lintel, the rails running out of it and
+    // an ore cart standing on them. All of it inside the curtain wall's width, so the castle's footprint holds.
+    // A square-cut adit, so it is not one of the capsule openings the night lighting fills: those are the keep's
+    // and the two turrets', which this branch leaves exactly where they are.
+    g.fillStyle = T.castleDoor;
+    g.fillRect(cx - 15, by - 40, 30, 40);
+    fillRR(g, cx - 20, by - 46, 40, 8, 1, T.woodDark);
+    fillRR(g, cx - 20, by - 40, 6, 40, 1, T.wood, T.woodDark, 1.2);
+    fillRR(g, cx + 14, by - 40, 6, 40, 1, T.wood, T.woodDark, 1.2);
+    for (const rx of [cx - 8, cx + 8]) line(g, rx, by - 34, rx, by, T.steel, 2);
+    for (let y = by - 30; y <= by - 4; y += 9) line(g, cx - 12, y, cx + 12, y, T.woodDark, 2);
+    fillRR(g, cx - 34, by - 26, 26, 20, 2, T.plank, T.woodDark, 1.5);
+    fillEllipse(g, cx - 28, by - 4, 4.5, 4.5, T.steel);
+    fillEllipse(g, cx - 14, by - 4, 4.5, 4.5, T.steel);
+    fillEllipse(g, cx - 21, by - 28, 10, 4, T.stoneDark);
+  } else {
+    // Door with a scalloped arch.
+    g.beginPath();
+    g.moveTo(cx - 13, by);
+    g.lineTo(cx - 13, by - 22);
+    g.arc(cx, by - 22, 13, Math.PI, TAU);
+    g.lineTo(cx + 13, by);
+    g.closePath();
+    g.fillStyle = T.castleDoor;
+    g.fill();
+    g.strokeStyle = T.castleDark;
+    g.lineWidth = 2;
+    g.stroke();
   }
-  paintStarfish(g, T, cx + 22, by - 106, 5.5, 0.3);
+  if (shire) {
+    // A banner down the keep's face, which is what a white tower has where a sand castle has shells.
+    fillPoly(g, [
+      [cx - 9, by - 116], [cx + 9, by - 116], [cx + 9, by - 74], [cx, by - 82], [cx - 9, by - 74],
+    ], T.flag, T.castleDark, 1.2);
+    for (const tx of [cx - 58, cx + 58]) fillEllipse(g, tx, by - 98, 3.5, 3.5, T.flagAlt);
+  } else {
+    for (const [x, y, r, rot] of [[cx - 34, by - 34, 5, -0.2], [cx + 32, by - 40, 4.5, 0.3], [cx - 58, by - 46, 4, 0], [cx + 58, by - 14, 4, 0.2]]) {
+      paintShell(g, T, x, y, r, rot);
+    }
+    paintStarfish(g, T, cx + 22, by - 106, 5.5, 0.3);
+  }
   g.restore();
   // Flag poles; the flags wave per frame, outside the scaled block, so they follow CASTLE_FLAGS.
   for (const [x, top] of CASTLE_FLAGS) line(g, x, top + 30 * CASTLE.s, x, top, T.woodDark, 2);
@@ -3866,14 +5200,78 @@ const CASTLE_FLAGS = [
   [CASTLE.x + 58 * CASTLE.s, CASTLE.y - 128 * CASTLE.s],
 ];
 
+// A leaded pane on an opening's own box: the glass, a diamond lattice cut to it, and the frame over the top.
+// `radius` lets a round opening (Bag End's) take the same lattice as a square one (the inn's). Windows repeat all
+// over the map, so one shape here changes the jail, the hill and the inn at once.
+function paintLeadedWindow(g, T, x, y, w, h, radius = 2) {
+  fillRR(g, x, y, w, h, radius, T.windowDark);
+  g.save();
+  g.beginPath();
+  rr(g, x, y, w, h, radius);
+  // The clip rounds the lattice off inside a round opening. Each came is cut to the box in arithmetic as well,
+  // because a clip is invisible to the painted checks: a came drawn a window's height past the frame and clipped
+  // back is, as far as they can measure, a came painted on the wall.
+  g.clip();
+  g.globalAlpha = 0.7;
+  for (let k = -h; k < w + h; k += 9) {
+    const from = Math.max(0, -k);
+    const to = Math.min(h, w - k);
+    if (to <= from) continue;
+    line(g, x + k + from, y + from, x + k + to, y + to, T.stoneDark, 1);
+    line(g, x + k + from, y + h - from, x + k + to, y + h - to, T.stoneDark, 1);
+  }
+  g.globalAlpha = 1;
+  g.restore();
+  fillRR(g, x, y, w, h, radius, null, T.woodDark, 2);
+}
+
 // One iron bar, dark-cored with a light edge so it reads on the yard, on a stone wall and across a body of any
 // repo colour.
 function paintBar(g, T, x, y0, y1) {
+  if (T.pack === 'shire') {
+    // Silk on the bar's own line and over its own span, so the cage is the same cage: what holds a session in
+    // is a strand rather than an iron bar, and every box that measures the cage measures the same thing. Thin
+    // and part see-through, because at the bar's own weight it read as a painted railing.
+    g.globalAlpha = 0.5;
+    line(g, x, y0, x, y1, T.slate, JAIL.barW * 0.6);
+    g.globalAlpha = 0.9;
+    line(g, x, y0, x, y1, T.sailCloth, JAIL.barW * 0.3);
+    g.globalAlpha = 1;
+    return;
+  }
   fillRR(g, x - JAIL.barW / 2, y0, JAIL.barW, y1 - y0, JAIL.barW / 2, T.steel, T.stoneDark, 1);
 }
 
 function paintRail(g, T, x0, x1, y) {
+  if (T.pack === 'shire') {
+    g.globalAlpha = 0.5;
+    line(g, x0, y, x1, y, T.slate, 3);
+    g.globalAlpha = 0.9;
+    line(g, x0, y, x1, y, T.sailCloth, 1.6);
+    g.globalAlpha = 1;
+    return;
+  }
   fillRR(g, x0, y - 2.2, x1 - x0, 4.4, 2, T.steel, T.stoneDark, 1);
+}
+
+// A web spun into a corner: a few radials from the corner and the spiral hung between them. `dx`/`dy` say which
+// way the corner opens, so one routine does all four of them.
+function paintWeb(g, T, cx, cy, r, dx, dy) {
+  const spokes = 5;
+  g.globalAlpha = 0.75;
+  for (let i = 0; i <= spokes; i += 1) {
+    const a = (i / spokes) * (Math.PI / 2);
+    line(g, cx, cy, cx + dx * Math.cos(a) * r, cy + dy * Math.sin(a) * r, T.sailCloth, 1.1);
+  }
+  for (let ring = 0.34; ring <= 1.001; ring += 0.22) {
+    for (let i = 0; i < spokes; i += 1) {
+      const a0 = (i / spokes) * (Math.PI / 2);
+      const a1 = ((i + 1) / spokes) * (Math.PI / 2);
+      line(g, cx + dx * Math.cos(a0) * r * ring, cy + dy * Math.sin(a0) * r * ring,
+        cx + dx * Math.cos(a1) * r * ring, cy + dy * Math.sin(a1) * r * ring, T.sailCloth, 1);
+    }
+  }
+  g.globalAlpha = 1;
 }
 
 // The jail: the cell block, the yard, and the part of the cage that stands behind the prisoners. The bars below the
@@ -3889,34 +5287,74 @@ function paintJail(g, T) {
   g.globalAlpha = 0.5;
   fillRR(g, yx + 6, yy + 6, yw - 12, yh - 12, 4, T.path);
   g.globalAlpha = 1;
-  // The block: stone wall under a slate roof.
+  const lair = T.pack === 'shire';
+  // The block: stone wall under a slate roof, or in Middle-earth the rock the lair is cut into. The dark stone
+  // is the tower's own, which is the one thing in the pack's palette that is nearly black.
   fillEllipse(g, bx + bw / 2 + 6, wallY + bh - JAIL.roofH + 2, bw / 2, 8, T.shadow);
-  fillRR(g, bx, wallY, bw, by + bh - wallY, 3, T.stone, T.stoneDark, 2);
-  // Masonry: courses, with the joints in each one offset from the last, so the wall reads as stone not boards.
-  g.globalAlpha = 0.4;
-  let course = 0;
-  for (let ly = wallY + 11; ly < by + bh - 4; ly += 11) {
-    line(g, bx + 3, ly, bx + bw - 3, ly, T.stoneDark, 1);
-    for (let jx = bx + 12 + (course % 2) * 14; jx < bx + bw - 8; jx += 28) line(g, jx, ly, jx, ly + 11, T.stoneDark, 1);
-    course += 1;
+  fillRR(g, bx, wallY, bw, by + bh - wallY, 3, lair ? T.towerStone : T.stone, lair ? T.towerEdge : T.stoneDark, 2);
+  if (lair) {
+    // Rock takes cracks, not courses: the same wall, split rather than laid.
+    g.globalAlpha = 0.6;
+    for (const [sx, sy, ex, ey] of [[26, 8, 40, 44], [40, 44, 30, 68], [96, 4, 108, 40], [150, 10, 138, 52],
+      [196, 6, 210, 50], [210, 50, 202, 68], [58, 30, 72, 66], [170, 40, 180, 68]]) {
+      line(g, bx + sx, wallY + sy, bx + ex, wallY + ey, T.towerEdge, 1.6);
+    }
+    g.globalAlpha = 1;
+  } else {
+    // Masonry: courses, with the joints in each one offset from the last, so the wall reads as stone not boards.
+    g.globalAlpha = 0.4;
+    let course = 0;
+    for (let ly = wallY + 11; ly < by + bh - 4; ly += 11) {
+      line(g, bx + 3, ly, bx + bw - 3, ly, T.stoneDark, 1);
+      for (let jx = bx + 12 + (course % 2) * 14; jx < bx + bw - 8; jx += 28) line(g, jx, ly, jx, ly + 11, T.stoneDark, 1);
+      course += 1;
+    }
+    g.globalAlpha = 1;
   }
-  g.globalAlpha = 1;
-  fillPoly(g, [[bx - 6, wallY + 2], [bx + 28, by], [bx + bw - 28, by], [bx + bw + 6, wallY + 2]], T.slate, T.stoneDark, 2);
-  line(g, bx + 28, by + 1.5, bx + bw - 28, by + 1.5, T.stoneDark, 1.5);
-  // Barred windows: a dark recess behind three bars, under a stone lintel.
+  if (lair) {
+    // A broken rock brow over the mouth, on the roof's own line: the teeth run down rather than up, so the same
+    // band of roof reads as an overhang instead of a battlement.
+    fillRR(g, bx - 6, by - 2, bw + 12, wallY - by + 4, 1, T.towerStone, T.towerEdge, 1.5);
+    for (let mx = bx - 4; mx < bx + bw + 4; mx += 19) {
+      fillPoly(g, [[mx, wallY - 3], [mx + 9.5, wallY + 9], [mx + 19, wallY - 3]], T.towerStone, T.towerEdge, 1.2);
+    }
+    fillRR(g, bx - 6, by - 4, bw + 12, 6, 1, T.towerEdge);
+  } else {
+    fillPoly(g, [[bx - 6, wallY + 2], [bx + 28, by], [bx + bw - 28, by], [bx + bw + 6, wallY + 2]], T.slate, T.stoneDark, 2);
+    line(g, bx + 28, by + 1.5, bx + bw - 28, by + 1.5, T.stoneDark, 1.5);
+  }
+  // Barred windows: a dark recess behind three bars, under a stone lintel. In the lair they are holes in the
+  // rock with the web grown over them.
   for (const [wx, wy, ww, wh2] of JAIL.windows) {
-    fillRR(g, wx - 3, wy - 5, ww + 6, 5, 1, T.stoneDark);
-    fillRR(g, wx, wy, ww, wh2, 2, T.windowDark, T.stoneDark, 2);
+    fillRR(g, wx - 3, wy - 5, ww + 6, 5, 1, lair ? T.towerEdge : T.stoneDark);
+    if (lair) fillRR(g, wx, wy, ww, wh2, 7, T.towerEdge);
+    else fillRR(g, wx, wy, ww, wh2, 2, T.windowDark, T.stoneDark, 2);
     for (let i = 1; i <= 3; i++) paintBar(g, T, wx + (ww * i) / 4, wy + 1, wy + wh2 - 1);
-    line(g, wx, wy + wh2 / 2, wx + ww, wy + wh2 / 2, T.steel, 1.4);
+    line(g, wx, wy + wh2 / 2, wx + ww, wy + wh2 / 2, lair ? T.sailCloth : T.steel, 1.4);
   }
-  // A heavy door with studs and a grille.
   const [dx, dy, dw, dh] = JAIL.door;
-  fillRR(g, dx, dy, dw, dh, 2, T.wood, T.woodDark, 2);
-  for (let i = 0; i < 3; i++) line(g, dx + 4 + i * ((dw - 8) / 2), dy + 3, dx + 4 + i * ((dw - 8) / 2), dy + dh - 3, T.woodDark, 1.2);
-  fillRR(g, dx + dw / 2 - 8, dy + 7, 16, 11, 1, T.windowDark, T.woodDark, 1.5);
-  for (let i = 1; i <= 2; i++) paintBar(g, T, dx + dw / 2 - 8 + (16 * i) / 3, dy + 8, dy + 17);
-  fillEllipse(g, dx + dw - 8, dy + dh / 2 + 4, 2.4, 2.4, T.steel);
+  if (lair) {
+    // The mouth: an opening in the rock on the door's own footing, wider at the floor than at the head, with
+    // silk hanging across it. The door is what a session walks through, so the opening keeps its own box.
+    fillPoly(g, [
+      [dx + 6, dy], [dx + dw - 6, dy], [dx + dw, dy + dh * 0.45], [dx + dw - 2, dy + dh],
+      [dx + 2, dy + dh], [dx, dy + dh * 0.45],
+    ], T.towerEdge);
+    g.globalAlpha = 0.55;
+    for (let i = 1; i <= 4; i += 1) {
+      const sx = dx + (dw * i) / 5;
+      line(g, sx, dy + 2, sx + (i % 2 ? 2.5 : -2.5), dy + dh - 3, T.sailCloth, 1.2);
+    }
+    for (const hy of [dy + dh * 0.3, dy + dh * 0.62]) line(g, dx + 3, hy, dx + dw - 3, hy + 2, T.sailCloth, 1);
+    g.globalAlpha = 1;
+  } else {
+    // A heavy door with studs and a grille.
+    fillRR(g, dx, dy, dw, dh, 2, T.wood, T.woodDark, 2);
+    for (let i = 0; i < 3; i++) line(g, dx + 4 + i * ((dw - 8) / 2), dy + 3, dx + 4 + i * ((dw - 8) / 2), dy + dh - 3, T.woodDark, 1.2);
+    fillRR(g, dx + dw / 2 - 8, dy + 7, 16, 11, 1, T.windowDark, T.woodDark, 1.5);
+    for (let i = 1; i <= 2; i++) paintBar(g, T, dx + dw / 2 - 8 + (16 * i) / 3, dy + 8, dy + 17);
+    fillEllipse(g, dx + dw - 8, dy + dh / 2 + 4, 2.4, 2.4, T.steel);
+  }
   // The cage: corner posts, the rail along the block's base, and the bars that stand behind the crowd.
   for (const px2 of [yx, yx + yw]) fillRR(g, px2 - 3, JAIL.top - 6, 6, JAIL.foot - JAIL.top + 8, 2, T.steel, T.stoneDark, 1);
   const [topRail] = jailRails();
@@ -3929,6 +5367,15 @@ function paintJail(g, T) {
   g.globalAlpha = 0.45;
   fillEllipse(g, (gateL + gateR) / 2, JAIL.foot - 6, (gateR - gateL) / 2 - 6, 9, T.pebble);
   g.globalAlpha = 1;
+  if (lair) {
+    // A web spun into each upper corner of the cage, and egg sacs bunched under the rock. All of it inside the
+    // plot the jail already declares, and clear of the gap the gate leaves.
+    paintWeb(g, T, yx + 2, JAIL.top - 4, 54, 1, 1);
+    paintWeb(g, T, yx + yw - 2, JAIL.top - 4, 54, -1, 1);
+    for (const [sx, sy, sr] of [[bx + 26, wallY + 62, 7], [bx + 38, wallY + 58, 5], [bx + bw - 30, wallY + 60, 6]]) {
+      fillEllipse(g, sx, sy, sr, sr * 1.2, T.sailCloth, T.slate, 1);
+    }
+  }
 }
 
 function paintGraveyard(g, T) {
@@ -3980,32 +5427,110 @@ function paintGraveyard(g, T) {
 // The castle hall, a full-canvas scene of its own.
 function paintHall(g, T) {
   const rand = mulberry32(14);
+  const west = T.pack === 'west';
   g.fillStyle = T.hallWall;
   g.fillRect(-3000, -3000, W + 6000, 3360);
-  for (let row = 0, y = 0; y < 352; row++, y += 34) {
-    for (let x = row % 2 ? -36 : 0; x < W; x += 72) {
-      g.globalAlpha = 0.5 + rand() * 0.4;
-      fillRR(g, x + 2, y + 2, 68, 30, 8, T.hallBrick, T.hallBrickEdge, 1);
+  const rivendell = T.pack === 'shire';
+  if (rivendell) {
+    // A blind arcade rather than a bonded wall: four bays of pointed arches on slender columns, placed in the
+    // stretches of wall the two windows, the archway and the plaque leave free.
+    for (const [x0, x1] of RIVENDELL_BAYS) {
+      const mid = (x0 + x1) / 2;
+      g.beginPath();
+      g.moveTo(x0, 330);
+      g.lineTo(x0, 150);
+      g.quadraticCurveTo(x0, 74, mid, 46);
+      g.quadraticCurveTo(x1, 74, x1, 150);
+      g.lineTo(x1, 330);
+      g.closePath();
+      g.fillStyle = T.hallBrick;
+      g.fill();
+      g.strokeStyle = T.hallBrickEdge;
+      g.lineWidth = 3;
+      g.stroke();
+      // The column either side, with a capital and a base, which is what turns a recess into an arcade.
+      for (const cx of [x0, x1]) {
+        fillRR(g, cx - 8, 120, 16, 214, 3, T.hallWall, T.hallBrickEdge, 2);
+        fillRR(g, cx - 13, 112, 26, 12, 3, T.hallWall, T.hallBrickEdge, 2);
+        fillRR(g, cx - 14, 326, 28, 12, 3, T.hallWall, T.hallBrickEdge, 2);
+      }
+      // A carved leaf where the arch meets its point.
+      fillPoly(g, [[mid, 56], [mid - 11, 74], [mid, 88], [mid + 11, 74]], T.hallWall, T.hallBrickEdge, 1.5);
+      line(g, mid, 58, mid, 86, T.hallBrickEdge, 1.2);
+    }
+  } else {
+    for (let row = 0, y = 0; y < 352; row++, y += 34) {
+      for (let x = row % 2 ? -36 : 0; x < W; x += 72) {
+        g.globalAlpha = 0.5 + rand() * 0.4;
+        // Timber shoring on the brick courses' own rows: a mine is boarded, not bonded.
+        if (west) fillRR(g, x + 2, y + 4, 68, 26, 2, T.hallBrick, T.hallBrickEdge, 1);
+        else fillRR(g, x + 2, y + 2, 68, 30, 8, T.hallBrick, T.hallBrickEdge, 1);
+      }
     }
   }
   g.globalAlpha = 1;
+  // The pit props between the courses, which is what makes boards read as shoring.
+  if (west) for (const x of [66, 442, 800, 1158, 1534]) fillRR(g, x - 11, -10, 22, 366, 2, T.wood, T.woodDark, 1.5);
   // Windows looking out to sea.
-  for (const wx of [300, 1300]) {
-    g.beginPath();
-    g.moveTo(wx - 70, 300);
-    g.lineTo(wx - 70, 140);
-    g.arc(wx, 140, 70, Math.PI, TAU);
-    g.lineTo(wx + 70, 300);
-    g.closePath();
+  for (const wx of HALL_WINDOWS) {
+    // Laid as a closure because it is needed twice: everything drawn into the pane begins a path of its own, so
+    // the stroke that frames the window has to be given the pane's outline again or it outlines the last shape
+    // drawn inside it. It always did: the green hall's windows have never had their frames.
+    const pane = () => hallPane(g, wx, rivendell);
+    pane();
     g.fillStyle = T.hallSky;
     g.fill();
     g.save();
     g.clip();
+    if (rivendell) {
+      // The gorge this hall is built over. The gap between the rock had been filled with the sky colour, which
+      // read as a white pillar rather than as distance: the depth is carried by the far wall, the near rock in
+      // front of it and the fall between them.
+      fillPoly(g, [[wx - 80, 250], [wx - 56, 96], [wx - 4, 96], [wx - 24, 250]], T.castleShade);
+      fillPoly(g, [[wx + 12, 250], [wx + 46, 96], [wx + 80, 96], [wx + 80, 250]], T.castleShade);
+      // Gold trees on the lip of the far wall: behind the near rock, in front of the wall they stand on.
+      for (const [tx, ty, tr] of [[wx - 62, 118, 15], [wx + 60, 110, 13], [wx - 40, 100, 10]]) {
+        fillRR(g, tx - 2, ty, 4, 26, 2, T.trunk);
+        fillEllipse(g, tx, ty, tr, tr * 0.78, T.tree, T.treeDark, 1.2);
+      }
+      fillPoly(g, [[wx - 80, 250], [wx - 50, 122], [wx - 26, 122], [wx - 42, 250]], T.castleDark);
+      fillPoly(g, [[wx + 30, 250], [wx + 52, 122], [wx + 80, 122], [wx + 80, 250]], T.castleDark);
+      // The fall keeps its width as it drops, with two grey threads down it for the water's own texture: a
+      // ribbon that tapered to a point read as a glass rather than as a fall.
+      fillPoly(g, [[wx - 18, 120], [wx + 20, 120], [wx + 15, 248], [wx - 13, 248]], T.sailCloth);
+      for (const fx of [wx - 7, wx + 7]) line(g, fx, 124, fx + (fx < wx ? -2 : 2), 246, T.castleShade, 3);
+      g.fillStyle = T.hallSea;
+      g.fillRect(wx - 80, 246, 160, 60);
+      for (const [sx, sy, sr] of [[wx - 20, 248, 18], [wx + 22, 250, 15], [wx + 1, 244, 25]]) {
+        fillEllipse(g, sx, sy, sr, sr * 0.38, T.sailCloth);
+      }
+      g.restore();
+      pane();
+      g.lineWidth = 8;
+      g.strokeStyle = T.castleDark;
+      g.stroke();
+      // Tracery in the head rather than a mullion: a bar down the full height, as the square windows have, cut
+      // the fall in two.
+      g.beginPath();
+      g.arc(wx, 84, 15, 0, TAU);
+      g.strokeStyle = T.castleDark;
+      g.lineWidth = 5;
+      g.stroke();
+      fillRR(g, wx - 84, 298, 168, 14, 4, T.castle, T.castleDark, 2);
+      continue;
+    }
     g.fillStyle = T.hallSea;
     g.fillRect(wx - 80, 236, 160, 70);
-    fillPoly(g, [[wx + 10, 226], [wx + 10, 196], [wx + 30, 226]], T.sailCloth);
-    fillRR(g, wx - 4, 226, 44, 7, 3, T.wood);
+    if (west) {
+      // A mesa on the flats where the green hall has a boat: same window, same band of ground.
+      fillPoly(g, [[wx - 52, 236], [wx - 40, 198], [wx + 6, 198], [wx + 18, 236]], T.castle, T.castleDark, 1.5);
+      fillPoly(g, [[wx + 14, 236], [wx + 24, 214], [wx + 48, 214], [wx + 56, 236]], T.castleShade);
+    } else {
+      fillPoly(g, [[wx + 10, 226], [wx + 10, 196], [wx + 30, 226]], T.sailCloth);
+      fillRR(g, wx - 4, 226, 44, 7, 3, T.wood);
+    }
     g.restore();
+    pane();
     g.lineWidth = 8;
     g.strokeStyle = T.castleDark;
     g.stroke();
@@ -4013,34 +5538,69 @@ function paintHall(g, T) {
     fillRR(g, wx - 84, 298, 168, 14, 4, T.castle, T.castleDark, 2);
   }
   // Tapestry for the title and the count, and an open archway to the beach below it.
-  g.beginPath();
-  g.moveTo(740, 352);
-  g.lineTo(740, 250);
-  g.arc(800, 250, 60, Math.PI, TAU);
-  g.lineTo(860, 352);
-  g.closePath();
+  const archway = () => {
+    g.beginPath();
+    g.moveTo(740, 352);
+    g.lineTo(740, 250);
+    g.arc(800, 250, 60, Math.PI, TAU);
+    g.lineTo(860, 352);
+    g.closePath();
+  };
+  archway();
   g.fillStyle = T.hallSky;
   g.fill();
   g.save();
   g.clip();
-  g.fillStyle = T.hallSea;
-  g.fillRect(730, 280, 140, 40);
-  g.fillStyle = T.sandLight;
-  g.fillRect(730, 316, 140, 40);
+  if (rivendell) {
+    // A terrace over the valley: the far peaks, the woods under them, and the balustrade at the near edge.
+    fillPoly(g, [[730, 306], [764, 238], [792, 282], [822, 230], [870, 306]], T.castleShade);
+    fillPoly(g, [[730, 306], [758, 262], [788, 306]], T.castleDark);
+    for (const tx of [742, 768, 800, 830, 858]) fillEllipse(g, tx, 302, 17, 12, T.tree);
+    g.fillStyle = T.hallFloor;
+    g.fillRect(730, 306, 140, 50);
+    for (let bx = 740; bx <= 856; bx += 16) fillRR(g, bx, 286, 8, 22, 3, T.hallWall, T.hallBrickEdge, 1.2);
+    fillRR(g, 732, 280, 136, 8, 3, T.hallWall, T.hallBrickEdge, 1.5);
+    fillRR(g, 732, 304, 136, 8, 3, T.hallWall, T.hallBrickEdge, 1.5);
+  } else {
+    g.fillStyle = T.hallSea;
+    g.fillRect(730, 280, 140, 40);
+    g.fillStyle = T.sandLight;
+    g.fillRect(730, 316, 140, 40);
+  }
   g.restore();
+  archway();
   g.lineWidth = 8;
   g.strokeStyle = T.castleDark;
   g.stroke();
   fillRR(g, 582, 30, 436, 138, 8, T.tapestry, T.tapestryEdge, 3);
-  for (let i = 0; i < 12; i++) fillPoly(g, [[586 + i * 36, 166], [604 + i * 36, 184], [622 + i * 36, 166]], T.tapestry, T.tapestryEdge, 1.5);
-  line(g, 570, 30, 1030, 30, T.woodDark, 6);
+  if (rivendell) {
+    // Carved stone takes a moulded lintel and three leaves, where a hanging takes a scalloped fringe.
+    fillRR(g, 570, 22, 460, 14, 4, T.hallWall, T.hallBrickEdge, 2);
+    fillRR(g, 574, 164, 452, 13, 4, T.hallWall, T.hallBrickEdge, 2);
+    for (const lx of [640, 800, 960]) paintCarvedLeaf(g, T, lx, 188, 9, 0);
+  } else {
+    for (let i = 0; i < 12; i++) fillPoly(g, [[586 + i * 36, 166], [604 + i * 36, 184], [622 + i * 36, 166]], T.tapestry, T.tapestryEdge, 1.5);
+    line(g, 570, 30, 1030, 30, T.woodDark, 6);
+  }
   // Shells and starfish set into the wall.
   for (const [x, y, r, rot] of [[120, 60, 9, -0.3], [520, 90, 8, 0.2], [1080, 70, 9, -0.1], [1480, 96, 8, 0.4], [180, 250, 7, 0.1], [1420, 240, 7, -0.2]]) {
-    paintShell(g, T, x, y, r, rot);
+    if (west) paintCrossedPicks(g, T, x, y, r, rot);
+    else if (rivendell) paintCarvedLeaf(g, T, x, y, r, rot);
+    else paintShell(g, T, x, y, r, rot);
   }
-  for (const [x, y, r, rot] of [[470, 220, 11, 0.2], [1140, 210, 12, -0.2], [60, 170, 9, 0]]) paintStarfish(g, T, x, y, r, rot);
+  for (const [x, y, r, rot] of [[470, 220, 11, 0.2], [1140, 210, 12, -0.2], [60, 170, 9, 0]]) {
+    if (rivendell) paintCarvedStar(g, T, x, y, r, rot);
+    else paintStarfish(g, T, x, y, r, rot);
+  }
   // Torch brackets; the flames flicker per frame.
   for (const [x, y] of HALL_TORCHES) {
+    if (rivendell) {
+      // A lamp hung on a chain from the arcade, rather than a torch jammed in a bracket.
+      line(g, x, y - 60, x, y - 6, T.hallBrickEdge, 1.6);
+      fillPoly(g, [[x - 13, y - 6], [x + 13, y - 6], [x + 9, y + 12], [x - 9, y + 12]], T.lanternGlass, T.hallBrickEdge, 1.8);
+      fillRR(g, x - 15, y - 10, 30, 6, 2, T.hallWall, T.hallBrickEdge, 1.5);
+      continue;
+    }
     fillRR(g, x - 9, y + 16, 18, 10, 3, T.torchIron);
     fillPoly(g, [[x - 7, y - 2], [x + 7, y - 2], [x + 3, y + 18], [x - 3, y + 18]], T.woodDark, T.torchIron, 1.5);
   }
@@ -4051,18 +5611,156 @@ function paintHall(g, T) {
   g.strokeStyle = T.hallFloorLine;
   g.lineWidth = 2;
   g.lineCap = 'round';
-  for (let i = 0; i < 70; i++) {
-    const x = rand() * W;
-    const y = 380 + rand() * 520;
-    g.globalAlpha = 0.5 + rand() * 0.4;
-    g.beginPath();
-    g.arc(x, y + 30, 36 + rand() * 20, Math.PI * 1.3, Math.PI * 1.7);
-    g.stroke();
+  if (rivendell) {
+    // Flagstones, jointed in courses that break every other row, where the beach floor has ripples in the sand.
+    g.globalAlpha = 0.8;
+    for (let row = 0, y = 392; y < 920; row++, y += 58) {
+      line(g, -20, y, W + 20, y, T.hallFloorLine, 2);
+      for (let x = -20 + (row % 2 ? 46 : 0); x < W + 20; x += 92) line(g, x, y, x, y + 58, T.hallFloorLine, 2);
+    }
+  } else {
+    for (let i = 0; i < 70; i++) {
+      const x = rand() * W;
+      const y = 380 + rand() * 520;
+      g.globalAlpha = 0.5 + rand() * 0.4;
+      g.beginPath();
+      g.arc(x, y + 30, 36 + rand() * 20, Math.PI * 1.3, Math.PI * 1.7);
+      g.stroke();
+    }
   }
   g.globalAlpha = 1;
+  // Six tables dealt for poker, centred at 386. HALL.floor starts at 410, so the crowd wanders in front of them
+  // rather than through them, and none of the six stands in the door arch at 740..860.
+  if (west) for (const x of MINE_TABLES) paintPokerTable(g, T, x, 386);
+  if (T.pack === 'shire') {
+    // A star laid into the floor, and benches on the same six footings the mine puts its tables on.
+    g.globalAlpha = 0.85;
+    paintCarvedStar(g, T, 800, 660, 120, 0, 5);
+    paintCarvedStar(g, T, 800, 660, 52, Math.PI / 6, 4);
+    g.globalAlpha = 1;
+    for (const x of MINE_TABLES) {
+      fillEllipse(g, x + 3, 400, 62, 8, T.shadow);
+      fillRR(g, x - 62, 372, 124, 16, 5, T.hallWall, T.hallBrickEdge, 2);
+      for (const lx of [x - 48, x + 36]) fillRR(g, lx, 386, 12, 18, 3, T.hallBrick, T.hallBrickEdge, 1.5);
+      fillRR(g, x - 62, 350, 124, 8, 3, T.hallBrick, T.hallBrickEdge, 1.5);
+    }
+  }
+}
+
+// Six card tables along the mine's back wall, clear of the arch in the middle of it.
+const MINE_TABLES = Object.freeze([190, 400, 610, 990, 1200, 1410]);
+
+// Crossed picks, hung where the green hall sets a shell into the wall and inside the same radius.
+function paintCrossedPicks(g, T, x, y, r, rot) {
+  g.save();
+  g.translate(x, y);
+  g.rotate(rot);
+  for (const turn of [0.7, -0.7]) {
+    g.save();
+    g.rotate(turn);
+    line(g, 0, -r * 1.1, 0, r * 1.1, T.woodDark, Math.max(1.8, r * 0.26));
+    g.beginPath();
+    g.arc(0, -r * 1.05, r * 0.72, Math.PI * 1.15, Math.PI * 1.85);
+    g.strokeStyle = T.steel;
+    g.lineWidth = Math.max(1.6, r * 0.3);
+    g.stroke();
+    g.restore();
+  }
+  g.restore();
+}
+
+// A table laid for poker: baize, a hand dealt round it, the pot in the middle and a lamp at the rim.
+function paintPokerTable(g, T, x, y) {
+  const rx = 78;
+  const ry = 26;
+  fillEllipse(g, x + 4, y + ry + 8, rx * 0.9, 8, T.shadow);
+  for (const side of [-0.6, 0.6]) fillRR(g, x + side * rx - 3, y + 4, 6, ry + 16, 2, T.woodDark);
+  fillEllipse(g, x, y + 5, rx, ry, T.woodDark);
+  fillEllipse(g, x, y, rx, ry, T.baize, T.baizeEdge, 2);
+  // Four hands dealt face down, and the pot between them.
+  for (const dx of [-52, -18, 16, 50]) {
+    fillRR(g, x + dx - 7, y - 5, 9, 13, 2, T.signBoard, T.woodDark, 1);
+    fillRR(g, x + dx - 2, y - 7, 9, 13, 2, T.signBoard, T.woodDark, 1);
+  }
+  for (let i = 0; i < 3; i++) fillEllipse(g, x - 4 + i * 5, y + 9 - i * 2, 6, 2.6, T.coin, T.coinEdge, 1);
+  fillRR(g, x + rx - 18, y - 16, 10, 16, 2, T.lanternGlass, T.woodDark, 1.5);
+}
+
+// The stretches of the hall's back wall that the two lancets (230..370, 1230..1370), the archway (740..860) and
+// the plaque (582..1018) leave free, which is where an arcade can stand without covering any of them.
+const RIVENDELL_BAYS = Object.freeze([
+  Object.freeze([40, 200]), Object.freeze([400, 560]), Object.freeze([1040, 1200]), Object.freeze([1400, 1560]),
+]);
+
+// A carved leaf, where the green hall sets a shell into the wall and inside the same radius.
+function paintCarvedLeaf(g, T, x, y, r, rot) {
+  g.save();
+  g.translate(x, y);
+  g.rotate(rot);
+  g.beginPath();
+  g.moveTo(0, -r * 1.15);
+  g.quadraticCurveTo(r * 0.85, -r * 0.2, 0, r * 1.15);
+  g.quadraticCurveTo(-r * 0.85, -r * 0.2, 0, -r * 1.15);
+  g.closePath();
+  g.fillStyle = T.hallWall;
+  g.fill();
+  g.strokeStyle = T.hallBrickEdge;
+  g.lineWidth = 1.4;
+  g.stroke();
+  line(g, 0, -r * 1.05, 0, r * 1.05, T.hallBrickEdge, 1);
+  for (const k of [-0.5, 0, 0.5]) {
+    line(g, 0, r * k, r * 0.5, r * (k - 0.32), T.hallBrickEdge, 0.9);
+    line(g, 0, r * k, -r * 0.5, r * (k - 0.32), T.hallBrickEdge, 0.9);
+  }
+  g.restore();
+}
+
+// A carved star, on the starfish's own footing and radius.
+function paintCarvedStar(g, T, x, y, r, rot, lineWidth = 1.4) {
+  const pts = [];
+  for (let i = 0; i < 12; i += 1) {
+    const a = rot - Math.PI / 2 + (i * Math.PI) / 6;
+    const d = i % 2 ? r * 0.42 : r;
+    pts.push([x + Math.cos(a) * d, y + Math.sin(a) * d]);
+  }
+  fillPoly(g, pts, T.hallWall, T.hallBrickEdge, lineWidth);
 }
 
 const HALL_TORCHES = [[120, 190], [520, 190], [1080, 190], [1480, 190]];
+
+// The two windows in the hall's back wall, and the box a lancet takes in it. One list, because what is drawn
+// through a window has to agree with where the window is.
+export const HALL_WINDOWS = Object.freeze([300, 1300]);
+// What each kind of window takes about its own centre line, as [left, top, width, height]. A lancet comes to a
+// point 46 down; a round head springs from 140 and peaks at 70. A firework shown through either has to sit in
+// both, because the same display is seen through both.
+export const HALL_LANCET_BOX = Object.freeze([-70, 46, 140, 254]);
+export const HALL_ARCH_BOX = Object.freeze([-70, 70, 140, 230]);
+
+// The same fireworks seen from inside the White Halls, through the two lancets over the gorge. Each sits inside
+// the pane it is seen through, so it is true with the clip and without it.
+export const HALL_FIREWORKS = Object.freeze([
+  Object.freeze({ x: HALL_WINDOWS[0], y: 158, r: 48, phase: 0, rays: 13 }),
+  Object.freeze({ x: HALL_WINDOWS[1], y: 150, r: 42, phase: 3.4, rays: 11 }),
+]);
+
+// One of the hall's two windows, as a path and nothing else, so the wall can fill and stroke it and a firework
+// can be clipped to it. A lancet is two curves meeting at a point, which is the one line that says this hall is
+// not that hall; every other pack takes the round head it always had.
+function hallPane(g, wx, lancet) {
+  g.beginPath();
+  g.moveTo(wx - 70, 300);
+  if (lancet) {
+    g.lineTo(wx - 70, 156);
+    g.quadraticCurveTo(wx - 70, 74, wx, 46);
+    g.quadraticCurveTo(wx + 70, 74, wx + 70, 156);
+  } else {
+    g.lineTo(wx - 70, 140);
+    g.arc(wx, 140, 70, Math.PI, TAU);
+  }
+  g.lineTo(wx + 70, 300);
+  g.closePath();
+}
 
 // The mirror ball hangs on its chain in front of the wall, between the title plaque (618..982, 42..154), which is
 // drawn after it and hides the top of the chain, and the door arch below. No guest's badge reaches that high.
@@ -4138,6 +5836,7 @@ const PIECE_COLOURS = Object.freeze(['#d64545', '#3b6fd6', '#e0b23a', '#3f9d55']
 
 function paintCottageRoom(g, T) {
   const rand = mulberry32(31);
+  const west = T.pack === 'west';
   const floorY = 392;
   g.fillStyle = T.roomWall;
   g.fillRect(-3000, -3000, W + 6000, 3000 + floorY);
@@ -4153,10 +5852,50 @@ function paintCottageRoom(g, T) {
   for (const x of [180, 560, 940, 1320]) fillRR(g, x, -40, 44, 120, 3, T.woodDark);
 
   for (const [x, y, w, h] of ROOM_WINDOWS) {
+    if (T.pack === 'shire') {
+      // A round window, as every opening in a hobbit hole is, looking onto the country outside.
+      const cx2 = x + w / 2;
+      const cy2 = y + h / 2;
+      const rr2 = Math.min(w, h) / 2;
+      fillEllipse(g, cx2, cy2, rr2 + 10, rr2 + 10, T.wood, T.woodDark, 2);
+      fillEllipse(g, cx2, cy2, rr2, rr2, T.hallSky);
+      g.save();
+      g.beginPath();
+      g.arc(cx2, cy2, rr2, 0, TAU);
+      g.clip();
+      fillEllipse(g, cx2, cy2 + rr2 * 0.55, rr2 * 1.3, rr2 * 0.8, T.grass);
+      fillEllipse(g, cx2 - rr2 * 0.5, cy2 + rr2 * 0.3, rr2 * 0.5, rr2 * 0.3, T.grassDark);
+      for (let hx = cx2 - rr2; hx < cx2 + rr2; hx += 13) fillEllipse(g, hx, cy2 + rr2 * 0.18, 7, 4, T.yew);
+      fillEllipse(g, cx2 + rr2 * 0.42, cy2 - rr2 * 0.42, 11, 11, T.lanternGlass);
+      g.globalAlpha = 0.6;
+      for (let k = -rr2 * 2; k < rr2 * 2; k += 16) {
+        line(g, cx2 + k, cy2 - rr2, cx2 + k + rr2 * 2, cy2 + rr2, T.woodDark, 1.2);
+        line(g, cx2 + k, cy2 + rr2, cx2 + k + rr2 * 2, cy2 - rr2, T.woodDark, 1.2);
+      }
+      g.globalAlpha = 1;
+      g.restore();
+      fillEllipse(g, cx2, cy2, rr2, rr2, null, T.woodDark, 3);
+      fillRR(g, x - 16, y + h + 10, w + 32, 10, 2, T.woodLight, T.woodDark, 1.5);
+      continue;
+    }
     fillRR(g, x - 10, y - 10, w + 20, h + 20, 4, T.wood, T.woodDark, 2);
     fillRR(g, x, y, w, h, 2, T.hallSky);
     fillEllipse(g, x + w * 0.7, y + h * 0.28, 16, 16, T.lanternGlass);
-    for (let i = 0; i < 9; i++) fillEllipse(g, x + 14 + rand() * (w - 28), y + 12 + rand() * (h * 0.6), 1.4, 1.4, T.foam);
+    if (west) {
+      // Desert through the window: the flats, a mesa on them and a saguaro against it.
+      g.save();
+      g.beginPath();
+      g.rect(x, y, w, h);
+      g.clip();
+      g.fillStyle = T.hallSea;
+      g.fillRect(x, y + h * 0.62, w, h * 0.38);
+      fillPoly(g, [[x + 22, y + h * 0.62], [x + 36, y + h * 0.3], [x + 82, y + h * 0.3], [x + 96, y + h * 0.62]], T.castle, T.castleDark, 1.5);
+      fillRR(g, x + w * 0.74, y + h * 0.4, 7, h * 0.24, 3.5, T.tree);
+      fillRR(g, x + w * 0.66, y + h * 0.48, 6, h * 0.12, 3, T.treeDark);
+      g.restore();
+    } else {
+      for (let i = 0; i < 9; i++) fillEllipse(g, x + 14 + rand() * (w - 28), y + 12 + rand() * (h * 0.6), 1.4, 1.4, T.foam);
+    }
     line(g, x + w / 2, y, x + w / 2, y + h, T.wood, 5);
     line(g, x, y + h / 2, x + w, y + h / 2, T.wood, 5);
     fillRR(g, x - 16, y + h + 10, w + 32, 10, 2, T.woodLight, T.woodDark, 1.5);
@@ -4179,15 +5918,112 @@ function paintCottageRoom(g, T) {
   g.strokeStyle = T.stoneDark;
   g.lineWidth = 2;
   g.stroke();
+  if (west) {
+    // The vault, standing open in the hearth's own opening: bars of bullion stacked inside it, and the door swung
+    // back against the wall on the near side with its wheel on it.
+    for (let row = 0; row < 3; row++) {
+      for (let i = 0; i < 3 - row; i++) {
+        fillRR(g, hx - 42 + i * 30 + row * 15, hy - 34 - row * 14, 26, 12, 2, T.coin, T.coinEdge, 1);
+      }
+    }
+    fillRR(g, hx + hw / 2 - 6, hy - 150, 22, 150, 3, T.steel, T.stoneDark, 2);
+    g.beginPath();
+    g.arc(hx + hw / 2 + 5, hy - 74, 12, 0, TAU);
+    g.strokeStyle = T.stoneDark;
+    g.lineWidth = 3;
+    g.stroke();
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 4;
+      line(g, hx + hw / 2 + 5 - Math.cos(a) * 15, hy - 74 - Math.sin(a) * 15,
+        hx + hw / 2 + 5 + Math.cos(a) * 15, hy - 74 + Math.sin(a) * 15, T.stoneDark, 2.5);
+    }
+  }
   fillRR(g, hx - hw / 2 - 28, hy - 176, hw + 56, 16, 3, T.wood, T.woodDark, 2);
   for (const dx of [-46, 46]) {
     fillRR(g, hx + dx - 6, hy - 206, 12, 30, 2, T.shell, T.stoneDark, 1);
     fillEllipse(g, hx + dx, hy - 208, 3, 4, T.flame);
   }
-  fillRR(g, hx - 24, hy - 46, 48, 30, 6, T.torchIron);
-  line(g, hx, hy - 60, hx, hy - 46, T.torchIron, 2);
-  for (const [dx, dy] of [[-30, -6], [0, -2], [26, -8]]) {
-    fillRR(g, hx + dx - 14, hy + dy - 8, 28, 10, 3, T.woodDark);
+  if (!west) {
+    // A fire in the grate: a bed of embers, logs across it, flames between them and a pot on a crane over the
+    // lot, with the light washing up the back of the opening. It is painted into the room's own layer, so it is
+    // still, like the mantel's candles: nothing in here is on a frame.
+    // The back of the opening is sooted first: against the window grey the flames had nothing to burn against.
+    g.globalAlpha = 0.8;
+    g.beginPath();
+    g.moveTo(hx - hw / 2, hy);
+    g.lineTo(hx - hw / 2, hy - 92);
+    g.arc(hx, hy - 92, hw / 2, Math.PI, TAU);
+    g.lineTo(hx + hw / 2, hy);
+    g.closePath();
+    g.fillStyle = T.torchIron;
+    g.fill();
+    g.globalAlpha = 0.14;
+    fillEllipse(g, hx, hy - 26, hw / 2 - 8, 58, T.flame);
+    g.globalAlpha = 0.3;
+    fillEllipse(g, hx, hy - 12, 56, 28, T.flame);
+    g.globalAlpha = 1;
+    // Tongues, tallest in the middle, drawn before the logs so they come up between them.
+    for (const [dx, h2, w2] of [[-26, 28, 8], [-9, 52, 11], [10, 42, 10], [27, 24, 7]]) {
+      g.beginPath();
+      g.moveTo(hx + dx - w2, hy - 8);
+      g.quadraticCurveTo(hx + dx - w2 * 0.9, hy - 8 - h2 * 0.62, hx + dx + w2 * 0.3, hy - 8 - h2);
+      g.quadraticCurveTo(hx + dx + w2 * 0.7, hy - 8 - h2 * 0.5, hx + dx + w2, hy - 8);
+      g.closePath();
+      g.fillStyle = T.flame;
+      g.fill();
+      g.globalAlpha = 0.85;
+      fillEllipse(g, hx + dx, hy - 14, w2 * 0.3, h2 * 0.22, T.flameCore);
+      g.globalAlpha = 1;
+    }
+    // Logs across the embers, each with its lit end, and the coals glowing under them.
+    for (const [dx, dy] of [[-30, -6], [0, -2], [26, -8]]) {
+      fillRR(g, hx + dx - 14, hy + dy - 8, 28, 10, 4, T.woodDark, T.torchIron, 1.2);
+      fillEllipse(g, hx + dx + 13, hy + dy - 3, 3.5, 4.5, T.flame);
+    }
+    for (const [dx, dy, r] of [[-38, 0, 5], [-16, 2, 4], [4, 1, 5.5], [24, 2, 4], [40, 0, 4.5]]) {
+      fillEllipse(g, hx + dx, hy + dy - 3, r, r * 0.6, T.flame);
+      fillEllipse(g, hx + dx, hy + dy - 3, r * 0.45, r * 0.3, T.flameCore);
+    }
+    // The crane: a bar across the opening, a hook down from it and the pot hanging in the flames.
+    fillRR(g, hx - 58, hy - 106, 116, 5, 2, T.torchIron);
+    line(g, hx, hy - 104, hx, hy - 62, T.torchIron, 2);
+    fillRR(g, hx - 24, hy - 62, 48, 30, 6, T.torchIron);
+    fillRR(g, hx - 28, hy - 64, 56, 6, 3, T.torchIron);
+  }
+  if (west) {
+    // The teller's counter and its grille, in the one stretch of wall between the two windows.
+    const cx = 880;
+    fillRR(g, cx - 78, floorY - 104, 156, 104, 2, T.wood, T.woodDark, 2);
+    fillRR(g, cx - 86, floorY - 118, 172, 16, 3, T.woodLight, T.woodDark, 2);
+    fillRR(g, cx - 60, floorY - 214, 120, 96, 2, T.windowDark, T.woodDark, 2);
+    for (let x = cx - 52; x <= cx + 52; x += 13) line(g, x, floorY - 208, x, floorY - 124, T.steel, 2);
+    line(g, cx - 58, floorY - 166, cx + 58, floorY - 166, T.steel, 2);
+    // The day's takings against the wainscot, with a hand truck beside them.
+    const sx = 1330;
+    for (const [dx, dy, r] of [[0, 0, 22], [42, 4, 20], [20, -30, 18]]) {
+      fillEllipse(g, sx + dx, floorY + dy - r * 0.5, r, r * 0.72, T.signBoard, T.woodDark, 1.5);
+      line(g, sx + dx - 5, floorY + dy - r, sx + dx + 5, floorY + dy - r, T.woodDark, 2);
+    }
+    fillRR(g, sx + 74, floorY - 108, 6, 104, 2, T.steel);
+    fillRR(g, sx + 96, floorY - 108, 6, 104, 2, T.steel);
+    fillRR(g, sx + 72, floorY - 16, 32, 8, 2, T.steel);
+    fillEllipse(g, sx + 78, floorY - 2, 8, 8, T.woodDark);
+  }
+
+  if (T.pack === 'shire') {
+    // A dresser of plates on the wainscot, which is what a parlour has where a hall has a tapestry.
+    const dx = 440;
+    fillRR(g, dx - 62, floorY - 210, 124, 108, 3, T.wood, T.woodDark, 2);
+    fillRR(g, dx - 68, floorY - 216, 136, 10, 2, T.woodDark);
+    for (const sy of [floorY - 176, floorY - 140]) {
+      fillRR(g, dx - 58, sy, 116, 5, 1, T.woodDark);
+      for (let px = dx - 46; px < dx + 46; px += 30) {
+        fillEllipse(g, px, sy - 12, 12, 12, T.signBoard, T.woodDark, 1.4);
+        fillEllipse(g, px, sy - 12, 6, 6, T.flowers[0]);
+      }
+    }
+    fillRR(g, dx - 58, floorY - 128, 116, 26, 2, T.roomWallShade, T.woodDark, 1.5);
+    for (const hx of [dx - 30, dx + 30]) fillEllipse(g, hx, floorY - 115, 3, 3, T.thatch);
   }
 
   // Floor: boards, then a rug in the middle of the room.
@@ -4201,13 +6037,39 @@ function paintCottageRoom(g, T) {
     const x = rand() * W;
     line(g, x, y, x, y + 34, T.roomFloorLine, 2);
   }
-  const [rx, ry, rw, rh] = [300, 560, 1000, 280];
-  g.globalAlpha = 0.9;
-  fillRR(g, rx, ry, rw, rh, 26, T.rug, T.woodDark, 2);
-  g.globalAlpha = 0.35;
-  fillRR(g, rx + 26, ry + 24, rw - 52, rh - 48, 18, null, T.signBoard, 3);
-  g.globalAlpha = 1;
+  if (!west) {
+    const [rx, ry, rw, rh] = [300, 560, 1000, 280];
+    g.globalAlpha = 0.9;
+    fillRR(g, rx, ry, rw, rh, 26, T.rug, T.woodDark, 2);
+    g.globalAlpha = 0.35;
+    fillRR(g, rx + 26, ry + 24, rw - 52, rh - 48, 18, null, T.signBoard, 3);
+    g.globalAlpha = 1;
+  }
   for (const t of COTTAGE_TABLES) paintGameTable(g, T, t);
+}
+
+// A clerk's desk on the game table's own footing and radius: the seats a session sits on are tied to the table,
+// so the table cannot move. A baize cloth, an open ledger, coin in stacks and a sack at the rim.
+function paintClerkDesk(g, T, x, y, rx, ry) {
+  fillEllipse(g, x + 4, y + ry + 14, rx * 0.92, 11, T.shadow);
+  for (const side of [-0.55, 0.55]) fillRR(g, x + side * rx - 4, y + 6, 8, ry + 12, 2, T.woodDark);
+  fillEllipse(g, x, y + 6, rx, ry, T.woodDark);
+  fillEllipse(g, x, y, rx, ry, T.wood, T.woodDark, 2);
+  fillEllipse(g, x, y, rx * 0.82, ry * 0.76, T.baize, T.baizeEdge, 1.5);
+  // The ledger, open at the middle, with its two pages ruled.
+  fillRR(g, x - 30, y - 13, 28, 24, 2, T.signBoard, T.woodDark, 1.5);
+  fillRR(g, x - 2, y - 13, 28, 24, 2, T.signBoard, T.woodDark, 1.5);
+  line(g, x - 2, y - 13, x - 2, y + 11, T.woodDark, 1.5);
+  for (let i = 1; i < 4; i++) {
+    line(g, x - 26, y - 13 + i * 6, x - 6, y - 13 + i * 6, T.signMuted, 1);
+    line(g, x + 2, y - 13 + i * 6, x + 22, y - 13 + i * 6, T.signMuted, 1);
+  }
+  for (let i = 0; i < 3; i++) {
+    const h = 4 + i * 3;
+    fillRR(g, x + 32 + i * 11, y + 4 - h, 9, h, 1.5, T.coin, T.coinEdge, 1);
+  }
+  fillEllipse(g, x - rx * 0.78, y + ry * 0.3, 13, 10, T.signBoard, T.woodDark, 1.5);
+  line(g, x - rx * 0.78 - 4, y + ry * 0.3 - 9, x - rx * 0.78 + 4, y + ry * 0.3 - 9, T.woodDark, 2);
 }
 
 // One table per COTTAGE_TABLES entry, its game drawn large enough to read across the room. Static, like the rug and
@@ -4216,6 +6078,10 @@ function paintGameTable(g, T, t) {
   const { x, y, game } = t;
   const rx = COTTAGE_TABLE_RX;
   const ry = COTTAGE_TABLE_RY;
+  if (T.pack === 'west') {
+    paintClerkDesk(g, T, x, y, rx, ry);
+    return;
+  }
   fillEllipse(g, x + 4, y + ry + 14, rx * 0.92, 11, T.shadow);
   for (const side of [-0.55, 0.55]) fillRR(g, x + side * rx - 4, y + 6, 8, ry + 12, 2, T.woodDark);
   fillEllipse(g, x, y + 6, rx, ry, T.woodDark);
@@ -4352,7 +6218,7 @@ const lookPhase = (look) => (Math.floor(Math.abs(Number(look) || 0)) % 997) / 99
 
 // `onIsland` is taken locally as `islandChanged`: the module already exports an `onIsland(x, y)` for the Valhalla
 // islet's shape, and a parameter of that name would shadow it inside every function drawn here.
-export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIsland: islandChanged, mode: initialMode, island: initialIsland } = {}) {
+export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIsland: islandChanged, mode: initialMode, island: initialIsland, theme: initialTheme } = {}) {
   const win = typeof window !== 'undefined' ? window : globalThis;
   const doc = typeof document !== 'undefined' ? document : null;
   const ctx = canvas.getContext('2d');
@@ -4424,7 +6290,10 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   const mqDark = media('(prefers-color-scheme: dark)');
   const mqReduce = media('(prefers-reduced-motion: reduce)');
   let reduced = !!(mqReduce && mqReduce.matches);
-  let theme = mqDark && mqDark.matches ? THEMES.dusk : THEMES.day;
+  let pack = THEME_KEYS.includes(initialTheme) ? initialTheme : DEFAULT_THEME;
+  let theme = resolveTheme(pack, !!(mqDark && mqDark.matches));
+  // What every cached layer is keyed by: a pack and a time of day each repaint the lot.
+  const themeKey = () => `${theme.pack}|${theme.night ? 'dusk' : 'day'}`;
 
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -4504,7 +6373,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   function ensureSceneLayer() {
     const art = SCENE_ART[scene];
     if (!art) return;
-    const key = `${scene}|${bgKey}|${theme === THEMES.dusk ? 'dusk' : 'day'}`;
+    const key = `${scene}|${bgKey}|${themeKey()}`;
     if (sceneBg && sceneBgKey === key) return;
     sceneBg = paintLayer(sceneBg, art.paint);
     sceneBgKey = sceneBg ? key : '';
@@ -4512,7 +6381,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
 
   // The sea alone, so a board that changes its islands costs no repaint: the islands themselves are drawn per frame.
   function ensureWorldLayer() {
-    const key = `world|${bgKey}|${theme === THEMES.dusk ? 'dusk' : 'day'}`;
+    const key = `world|${bgKey}|${themeKey()}`;
     if (worldBg && worldBgKey === key) return;
     worldBg = paintLayer(worldBg, paintWorldSea);
     worldBgKey = worldBg ? key : '';
@@ -4684,7 +6553,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
 
   function travel(c, to, t0, opts = {}) {
     const from = { x: c.px, y: c.py, area: c.area };
-    const legs = planJourney(from, to, { stamp: !!opts.stamp });
+    const legs = planJourney(from, to, { stamp: !!opts.stamp, lane: sailLane(pack) });
     const journey = scheduleJourney(legs, t0, opts);
     if (!journey.legs.length && opts.fade) {
       // Already at the door or gate: without a leg to end on, nothing would ever fade it out.
@@ -4698,7 +6567,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     cancelFerries(c.id, t0);
     const journeys = [...chars.values()].filter((o) => o !== c && o.journey).map((o) => o.journey);
     holdForGate(journey, journeys);
-    const trips = scheduleFerries(journey, t0);
+    const trips = scheduleFerries(journey, t0, sailLane(pack));
     planBoats(journey, trips, { journeys, ferries }, t0);
     for (const trip of trips) ferries.push({ owner: c.id, ...trip });
     c.journey = journey;
@@ -4744,7 +6613,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       return;
     }
     const others = [...chars.values()].filter((o) => o !== c && o.journey).map((o) => ({ id: o.id, journey: o.journey }));
-    const plan = turnBack({ id: c.id, boat, journey: was, to, opts }, others, ferries, t);
+    const plan = turnBack({ id: c.id, boat, journey: was, to, opts, lane: sailLane(pack) }, others, ferries, t);
     ferries = plan.ferries;
     c.journey = plan.journey;
     c.pending = plan.pending;
@@ -5276,10 +7145,10 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
 
   // A warm halo around a window or a lantern, then the pane itself. The cottages, the sand castle and the
   // lighthouse share it, so the village has one language for a light burning inside something.
-  function warmHalo(x, y, r, peak) {
+  function warmHalo(x, y, r, peak, rgb = WARM_LIGHT) {
     const glow = ctx.createRadialGradient(x, y, 2, x, y, r);
-    glow.addColorStop(0, `rgba(${WARM_LIGHT}, ${peak})`);
-    glow.addColorStop(1, `rgba(${WARM_LIGHT}, 0)`);
+    glow.addColorStop(0, `rgba(${rgb}, ${peak})`);
+    glow.addColorStop(1, `rgba(${rgb}, 0)`);
     ctx.fillStyle = glow;
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
   }
@@ -5299,6 +7168,212 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     line(ctx, x, y + h / 2, x + w, y + h / 2, T.woodDark, 1.5);
   }
 
+  // The stray on the roads. Everything it paints stays within HORSE_REACH of the line it is on, which is what
+  // keeps a hoof off the grass at a corner.
+  function drawHorse(env) {
+    const T = env.theme;
+    const { x, y, dir } = horseAt(env.t, env.reduced);
+    const gait = env.reduced ? 0 : Math.sin(env.t * 7);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(dir < 0 ? -1 : 1, 1);
+    fillEllipse(ctx, 1, 12, 14, 3.5, T.shadow);
+    // Legs first, so the body covers where they meet it.
+    for (const [lx, phase] of [[-8, 0], [-5, 1.6], [7, 3.1], [10, 4.7]]) {
+      const swing = gait * Math.sin(phase) * 3;
+      line(ctx, lx, -1, lx + swing, 11, T.woodDark, 2.6);
+    }
+    fillRR(ctx, -11, -10, 22, 11, 5, T.cat, T.woodDark, 1.5);
+    // Neck, head and muzzle, carried forward: nothing here is more than HORSE_REACH off the line it runs on.
+    fillRR(ctx, 7, -13, 6, 8, 3, T.cat, T.woodDark, 1.5);
+    fillRR(ctx, 6, -13, 9, 6, 3, T.cat, T.woodDark, 1.5);
+    fillPoly(ctx, [[8, -13], [10, -15], [12, -12]], T.woodDark);
+    line(ctx, -11, -9, -14, -3, T.woodDark, 2.4);
+    ctx.restore();
+  }
+
+  // Creeping the inside of the graveyard fence. Everything he paints stays within GOLLUM_REACH of the point he
+  // is at, which is what keeps him off the rails at a corner.
+  const GOLLUM_DRAW = 1.15;
+  function drawGollum(env) {
+    const T = env.theme;
+    const { x, y, dir } = gollumAt(env.t, env.reduced);
+    const creep = env.reduced ? 0 : Math.sin(env.t * 4.5);
+    ctx.save();
+    ctx.translate(x, y);
+    // Drawn at 1.15, because at 1 he stood a head shorter than the ghosts he is creeping past and read as a bug.
+    ctx.scale(dir < 0 ? -GOLLUM_DRAW : GOLLUM_DRAW, GOLLUM_DRAW);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    fillEllipse(ctx, 1, 9, 14, 3.5, T.shadow);
+    // The head sits on top of everything else, not beside it. Drawn level with the body, the two ellipses read
+    // as a creature with two heads, which is what the first go at him looked like.
+    // He skulks upright rather than trotting on all fours: knees bent deep, arms hanging past them, head craned
+    // out in front of the body. On all fours he was a grey insect, whatever size the head was.
+    // Limbs taper: thigh and upper arm are drawn thick, shin and forearm thin over the top of them, which is
+    // most of what stops a stick figure reading as a stick figure.
+    for (const [fx, phase] of [[-5, 1.3], [2, 3.8]]) {
+      const swing = creep * Math.sin(phase) * 2.4;
+      const knee = [1 + swing * 0.5, 1];
+      line(ctx, -2, -4, knee[0], knee[1], T.steel, 3.4);
+      line(ctx, knee[0], knee[1], fx + swing, 7, T.steel, 2.4);
+      // A splayed foot, because a leg that ends in a point is a stick.
+      for (const toe of [-2.2, 0, 2.2]) line(ctx, fx + swing, 7, fx + swing + toe, 8.4, T.slate, 1.1);
+    }
+    for (const [hx, phase] of [[4, 2.6], [9, 0]]) {
+      const swing = creep * Math.sin(phase) * 1.8;
+      const elbow = [hx * 0.7 + swing, -3];
+      line(ctx, 0, -9, elbow[0], elbow[1], T.steel, 3.2);
+      line(ctx, elbow[0], elbow[1], hx + swing, 4, T.steel, 2.2);
+      for (const f of [-1.6, 0, 1.6]) line(ctx, hx + swing, 4, hx + swing + f * 0.7, 6, T.slate, 1);
+    }
+    // A narrow hunched body: ribs over the chest, a shaded flank under it, and a neck craned forward.
+    fillEllipse(ctx, -1, -6, 4.5, 5.5, T.steel, T.slate, 1.3);
+    ctx.globalAlpha = 0.45;
+    fillEllipse(ctx, -2.2, -4, 3, 3.4, T.slate);
+    ctx.globalAlpha = 1;
+    for (const [ry, rw] of [[-8.4, 3.4], [-6.6, 4], [-4.8, 3.6]]) line(ctx, -1 - rw / 2, ry, -1 + rw / 2, ry + 0.4, T.slate, 0.9);
+    line(ctx, 0, -9, 3, -11, T.steel, 3.2);
+    // The head: a cranium over a smaller jaw rather than one ellipse, with the jaw shaded and the cheek hollow
+    // above it. Two circles stacked is the difference between a skull and a ball.
+    fillEllipse(ctx, 4.6, -12.4, 5.4, 4.4, T.steel, T.slate, 1.3);
+    fillEllipse(ctx, 5, -16, 6.9, 6, T.steel, T.slate, 1.4);
+    ctx.globalAlpha = 0.4;
+    fillEllipse(ctx, 4.6, -11.6, 4.4, 3, T.slate);
+    fillEllipse(ctx, 1.6, -13.6, 2, 1.6, T.slate);
+    ctx.globalAlpha = 1;
+    // The eyes, with a lid over the top of each: a plain disc is the one shape that reads as a cartoon.
+    for (const ex of [2.5, 8.5]) {
+      fillEllipse(ctx, ex, -16.4, 3, 2.8, T.flameCore, T.slate, 1);
+      fillEllipse(ctx, ex + 0.6, -16.4, 1.3, 1.6, T.slate);
+      ctx.beginPath();
+      ctx.arc(ex, -16.4, 3, Math.PI * 1.06, Math.PI * 1.94);
+      ctx.strokeStyle = T.slate;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    // Two nostril slits where a nose would be, and a wide thin mouth across the jaw with a few teeth in it.
+    for (const nx of [4.8, 6.4]) line(ctx, nx, -13.9, nx + 0.3, -13.1, T.slate, 1);
+    // In the slate the mouth vanished into the shading on the jaw, and three teeth made a skull of him.
+    line(ctx, 1.8, -11.6, 8, -11.2, T.ink, 1.4);
+    for (const tx of [3.6, 6.4]) line(ctx, tx, -11.5, tx + 0.15, -10.7, T.flameCore, 0.8);
+    for (const [hx, hy] of [[2, -20], [5, -20.5], [8, -20]]) line(ctx, hx, hy, hx - 1.5, hy - 2.5, T.slate, 1.3);
+    ctx.restore();
+  }
+
+  // What keeps the lair, walking the inside of the jail's plot. Everything it paints stays within SPIDER_REACH
+  // of the point it is at, which is what keeps a leg off the road at a corner.
+  function drawSpider(env) {
+    const T = env.theme;
+    const { x, y, dir } = spiderAt(env.t, env.reduced);
+    const step = env.reduced ? 0 : Math.sin(env.t * 6);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(dir < 0 ? -1 : 1, 1);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    fillEllipse(ctx, 0, 8, 11, 3, T.shadow);
+    // Eight legs arched over the body, the near four stepping out of phase with the far four.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 4; i += 1) {
+        const sp = step * Math.sin(i * 1.7 + (side > 0 ? 0 : 1.9)) * 1.6;
+        const reach = 7.5 + i * 1.1;
+        const ax = (i - 1.5) * 2.6;
+        strokePolyline(ctx, [[ax, -2], [ax + side * reach * 0.6, -8 - i * 0.6 + sp], [ax + side * reach, 6 + sp]], T.towerEdge, 1.8);
+      }
+    }
+    // Abdomen behind, thorax in front, a cluster of eyes on it and two fangs under.
+    fillEllipse(ctx, -6, -3, 8, 6.5, T.towerStone, T.towerEdge, 1.3);
+    fillEllipse(ctx, -7, -4.5, 3.4, 2.2, T.slate);
+    fillEllipse(ctx, 3, -2, 5, 4.2, T.towerStone, T.towerEdge, 1.3);
+    for (const [ex, ey, er] of [[6, -4, 1.3], [7.4, -2, 1.1], [5.4, -0.4, 1], [7.8, -4.4, 0.9]]) {
+      fillEllipse(ctx, ex, ey, er, er, T.flame);
+    }
+    for (const side of [-1, 1]) line(ctx, 6.4, 0.6, 7.8 + side * 0.7, 3.6, T.towerEdge, 1.4);
+    ctx.restore();
+  }
+
+  // The grey pilgrim's fireworks. Night only, and nothing here starts a frame: env.t is the village's own tick.
+  function drawFireworks(env) {
+    if (!env.night) return;
+    const T = env.theme;
+    const [fx0, fy0] = FIREWORK_FROM;
+    for (const f of FIREWORKS) {
+      const s2 = fireworkAt(env.t, env.reduced, f);
+      if (!s2) continue;
+      paintFirework(ctx, T, f, s2, fx0, fy0);
+    }
+  }
+
+  // One firework, wherever it is fired from: the rocket on its way up, or the burst opening. Shared, because the
+  // hall shows the same fireworks through its own windows and a second copy would drift from this one.
+  function paintFirework(g, T, f, s2, fromX, fromY) {
+    if (s2.burst === 0) {
+      const k = s2.rise;
+      const tail = Math.max(0, k - 0.22);
+      g.globalAlpha = 0.55;
+      line(g, fromX + (f.x - fromX) * tail, fromY + (f.y - fromY) * tail,
+        fromX + (f.x - fromX) * k, fromY + (f.y - fromY) * k, T.flame, 2);
+      g.globalAlpha = 1;
+      fillEllipse(g, fromX + (f.x - fromX) * k, fromY + (f.y - fromY) * k, 2.6, 2.6, T.flameCore);
+      return;
+    }
+    // The burst: rays out from the centre, each with a spark on the end, fading as it opens.
+    const k = s2.burst;
+    const rr = f.r * (0.3 + 0.7 * Math.min(1, k * 1.7));
+    const fall = k * k * FIREWORK_DROOP;
+    g.globalAlpha = Math.max(0, 1 - k) * 0.95;
+    for (let i = 0; i < f.rays; i += 1) {
+      const a = (i / f.rays) * TAU + f.phase;
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
+      line(g, f.x + c * rr * 0.34, f.y + sn * rr * 0.34 + fall * 0.12, f.x + c * rr, f.y + sn * rr + fall, T.flame, 2);
+      fillEllipse(g, f.x + c * rr, f.y + sn * rr + fall, 2.2, 2.2, T.flameCore);
+    }
+    // A second, shorter ring between the first, so the burst has some depth to it.
+    g.globalAlpha = Math.max(0, 1 - k) * 0.55;
+    for (let i = 0; i < f.rays; i += 1) {
+      const a = ((i + 0.5) / f.rays) * TAU + f.phase;
+      const c = Math.cos(a) * rr * 0.64;
+      const sn = Math.sin(a) * rr * 0.64;
+      line(g, f.x + c * 0.4, f.y + sn * 0.4, f.x + c, f.y + sn + fall * 0.6, T.flame, 1.4);
+    }
+    g.globalAlpha = Math.max(0, 1 - k) * 0.95;
+    fillEllipse(g, f.x, f.y, rr * 0.16, rr * 0.16, T.flameCore);
+    g.globalAlpha = 1;
+  }
+
+  // The same display, seen from inside the hall through its two windows: over the gorge in the White Halls, over
+  // the sea in the sand castle. Clipped to the pane, so a spark cannot land on the stone, and fired from the sill
+  // so a rocket climbs the window before it goes off.
+  function drawHallFireworks(env) {
+    for (const f of HALL_FIREWORKS) {
+      const s2 = fireworkAt(env.t, env.reduced, f);
+      if (!s2) continue;
+      ctx.save();
+      hallPane(ctx, f.x, env.pack === 'shire');
+      ctx.clip();
+      paintFirework(ctx, env.theme, f, s2, f.x, 296);
+      ctx.restore();
+    }
+  }
+
+  // The ents, which dance and so cannot be painted into a layer that is drawn once. Everything else on the map
+  // that moves is a session going somewhere; this is scenery, so it rides the ambient tick and never asks for a
+  // frame of its own.
+  function drawEnts(env) {
+    for (const [x, y, r] of TREES) paintEnt(ctx, env.theme, x, y, r, entSway(env.t, env.reduced, x, y));
+  }
+
+  // One ent walking the ring the four roads make round the workshop, where the frontier has its horse. Its
+  // footing stays on the road (ENT_WALK_FOOT); the rest of it rises well above the band, the way a session
+  // walking the road does. Ambient tick, still under reduced motion, like everything else that is only scenery.
+  function drawWalkingEnt(env) {
+    const { x, y } = walkingEntAt(env.t, env.reduced);
+    const stride = entStride(env.t, env.reduced);
+    paintEnt(ctx, env.theme, x, y, ENT_WALK_R, stride * 0.5, stride, ENT_WALK_SEED);
+  }
+
   function drawAmbient(env) {
     const { t, theme: T } = env;
     // Lit by whoever is in the room, idle or recent alike: dark windows with guests inside read as a bug.
@@ -5311,8 +7386,17 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     if (env.night) {
       for (const box of CASTLE_WINDOWS) litWindow(T, box, 26, false);
       const [lx, ly, lw, lh] = LIGHTHOUSE.lantern;
-      warmHalo(LIGHTHOUSE.x, LIGHTHOUSE.y, LIGHTHOUSE.glow, 0.5);
-      fillRR(ctx, lx + 2, ly + 2, lw - 4, lh - 4, 2, T.windowLit, T.slate, 1.2);
+      warmHalo(LIGHTHOUSE.x, LIGHTHOUSE.y, LIGHTHOUSE.glow, 0.5, T.beamLight);
+      if (env.pack === 'shire') {
+        // The Eye, in the lantern's own opening: a lidded almond with a slit, looking wherever the beam points.
+        const cx = lx + lw / 2;
+        const cy = ly + lh / 2;
+        const look = Math.cos(beamAngle(env.t, env.reduced)) * 3;
+        fillPoly(ctx, [[lx, cy], [cx, ly + 1], [lx + lw, cy], [cx, ly + lh - 1]], `rgb(${T.beamLight})`, T.towerEdge, 1.2);
+        fillEllipse(ctx, cx + look, cy, 2.6, 5.2, T.towerEdge);
+      } else {
+        fillRR(ctx, lx + 2, ly + 2, lw - 4, lh - 4, 2, T.windowLit, T.slate, 1.2);
+      }
     }
 
     const needs = countOf('needs_you');
@@ -5443,6 +7527,36 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   function drawPalm(env, x, y, h, lean) {
     const T = env.theme;
     const sway = env.reduced ? 0 : Math.sin(env.t * 0.8 + x * 0.01) * 1 + Math.sin(env.t * 1.9 + y) * 0.35;
+    if (env.pack === 'shire') {
+      // A white tree on the palm's footing, keeping the sway that is the island's one bit of ambient motion.
+      ctx.save();
+      ctx.translate(sway * 0.8, 0);
+      fillEllipse(ctx, x + 10, y + 2, 26, 6, T.shadow);
+      const w = h * 0.1;
+      fillRR(ctx, x - w / 2, y - h, w, h, w / 2, T.palmTrunk);
+      for (const [ax, ay] of [[-0.3, 0.72], [0.28, 0.66], [-0.16, 0.86], [0.2, 0.9]]) {
+        line(ctx, x, y - h * 0.62, x + h * ax, y - h * ay, T.palmTrunk, w * 0.5);
+        fillEllipse(ctx, x + h * ax, y - h * ay, h * 0.16, h * 0.12, T.palm);
+      }
+      fillEllipse(ctx, x, y - h * 1.02, h * 0.2, h * 0.14, T.palmDark);
+      ctx.restore();
+      return;
+    }
+    if (env.west) {
+      // A saguaro on the palm's footing: the island's one bit of ambient sway, so it keeps swaying.
+      ctx.save();
+      ctx.translate(sway * 0.8, 0);
+      fillEllipse(ctx, x + 10, y + 2, 26, 6, T.shadow);
+      const w = h * 0.13;
+      fillRR(ctx, x - w / 2, y - h, w, h, w / 2, T.palm);
+      for (const [ax, top, join] of [[x - h * 0.26, y - h * 0.74, y - h * 0.46], [x + h * 0.22, y - h * 0.62, y - h * 0.34]]) {
+        const aw = w * 0.72;
+        fillRR(ctx, ax - aw / 2, top, aw, join - top + aw, aw / 2, T.palmDark);
+        fillRR(ctx, Math.min(ax, x) - aw / 2, join, Math.abs(ax - x) + aw, aw, aw / 2, T.palmDark);
+      }
+      ctx.restore();
+      return;
+    }
     const tx = x + lean + sway * 3;
     const ty = y - h;
     ctx.save();
@@ -5524,6 +7638,16 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   }
 
   // The fire in the cottage room's hearth, on the ambient clock like the hall's torches.
+  // The counting room's lamp, where the cottage has its fire: the same warm pool of light, and no flame.
+  function drawCountingRoomLamp() {
+    const { x, y } = HEARTH;
+    const glow = ctx.createRadialGradient(x, y - 70, 6, x, y - 70, 210);
+    glow.addColorStop(0, 'rgba(246, 214, 140, 0.34)');
+    glow.addColorStop(1, 'rgba(246, 214, 140, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - 220, y - 280, 440, 440);
+  }
+
   function drawHearthFire(env) {
     const T = env.theme;
     const { x, y } = HEARTH;
@@ -5675,15 +7799,46 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     if (c.index % 2 === 0 && (c.slotDx || 0) >= 60 * k && umbrellaFits(x, y, k)) {
       const ux = x + 30;
       const uy = y - 84;
-      line(ctx, ux, y + 4, ux + 3, uy, T.woodDark, 2.5);
-      const segs = 6;
-      for (let i = 0; i < segs; i++) {
-        const a0 = Math.PI + (i / segs) * Math.PI;
-        const a1 = Math.PI + ((i + 1) / segs) * Math.PI;
-        fillPoly(ctx, [[ux + 3, uy - 16], [ux + 3 + Math.cos(a0) * 38, uy + 3 + Math.sin(a0) * 4], [ux + 3 + Math.cos(a1) * 38, uy + 3 + Math.sin(a1) * 4]],
-          i % 2 ? colors[1] : T.stripeBase, T.woodDark, 0.8);
+      if (T.pack === 'shire') {
+        // A mallorn in place of the parasol, on the parasol's own reach: the same 76 px of shade between
+        // ux - 35 and ux + 41, with the bole on the right so the crown shades the lounger without standing in it.
+        // The crown is cut to the parasol's own box: dx - r no lower than -38 and dx + r no higher than 38 about
+        // the bole, and no blob's top above uy - 16, which is where the dome's point was. The rest of the box's
+        // height goes to the bole, so the thing reads as a tree rather than as a canopy on a stick.
+        const bole = ux + 3;
+        line(ctx, bole, y + 4, bole, uy + 20, T.trunk, 5);
+        for (const side of [-1, 1]) line(ctx, bole, y + 4, bole + side * 7, y + 4, T.trunk, 3);
+        for (const [bx, by2] of [[-16, 6], [15, 4]]) line(ctx, bole, uy + 22, bole + bx, uy + by2, T.trunk, 2.5);
+        for (const [dx, dy, r] of [[-25, 12, 12], [26, 12, 11], [0, 14, 14]]) {
+          fillEllipse(ctx, bole + dx, uy + dy, r, r * 0.74, T.treeDark);
+        }
+        for (const [dx, dy, r] of [[-14, -2, 16], [12, 0, 15], [-1, -4, 15]]) {
+          fillEllipse(ctx, bole + dx, uy + dy, r, r * 0.74, T.tree);
+        }
+        fillEllipse(ctx, bole - 9, uy - 6, 7, 5, T.treeLight);
+        for (const [dx, dy] of [[-20, 22], [8, 24], [22, 20]]) fillEllipse(ctx, bole + dx, uy + dy, 3.5, 5, T.treeLight);
+      } else if (T.pack === 'west') {
+        // A brush ramada in place of the parasol, on the parasol's own reach: the same 76 px of shade between
+        // ux - 35 and ux + 41, which is what `umbrellaBox` declares and every beach check is laid out around.
+        // Flat rather than domed, and posted on the right so the roof shades the lounger without standing in it.
+        const roof = uy - 12;
+        for (const px of [ux - 2, ux + 38]) fillRR(ctx, px - 2, roof + 13, 4, y + 4 - roof - 13, 1.5, T.woodDark);
+        line(ctx, ux - 2, roof + 20, ux - 30, roof + 13, T.woodDark, 2);
+        for (let i = 0; i < 9; i++) {
+          fillRR(ctx, ux - 35 + i * 8.4, roof, 6.5, 8, 2, i % 2 ? T.thatch : T.thatchDark);
+        }
+        fillRR(ctx, ux - 35, roof + 7, 76, 6, 2, T.wood, T.woodDark, 1.2);
+      } else {
+        line(ctx, ux, y + 4, ux + 3, uy, T.woodDark, 2.5);
+        const segs = 6;
+        for (let i = 0; i < segs; i++) {
+          const a0 = Math.PI + (i / segs) * Math.PI;
+          const a1 = Math.PI + ((i + 1) / segs) * Math.PI;
+          fillPoly(ctx, [[ux + 3, uy - 16], [ux + 3 + Math.cos(a0) * 38, uy + 3 + Math.sin(a0) * 4], [ux + 3 + Math.cos(a1) * 38, uy + 3 + Math.sin(a1) * 4]],
+            i % 2 ? colors[1] : T.stripeBase, T.woodDark, 0.8);
+        }
+        fillEllipse(ctx, ux + 3, uy - 17, 2.5, 2.5, T.woodDark);
       }
-      fillEllipse(ctx, ux + 3, uy - 17, 2.5, 2.5, T.woodDark);
     }
     fillEllipse(ctx, x + 3, y + 3, 24, 4.5, T.shadow);
     line(ctx, x - 16, y - 36, x - 20, y + 3, T.woodDark, 2.5);
@@ -5756,6 +7911,104 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     return poseOf(lane).sits ? 3 : LEG;
   }
 
+  // How far a hat pushes the badge above the body. Written once: drawCharacter paints the badge there and
+  // restingGeometry puts the clickable one in the same place, so a change of hat cannot move only one of them.
+  function headroom(feat, pack) {
+    if (themePack(pack).hatted) return HAT_LIFT;
+    return feat.accessory === 'hat' || feat.accessory === 'antenna' ? HAT_LIFT : 0;
+  }
+
+  // The waistcoat, the gun belt and the holster, clipped to whatever silhouette the body has: one set of numbers
+  // dresses a round, a square and a tall body without a waistcoat hanging off the side of a circle. The waistcoat
+  // takes the body's own edge colour and the hat the look's accent, both of which the palette already holds clear
+  // of every body, so the kit adds no colour that would have to be cleared against twelve of them.
+  function drawWestKit(x, top, m, shape, tint, edge, T) {
+    const K = WEST_KIT;
+    const bottom = top + m.h;
+    ctx.save();
+    ctx.beginPath();
+    if (shape === 'round') ctx.ellipse(x, top + m.h / 2, m.w / 2, m.h / 2, 0, 0, TAU);
+    else rr(ctx, x - m.w / 2, top, m.w, m.h, shape === 'tall' ? m.w / 2 : 9);
+    ctx.clip();
+    const collarY = top + m.h * K.collar;
+    ctx.fillStyle = edge;
+    ctx.fillRect(x - m.w / 2, collarY, m.w, bottom - collarY);
+    // The opening down the front, in the body's own colour, meeting at the lapel point.
+    fillPoly(ctx, [
+      [x - m.w * 0.30, collarY], [x + m.w * 0.30, collarY], [x, top + m.h * K.lapel],
+    ], tint);
+    const beltY = top + m.h * K.belt;
+    ctx.fillStyle = T.woodDark;
+    ctx.fillRect(x - m.w / 2, beltY, m.w, K.beltH);
+    fillRR(ctx, x - 4, beltY - 0.5, 8, K.beltH + 1, 1.5, T.steel);
+    // The holster on the near hip, and the revolver's butt above the belt where nothing trims it.
+    const hx = x + m.w * 0.26;
+    fillRR(ctx, hx - 3.5, beltY + K.beltH - 0.5, 7, 8, 2, T.woodDark);
+    fillRR(ctx, hx - 2.2, beltY - 4.5, 4.4, 5, 1.5, T.steel);
+    ctx.restore();
+  }
+
+  // Curly hair over the crown, pointed ears at the temples and a waistcoat: clipped to the body's own silhouette,
+  // so one set of numbers dresses a round, a square and a tall body. Hair and waistcoat take the body's edge
+  // colour and the buttons its accent, both of which the palette already holds clear of every body.
+  function drawShireKit(x, top, m, shape, tint, edge, accent, eyeY, waistcoat) {
+    const K = SHIRE_KIT;
+    const bottom = top + m.h;
+    const half = m.w / 2;
+    ctx.save();
+    ctx.beginPath();
+    if (shape === 'round') ctx.ellipse(x, top + m.h / 2, half, m.h / 2, 0, 0, TAU);
+    else rr(ctx, x - half, top, m.w, m.h, shape === 'tall' ? half : 9);
+    ctx.clip();
+    // A row of curls across the crown, and two more tucked behind the ears.
+    for (let i = 0; i < K.hairRows; i += 1) {
+      const t = i / (K.hairRows - 1);
+      fillEllipse(ctx, x - half + 2 + t * (m.w - 4), top + 5 + Math.sin(t * Math.PI) * -2, 6, 5.5, edge);
+    }
+    fillEllipse(ctx, x - half + 3, top + 13, 5, 6, edge);
+    fillEllipse(ctx, x + half - 3, top + 13, 5, 6, edge);
+    // The waistcoat, below the lowest mouth of the three shapes, with its two buttons. A deck chair and a boat's
+    // gunwale both cut across it, so a lounger and a passenger go without, the way the frontier belt does.
+    if (waistcoat) {
+      const collarY = top + m.h * K.collar;
+      ctx.fillStyle = edge;
+      ctx.fillRect(x - half, collarY, m.w, bottom - collarY);
+      fillPoly(ctx, [[x - m.w * 0.28, collarY], [x + m.w * 0.28, collarY], [x, top + m.h * K.lapel]], tint);
+      fillEllipse(ctx, x - 5, top + m.h * 0.86, 2, 2, accent);
+      fillEllipse(ctx, x + 5, top + m.h * 0.86, 2, 2, accent);
+    }
+    ctx.restore();
+    // The ears sit outside the silhouette, so they are drawn after the clip is lifted. They tip at exactly what
+    // the character's own box allows either side, and no further.
+    for (const side of [-1, 1]) {
+      const base = x + side * (half - 1);
+      fillPoly(ctx, [
+        [base, eyeY + 4], [base, eyeY - 5], [x + side * K.earTip, eyeY - 9],
+      ], tint, edge, 1.2);
+    }
+  }
+
+  // A hobbit's feet, on the legs' own footing and inside the 9 px either side the leg box declares.
+  function drawShireFeet(x, y, edge) {
+    for (const side of [-1, 1]) {
+      fillEllipse(ctx, x + side * 5.5, y - 1.5, 3.5, 3, edge);
+      line(ctx, x + side * 4, y - 4.5, x + side * 4.5, y - 6.5, edge, 1.2);
+      line(ctx, x + side * 7, y - 4.5, x + side * 7, y - 6.5, edge, 1.2);
+    }
+  }
+
+  // Pinned on the waistcoat, and painted after the arms: the near arm swings straight through the lapel it sits on.
+  // Body colour inside the body's own edge colour, the one pair the palette guarantees reads, whatever the repo.
+  function drawSheriffStar(cx, cy, r, tint, edge) {
+    const pts = [];
+    for (let i = 0; i < 10; i += 1) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const d = i % 2 ? r * 0.44 : r;
+      pts.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d]);
+    }
+    fillPoly(ctx, pts, tint, edge, 1.2);
+  }
+
   function drawCharacter(c, env) {
     const { t, theme: T, reduced } = env;
     const s = c.session;
@@ -5784,7 +8037,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     const bottom = y - baseLift(c) + lift;
     const top = bottom - m.h;
     const colour = c.colour || NO_REPO_COLOUR;
-    const dusk = T === THEMES.dusk;
+    const dusk = T.night;
     const tint = dusk ? colour.dark : colour.light;
     const edge = dusk ? colour.darkEdge : colour.lightEdge;
     const ink = colour.ink || T.ink;
@@ -5817,6 +8070,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       ctx.moveTo(x + 6, bottom - 3);
       ctx.lineTo(x + 6 - swing * 4, y - 1 + lift);
       ctx.stroke();
+      if (env.pack === 'shire' && !walking) drawShireFeet(x, y - 1 + lift, edge);
     }
 
     ctx.beginPath();
@@ -5828,6 +8082,16 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.strokeStyle = edge;
     ctx.stroke();
     fillEllipse(ctx, x, top + m.h * 0.7, m.w * 0.26, m.h * 0.15, 'rgba(255, 255, 255, 0.3)');
+    // Everyone in the frontier town is hatted, which is what `headroom` lifts every badge by: a look left
+    // bare-headed here would hang its badge over a gap. The waistcoat and the belt are the part a deck chair or a
+    // boat's gunwale cuts through, so those two alone are what a lounger and a passenger go without.
+    const westHat = env.west;
+    const westKit = westHat && !inBoat && !lounging;
+    if (westKit) drawWestKit(x, top, m, f.shape, tint, edge, T);
+    // The same rule for the Shire: a waistcoat is what a deck chair or a gunwale cuts across, the hair and the
+    // ears are not, so the two are gated apart.
+    const shire = env.pack === 'shire';
+    const shireKit = shire && !inBoat && !lounging;
 
     const shY = top + m.h * 0.56;
     const leftX = x - m.w / 2 + 1;
@@ -5882,6 +8146,9 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     } else {
       const a = Math.PI * 0.36 - swing * 0.45;
       armTo(rightX, shY, rightX + Math.cos(a) * 9, shY + Math.sin(a) * 9, tint, edge);
+    }
+    if (westKit && f.accessory === 'antenna') {
+      drawSheriffStar(x - m.w * 0.17, top + m.h * WEST_KIT.star, 4.2, tint, edge);
     }
 
     const eyeY = top + m.h * (f.shape === 'tall' ? 0.3 : 0.4);
@@ -5950,7 +8217,27 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     }
 
     const accent = accentFor(colour, f.hue);
-    if (f.accessory === 'hat') {
+    if (shire) drawShireKit(x, top, m, f.shape, tint, edge, accent, eyeY, shireKit);
+    if (westHat) {
+      // The five looks tell five sessions of one repo apart as trimmings instead: the star (with the kit, above),
+      // a bandana, a feather in the hatband, glasses (drawn with the face), or the hat alone.
+      const K = WEST_KIT;
+      const seat = top + (f.shape === 'round' ? K.seatRound : K.seat);
+      // The crown's top is one HAT_LIFT plus the brim's own thickness above the body, whatever the brim sits on, so
+      // every shape lifts its badge by the same amount. A round body is a point at its top edge, which is why the
+      // brim sits lower there and the crown grows to meet it rather than hovering over the gap.
+      const crownY = top - HAT_LIFT - 2;
+      const crownW = m.w * K.crownW;
+      fillRR(ctx, x - crownW / 2, crownY, crownW, seat - crownY, 4, accent);
+      fillEllipse(ctx, x, seat, m.w * K.brimRX, K.brimRY, accent);
+      fillRR(ctx, x - crownW / 2, seat - 5.5, crownW, 4, 1.5, edge);
+      if (f.accessory === 'hat') {
+        fillPoly(ctx, [[x - crownW / 2 + 1, seat - 4], [x - crownW / 2 - 5, crownY + 1], [x - crownW / 2 + 4, seat - 5]], tint, edge, 1);
+      } else if (f.accessory === 'scarf' && westKit) {
+        fillRR(ctx, x - m.w / 2 - 1, top + m.h * 0.56, m.w + 2, 5, 2.5, accent);
+        fillPoly(ctx, [[x - 7, top + m.h * 0.60], [x + 7, top + m.h * 0.60], [x, top + m.h * 0.74]], accent, edge, 1);
+      }
+    } else if (f.accessory === 'hat') {
       fillEllipse(ctx, x, top + 2, m.w * 0.56, 3.8, accent);
       fillRR(ctx, x - m.w * 0.3, top - 11, m.w * 0.6, 13, 5, accent);
       line(ctx, x - m.w * 0.3 + 1, top - 1.5, x + m.w * 0.3 - 1, top - 1.5, 'rgba(255, 255, 255, 0.35)', 2);
@@ -5962,7 +8249,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       fillEllipse(ctx, x + 4, top - 11, 3.4, 3.4, accent);
     }
 
-    c.badgeY = top - 19 - (f.accessory === 'hat' || f.accessory === 'antenna' ? 9 : 0);
+    c.badgeY = top - 19 - headroom(f, env.pack);
     if (glass) drawMargarita(ctx, T, glass.x, glass.y, glass.tilt);
     if (passport) drawPassport(passport, T);
 
@@ -6155,12 +8442,23 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       ctx.stroke();
     }
     fillEllipse(ctx, x, y, 18, 4.5, T.shadow);
+    const grey = env.pack === 'shire';
     line(ctx, x - 5, bottom - 2, x - 6, y - 1, T.patrolNavy, 5);
     line(ctx, x + 5, bottom - 2, x + 6, y - 1, T.patrolNavy, 5);
-    fillRR(ctx, x - w / 2, top, w, h, 10, T.patrolKhaki, T.patrolKhakiShade, 2);
-    fillRR(ctx, x - w / 2 + 1, top + h * 0.7, w - 2, 4, 1, T.patrolNavy);
-    // The badge: a small white shield on the chest.
-    fillPoly(ctx, [[x + 3, top + 12], [x + 10, top + 12], [x + 10, top + 17], [x + 6.5, top + 21], [x + 3, top + 17]], T.patrolWhite, T.patrolNavy, 1);
+    if (grey) {
+      // A robe that widens to the ground, a staff, a hat and a beard, all inside GUARD_BOX: the box reaches 60
+      // above the feet and 18 either side, and the hat's point stops at 58 and the staff at 17.
+      fillPoly(ctx, [
+        [x - w / 2 + 3, top], [x + w / 2 - 3, top], [x + w / 2 + 1, y - 1], [x - w / 2 - 1, y - 1],
+      ], T.patrolKhaki, T.patrolKhakiShade, 2);
+      // A cord at the waist, not a uniform belt: the navy band read as one more piece of kit.
+      line(ctx, x - w / 2 + 2, top + h * 0.74, x + w / 2 - 2, top + h * 0.72, T.patrolKhakiShade, 2.5);
+    } else {
+      fillRR(ctx, x - w / 2, top, w, h, 10, T.patrolKhaki, T.patrolKhakiShade, 2);
+      fillRR(ctx, x - w / 2 + 1, top + h * 0.7, w - 2, 4, 1, T.patrolNavy);
+      // The badge: a small white shield on the chest.
+      fillPoly(ctx, [[x + 3, top + 12], [x + 10, top + 12], [x + 10, top + 17], [x + 6.5, top + 21], [x + 3, top + 17]], T.patrolWhite, T.patrolNavy, 1);
+    }
 
     const shY = top + h * 0.5;
     const leftX = x - w / 2 + 1;
@@ -6199,6 +8497,16 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       fillRR(ctx, stampHand.x - 1.5, stampHand.y - 4, 3, 6, 1, T.patrolKhakiShade);
     }
 
+    if (grey) {
+      // The beard, before the face, so the eyes land above it rather than on it. It is broad and it is most of
+      // his height: a narrow wedge under the chin read as a cravat, which is what made him nobody in particular.
+      fillPoly(ctx, [
+        [x - 11, top + 17], [x + 11, top + 17], [x + 10, top + 27], [x + 6, top + 35],
+        [x, top + 38], [x - 6, top + 35], [x - 10, top + 27],
+      ], T.patrolWhite, T.patrolKhakiShade, 1.2);
+      // Hair falling either side of it, from under where the brim will go.
+      for (const hx of [-12, 12]) fillPoly(ctx, [[x + hx, top + 6], [x + hx * 1.15, top + 22], [x + hx * 0.55, top + 20]], T.patrolWhite);
+    }
     // Face, looking left at the pier; now and then a glance up the deck at the queue, and a blink.
     const glance = !still && (t % 6.2) > 4.6 ? -1.5 : 0;
     const lookX = state.stamp || state.wave ? -2 : -1.5;
@@ -6212,6 +8520,39 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       fillEllipse(ctx, x + 5 + lookX, eyeY, 2.2, 2.6, INK_DARK);
     }
     line(ctx, x - 3 + lookX, top + h * 0.58, x + 2 + lookX, top + h * 0.58, INK_DARK, 1.6);
+    if (grey) {
+      // The hat goes on last, over the face, which is the only order that reads: a brim drawn under the eyes is
+      // a collar. The peaked cap below used to be drawn over this one, point and all.
+      const brows = () => {
+        for (const bx of [-6, 4]) line(ctx, x + bx - 2.5, top + 11.5, x + bx + 2.5, top + 10.5, T.patrolWhite, 2.6);
+      };
+      brows();
+      // Crown: a tall cone falling back off the brim, curved rather than straight, which is what makes it floppy.
+      ctx.beginPath();
+      ctx.moveTo(x - 10, top + 5);
+      ctx.quadraticCurveTo(x - 7, top - 9, x + 4, top - 16);
+      ctx.quadraticCurveTo(x + 1, top - 5, x + 9, top + 5);
+      ctx.closePath();
+      ctx.fillStyle = T.patrolKhakiShade;
+      ctx.fill();
+      ctx.strokeStyle = T.patrolNavy;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      // Brim: wider than his shoulders, and drooping at the front where he is looking.
+      fillEllipse(ctx, x - 1, top + 6, 16, 5, T.patrolKhakiShade, T.patrolNavy, 1.4);
+      fillEllipse(ctx, x - 9, top + 7.5, 8, 3, T.patrolKhakiShade, T.patrolNavy, 1.2);
+      // The staff last of all, in front of the robe and across the brim: behind them it was covered end to end
+      // and only its head showed, which read as a lamp post standing beside him.
+      strokePolyline(ctx, [[x - 15, y - 1], [x - 16, top + 18], [x - 15, top], [x - 16, top - 10]], T.patrolNavy, 3.5);
+      for (const [kx, ky, kr] of [[-16, -12, 3.4], [-12.5, -14, 2.2], [-17, -8, 2.2]]) {
+        fillEllipse(ctx, x + kx, top + ky, kr, kr * 0.9, T.patrolNavy);
+      }
+      fillEllipse(ctx, x - 15.5, top - 11.5, 2, 1.8, T.patrolWhite);
+      // The hand that holds it, where the arms put it.
+      fillEllipse(ctx, x - 15, top + 27, 3.4, 3.4, T.patrolKhaki, T.patrolKhakiShade, 1.2);
+      ctx.restore();
+      return;
+    }
     // Cap: a navy crown with a white badge, and its peak towards the pier.
     fillRR(ctx, x - 13, top - 9, 26, 12, 5, T.patrolNavy);
     fillEllipse(ctx, x - 7, top + 2, 10, 3, T.patrolNavy);
@@ -6256,7 +8597,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   // plate, no repo colour and no state of any kind, because it is a PR and has none.
   function drawVisitor(v, env) {
     const T = env.theme;
-    const dusk = T === THEMES.dusk;
+    const dusk = T.night;
     const colour = v.colour || VISITOR_COATS[0];
     const tint = dusk ? colour.dark : colour.light;
     const edge = dusk ? colour.darkEdge : colour.lightEdge;
@@ -6532,7 +8873,8 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     const p = PLACES[key];
     const [cx, cy] = p.sign;
     drawSignBoard(env, {
-      name: p.name, lanes: p.lanes, cx, cy, words: !!p.words, post: p.post !== false, box: p.signW ? signBox(key) : null,
+      name: placeName(key, env.pack), lanes: p.lanes, cx, cy,
+      words: !!p.words, post: p.post !== false, box: p.signW ? signBox(key) : null,
     });
   }
 
@@ -6584,6 +8926,26 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.clip();
     ctx.translate(0, (1 - ease) * (h + 4));
     fillEllipse(ctx, x + 4, y - 1, w * 0.55, 3, T.shadow);
+    if (env.pack === 'shire') {
+      // A barrow on the headstone's own footing: a turfed mound with a standing stone at its head, inside the
+      // same box the stone is clipped to, so the ghosts and the crowd keep the clearances they had.
+      ctx.beginPath();
+      ctx.ellipse(x, y, w * 0.78, h * 0.62, 0, Math.PI, TAU);
+      ctx.closePath();
+      ctx.fillStyle = T.graveGrass;
+      ctx.fill();
+      ctx.strokeStyle = T.graveEdge;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.globalAlpha = 0.5;
+      fillEllipse(ctx, x - w * 0.2, y - h * 0.3, w * 0.26, h * 0.1, T.moss);
+      ctx.globalAlpha = 1;
+      fillPoly(ctx, [
+        [x - 4.5, y - h * 0.5], [x - 3, y - h - 2], [x + 3.5, y - h - 1], [x + 5, y - h * 0.5],
+      ], T.graveStone, T.graveEdge, 1.5);
+      ctx.restore();
+      return;
+    }
     ctx.beginPath();
     if (variant === 0) {
       ctx.moveTo(x - w / 2, y);
@@ -6650,6 +9012,46 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     for (const g of ghostsFor(countOf('graveyard') || stones.size)) drawGhost(env, g);
   }
 
+  // What haunts the barrows in Middle-earth. It stands on the ghost's own perch and inside the same box: ears no
+  // wider than the arms reached, nothing above the dome's own top, and the jaw no lower than the skirt hung. The
+  // shoulders sway on the ghost's own ripple, so it is the same motion on the same ambient tick.
+  function drawOrc(g, T, x, y, rx, ry, k, w) {
+    const lean = w * rx * 0.06;
+    // Shoulders, hunched and higher on one side.
+    fillPoly(g, [
+      [x - rx * 1.12, y + ry * 1.24], [x - rx * 0.8, y + ry * 0.1],
+      [x + rx * 0.8, y + ry * 0.1], [x + rx * 1.12, y + ry * 1.24],
+    ], T.yewDark, T.ink, 1.5 * k);
+    // Ears, swept back and pointed, which is the first thing that says this is not a ghost.
+    for (const side of [-1, 1]) {
+      fillPoly(g, [
+        [x + lean + side * rx * 0.66, y - ry * 0.28], [x + lean + side * rx * 1.22, y - ry * 0.86],
+        [x + lean + side * rx * 0.78, y + ry * 0.22],
+      ], T.yew, T.ink, 1.3 * k);
+    }
+    // The head: square-jawed, not domed.
+    fillRR(g, x + lean - rx * 0.84, y - ry * 0.92, rx * 1.68, ry * 1.42, rx * 0.34, T.yew, T.ink, 1.7 * k);
+    // A heavy brow, and small eyes lit under it.
+    fillRR(g, x + lean - rx * 0.86, y - ry * 0.46, rx * 1.72, ry * 0.26, 2 * k, T.yewDark);
+    for (const side of [-1, 1]) {
+      fillEllipse(g, x + lean + side * rx * 0.36, y - ry * 0.12, rx * 0.18, ry * 0.14, T.flame);
+      fillEllipse(g, x + lean + side * rx * 0.36, y - ry * 0.12, rx * 0.08, ry * 0.07, T.ink);
+    }
+    // The jaw, and two tusks coming up out of it.
+    fillRR(g, x + lean - rx * 0.58, y + ry * 0.16, rx * 1.16, ry * 0.4, rx * 0.18, T.yewDark, T.ink, 1.3 * k);
+    for (const side of [-1, 1]) {
+      fillPoly(g, [
+        [x + lean + side * rx * 0.2, y + ry * 0.5], [x + lean + side * rx * 0.42, y - ry * 0.06],
+        [x + lean + side * rx * 0.44, y + ry * 0.5],
+      ], T.sailCloth, T.ink, 0.9 * k);
+    }
+    line(g, x + lean - rx * 0.4, y + ry * 0.36, x + lean + rx * 0.4, y + ry * 0.36, T.ink, 1.2 * k);
+    // An iron cap with a nose guard, sitting on the dome's own top line.
+    fillRR(g, x + lean - rx * 0.78, y - ry, rx * 1.56, ry * 0.36, 2 * k, T.steel, T.ink, 1.4 * k);
+    fillRR(g, x + lean - rx * 0.1, y - ry * 0.7, rx * 0.2, ry * 0.42, 1.5 * k, T.steel, T.ink, 1.2 * k);
+    for (const side of [-1, 1]) fillEllipse(g, x + lean + side * rx * 0.58, y - ry * 0.86, rx * 0.1, ry * 0.08, T.slate);
+  }
+
   function drawGhost(env, g) {
     const T = env.theme;
     const { x, y } = ghostAt(env.t, env.reduced, g);
@@ -6659,6 +9061,11 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     const k = rx / GHOST.rx;
     const w = env.reduced ? 0 : Math.sin((TAU * (env.t + g.phase)) / 3.1);
     ctx.save();
+    if (env.pack === 'shire') {
+      drawOrc(ctx, T, x, y, rx, ry, k, w);
+      ctx.restore();
+      return;
+    }
     const halo = ctx.createRadialGradient(x, y, 2, x, y, rx + 8);
     halo.addColorStop(0, `rgba(${T.ghost}, 0.22)`);
     halo.addColorStop(1, `rgba(${T.ghost}, 0)`);
@@ -6800,8 +9207,156 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
 
   function drawDisco(env) {
     if (!env.night) return;
+    if (env.west) {
+      drawMineBand(env);
+      return;
+    }
+    if (env.pack === 'shire') {
+      drawStarlight(env);
+      drawHallFireworks(env);
+      return;
+    }
     drawDiscoLights(env);
     drawDiscoBall(env);
+    drawHallFireworks(env);
+  }
+
+  // Where the green hall hangs its mirror ball, these halls have a light of their own: one star over the archway
+  // and a slow drift of others across the wall. It rides the hall's own tick and holds still under reduced
+  // motion, the way the ball and the beam do.
+  function drawStarlight(env) {
+    const T = env.theme;
+    const t = env.reduced ? 0 : env.t;
+    const { x, y } = DISCO_BALL;
+    const glow = ctx.createRadialGradient(x, y, 2, x, y, 150);
+    glow.addColorStop(0, `rgba(${WARM_LIGHT}, 0.3)`);
+    glow.addColorStop(1, `rgba(${WARM_LIGHT}, 0)`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - 150, y - 150, 300, 300);
+    const star = (sx, sy, rad, alpha) => {
+      ctx.globalAlpha = alpha;
+      const pts = [];
+      for (let i = 0; i < 8; i += 1) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 4;
+        const d = i % 2 ? rad * 0.32 : rad;
+        pts.push([sx + Math.cos(a) * d, sy + Math.sin(a) * d]);
+      }
+      fillPoly(ctx, pts, T.flagAlt);
+      ctx.globalAlpha = 1;
+    };
+    star(x, y, 22 + (env.reduced ? 0 : Math.sin(t * 1.4) * 2), 0.9);
+    for (const d of DISCO_DOTS) {
+      const sx = 110 + ((d.u + t * 0.006) % 1) * 1380;
+      star(sx, d.y, d.r * 1.3, 0.35 + ((d.u * 7) % 1) * 0.3);
+    }
+  }
+
+  // A fiddle, an upright and a banjo on the stage, swaying on the beat with notes rising off them. All of it rides
+  // the hall's own ambient tick, and all of it holds still under reduced motion, as the mirror ball does.
+  function drawMineBand(env) {
+    const T = env.theme;
+    const { x, y, w, h } = MINE_STAGE;
+    // A stage lamp behind them: the band stands against the archway, which is the darkest thing in the room, so
+    // without it three dark figures on a dark opening read as nothing at all.
+    const lamp = ctx.createRadialGradient(x, y - 50, 8, x, y - 50, 150);
+    lamp.addColorStop(0, 'rgba(246, 214, 140, 0.30)');
+    lamp.addColorStop(1, 'rgba(246, 214, 140, 0)');
+    ctx.fillStyle = lamp;
+    ctx.fillRect(x - 160, y - 200, 320, 260);
+    fillRR(ctx, x - w / 2, y, w, h, 3, T.wood, T.woodDark, 2);
+    fillRR(ctx, x - w / 2, y + h, w, 6, 2, T.woodDark);
+    const players = [[-62, 'fiddle'], [0, 'bass'], [62, 'banjo']];
+    players.forEach(([dx, kind], i) => {
+      const sway = env.reduced ? 0 : Math.sin(env.t * 3.2 + i * 1.1) * 3;
+      const px = x + dx + sway;
+      ctx.save();
+      // Pale in both schemes: the hall's own wall colour is dark at dusk, which is exactly when the band plays.
+      fillEllipse(ctx, px, y - 44, 13, 15, T.signBoard, T.woodDark, 1.5);
+      fillEllipse(ctx, px, y - 62, 9, 9, T.signBoard, T.woodDark, 1.5);
+      // Everyone on the stage is hatted too.
+      fillEllipse(ctx, px, y - 68, 14, 3, T.woodDark);
+      fillRR(ctx, px - 6, y - 78, 12, 11, 3, T.woodDark);
+      if (kind === 'bass') {
+        fillEllipse(ctx, px + 15, y - 30, 12, 18, T.wood, T.woodDark, 1.5);
+        line(ctx, px + 15, y - 48, px + 15, y - 74, T.woodDark, 3);
+      } else if (kind === 'fiddle') {
+        fillEllipse(ctx, px + 13, y - 50, 8, 6, T.wood, T.woodDark, 1.5);
+        line(ctx, px + 18, y - 52, px + 34, y - 58, T.woodDark, 2);
+      } else {
+        fillEllipse(ctx, px + 14, y - 44, 8, 8, T.signBoard, T.woodDark, 1.5);
+        line(ctx, px + 20, y - 48, px + 34, y - 58, T.woodDark, 2.5);
+      }
+      ctx.restore();
+      // Notes rising off each player, on the same beat.
+      if (env.reduced) return;
+      for (let n = 0; n < 2; n += 1) {
+        const rise = ((env.t * 0.5 + i * 0.3 + n * 0.5) % 1);
+        ctx.globalAlpha = 0.75 * (1 - rise);
+        const nx = px + 22 + Math.sin(rise * 6 + i) * 8;
+        const ny = y - 84 - rise * 54;
+        fillEllipse(ctx, nx, ny, 4, 3.2, T.signBoard);
+        line(ctx, nx + 4, ny, nx + 4, ny - 11, T.signBoard, 1.8);
+        ctx.globalAlpha = 1;
+      }
+    });
+  }
+
+  // A brawl or a shootout between the two of the crowd standing nearest each other.
+  function drawMineFight(env) {
+    if (!env.west || !env.night || scene !== 'castle') return;
+    const fight = fightAt(env.t, env.reduced);
+    if (!fight) return;
+    const inside = guestsOf(scene);
+    if (!inside) return;
+    const pair = fightPair([...inside.values()].map((c) => ({ x: c.px, y: c.py })));
+    if (!pair) return;
+    const T = env.theme;
+    const [a, b] = pair;
+    const midX = (a.x + b.x) / 2;
+    const midY = (a.y + b.y) / 2 - 26;
+    const fade = Math.sin(Math.min(1, fight.k) * Math.PI);
+    ctx.save();
+    ctx.globalAlpha = fade;
+    if (fight.kind === 'brawl') {
+      // Wide enough to take both of them in, whatever the crowd left between them.
+      const half = Math.max(34, Math.abs(a.x - b.x) / 2 + 22);
+      for (let i = 0; i < 7; i += 1) {
+        const ang = (i / 7) * TAU + fight.k * 2;
+        fillEllipse(ctx, midX + Math.cos(ang) * half * 0.6, midY + Math.sin(ang) * 20,
+          half * 0.5, 19, `rgba(${T.smoke}, 0.5)`);
+      }
+      // A fist and a boot coming out of it.
+      fillEllipse(ctx, midX + half * 0.7, midY - 16, 8, 7, T.wallShade, T.woodDark, 1.5);
+      fillRR(ctx, midX - half * 0.85, midY + 8, 16, 8, 3, T.woodDark);
+      shoutText(ctx, T, 'POW!', midX, midY - 46, fade);
+    } else {
+      const from = a;
+      const to = b;
+      const dir = Math.sign(to.x - from.x) || 1;
+      const gx = from.x + dir * 20;
+      const gy = from.y - 30;
+      fillPoly(ctx, [[gx, gy - 6], [gx + dir * 26, gy], [gx, gy + 6]], T.flame, T.flameCore, 1.5);
+      for (let i = 0; i < 5; i += 1) {
+        fillEllipse(ctx, gx + dir * (10 + i * 9), gy - 4 - i * 3, 9 - i, 7 - i, `rgba(${T.smoke}, 0.45)`);
+      }
+      shoutText(ctx, T, 'BANG!', gx + dir * 30, gy - 40, fade);
+    }
+    ctx.restore();
+  }
+
+  // The shout over a fight: painted, never a title, so privacy mode has nothing to hide here.
+  function shoutText(g, T, word, x, y, alpha) {
+    g.save();
+    g.globalAlpha = alpha;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `800 26px ${FONT}`;
+    g.lineWidth = 4;
+    g.strokeStyle = T.signText;
+    g.strokeText(word, x, y);
+    g.fillStyle = T.signBoard;
+    g.fillText(word, x, y);
+    g.restore();
   }
 
   // A board-game piece hopping between two squares on each cottage table now and then, on the room's own ambient
@@ -6827,7 +9382,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.save();
     for (const cone of LIGHTHOUSE.cones) {
       const grad = ctx.createRadialGradient(x, y, 0, x, y, reach);
-      for (const [f, share] of BEAM_PROFILE) grad.addColorStop(f, `rgba(${WARM_LIGHT}, ${rnd5(cone.alpha * share)})`);
+      for (const [f, share] of BEAM_PROFILE) grad.addColorStop(f, `rgba(${env.theme.beamLight}, ${rnd5(cone.alpha * share)})`);
       ctx.beginPath();
       ctx.moveTo(x, y);
       ctx.arc(x, y, reach, a - cone.half, a + cone.half);
@@ -7075,6 +9630,14 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
   function drawVillage(env) {
     const T = env.theme;
     drawAmbient(env);
+    if (env.west) drawHorse(env);
+    if (env.pack === 'shire') {
+      drawEnts(env);
+      drawWalkingEnt(env);
+      drawSpider(env);
+      drawGollum(env);
+      drawFireworks(env);
+    }
     for (const key of PLACE_KEYS) drawSign(key, env);
     drawGraveyardSign(env);
     drawRoomBadge(env, { id: CASTLE_ID, at: CASTLE.badge, lanes: SCENE_ART.castle.lanes });
@@ -7178,6 +9741,8 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
         fillEllipse(ctx, x, y - 10, 4, 7, T.flameCore);
       }
       drawDisco(env);
+    } else if (env.west) {
+      drawCountingRoomLamp();
     } else {
       drawHearthFire(env);
       drawGamePieces(env);
@@ -7190,7 +9755,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     ctx.textBaseline = 'middle';
     ctx.font = `700 26px ${FONT}`;
     ctx.fillStyle = T.signText;
-    ctx.fillText(fitText(art.title, 340, ctx.font), 800, 68);
+    ctx.fillText(fitText(roomName(scene, theme.pack), 340, ctx.font), 800, 68);
     ctx.font = `15px ${FONT}`;
     ctx.fillStyle = T.signMuted;
     ctx.fillText(fitText(art.note, 340, ctx.font), 800, 136);
@@ -7218,6 +9783,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
       if (c === selected) drawSelection(c, T);
       drawScaled(c, env);
     }
+    drawMineFight(env);
     drawBadges(ordered);
     if (selected && selected !== hovered && selected.inside) drawPlate(selected, env, true);
     if (hovered && hovered.inside) drawPlate(hovered, env, true);
@@ -7263,7 +9829,10 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     }
     const k = view.dpr * view.scale;
     ctx.setTransform(k, 0, 0, k, view.dpr * view.offX, view.dpr * view.offY);
-    const env = { t, epoch: Date.now(), theme, reduced, privacy, scale: view.scale, night: theme === THEMES.dusk };
+    const env = {
+      t, epoch: Date.now(), theme, reduced, privacy, scale: view.scale,
+      night: theme.night, pack: theme.pack, west: theme.pack === 'west',
+    };
 
     if (scene === 'village') drawVillage(env);
     else if (scene === 'world') drawWorld(env);
@@ -7316,8 +9885,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     const m = BODY[c.feat.shape];
     const k = scaleOf(c);
     const top = c.py - (baseLift(c) + m.h) * k;
-    const hatLift = c.feat.accessory === 'hat' || c.feat.accessory === 'antenna' ? 9 : 0;
-    return { m, k, top, badgeY: top - (19 + hatLift) * k, badgeR: badgeRadius(c) };
+    return { m, k, top, badgeY: top - (19 + headroom(c.feat, pack)) * k, badgeR: badgeRadius(c) };
   }
 
   // The nearest character under p, unless `prefer` (the one the tooltip names) is still under it too: a guest walking
@@ -7514,7 +10082,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     }
   });
   listen(mqDark, 'change', () => {
-    theme = mqDark.matches ? THEMES.dusk : THEMES.day;
+    theme = resolveTheme(pack, !!mqDark.matches);
     paintLayers();
     needsDraw = true;
     schedule();
@@ -7699,13 +10267,26 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     if (canvas.style) canvas.style.cursor = '';
   }
 
+  // A pack is paint alone, so nothing is re-laid out: the layers are repainted and the next frame is drawn. The one
+  // thing a pack does decide is which line the crossing takes, and a journey already under way keeps the line it
+  // was planned on: retargeting a boat mid-channel onto a line it is not on would put it across the water sideways.
+  function setTheme(next) {
+    if (destroyed || !THEME_KEYS.includes(next) || next === pack) return;
+    pack = next;
+    theme = resolveTheme(pack, theme.night);
+    paintLayers();
+    needsDraw = true;
+    schedule();
+  }
+
   return {
-    update, setSelected, resize, start, stop, destroy,
+    update, setSelected, resize, start, stop, destroy, setTheme,
     enterCastle, enterCottages, leaveScene, leaveCastle: leaveScene, leaveCottages: leaveScene,
     setMode, openIsland, leaveIsland, showVisitor,
     // What is queueing at the desk on screen, and the whole board's total behind it.
     visitors: () => ({ shown: visitors.size, waiting: visitorTotal, hidden: visitorHidden, board: boardReviews() }),
     getMode: () => mode,
+    getTheme: () => pack,
     getScene: () => scene,
     // The open island's repo, '' for the no-repo island, or null on the world map and in one village mode.
     getIsland: () => island,
