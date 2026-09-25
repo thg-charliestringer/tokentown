@@ -269,10 +269,14 @@ pick. Only the name painted on a board changes.
 | The Jail | A stone block under a slate roof | The same block, battlemented: an older keep |
 | The windows | Glass with a glazing bar | Leaded diamond panes, on every opening in the pack |
 | The Graveyard | Headstones | Barrows, each with a standing stone at its head |
+| The Cottages room | A parlour with square windows | **The Parlour**: round windows onto the country, and a dresser of plates |
+| The castle hall | A sand castle hall | **The White Halls**: an arcade of pointed arches, lancets over a gorge and its fall, a terrace archway onto the valley, a flagstone floor with a star laid in it, and stone benches |
+
 
 In Middle-earth a session is a hobbit: curly hair, pointed ears, a waistcoat with brass buttons and big bare
 feet. It keeps the green village's five looks. Merged sessions cross to the Undying Lands in a grey ship with a
-star on its sail, the flower beds are mushrooms, and a lounger smokes a pipe rather than drinking.
+star on its sail, the flower beds are mushrooms, and a lounger smokes a pipe under a mallorn rather than drinking
+under a parasol.
 
 In the Wild West a session wears a hat, a waistcoat, a gun belt and a holstered revolver, with a sheriff's star,
 a bandana, a feather in the hatband, glasses or the hat alone to tell five sessions of one repo apart. Its
@@ -347,7 +351,7 @@ and merged sessions are already there.
   [Wherever Claude keeps its files](#wherever-claude-keeps-its-files)), and when `gh` is not signed in.
 - **The update banner**, under the top bar: a new release of Tokentown is out, with **What's new** and **Update
   now**. See [Updates](#updates).
-- **Theme**: how the village is painted, Village or Wild West. See [Themes](#themes).
+- **Theme**: how the village is painted, Village, Wild West or Middle-earth. See [Themes](#themes).
 - **Privacy** (`p`): hides titles and shows `repo / worktree` instead, for screen sharing.
 
 ## Keys

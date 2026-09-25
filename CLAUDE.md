@@ -192,6 +192,15 @@ again.
   disco, the frontier mine's band and its fights) must hold still under reduced motion. So must anything else that
   is scenery rather than a session going somewhere: the horse on the frontier's roads is on the ambient tick, and
   `tests/test_web.py` keeps all of it out of `anyMotion` and `nextMotionAt`.
+- **A clip eats the path you were going to stroke.** The hall's windows fill a pane, `save`, `clip`, draw the
+  view, `restore` and then `stroke` to frame it. Every draw inside the clip calls `beginPath` of its own, so by
+  the `stroke` the current path is the last shape drawn in the view, not the pane: the frames were never painted
+  in any pack, and an 8 px outline appeared round a wave or a puff of mist instead. A path wanted on both sides
+  of a clip is laid as a closure and called twice (`pane`, `archway` in `paintHall`).
+- **`fillEllipse` takes a stroke, like `fillRR` and `fillPoly`.** It did not, and dropped one silently: around
+  thirty calls asked for an outline and went without, and one passed `null` for the fill with an outline asked
+  for, which filled the shape in whatever colour was last set and painted over its own view. A drawing helper
+  that takes a fill takes `(fill, stroke, lineWidth = 1.5)` in that order, and skips the fill when it is falsy.
 - **Transcripts are big.** Token counts and PR links are read incrementally with a byte budget per scan. Never
   re-read whole transcripts on each scan.
 - **Claude's files are not always where they are on this Mac.** Claude Code uses `CLAUDE_CONFIG_DIR` instead of

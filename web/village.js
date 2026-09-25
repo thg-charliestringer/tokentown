@@ -3305,7 +3305,7 @@ const SHIRE_DAY = {
   wood: '#9c7b52', woodDark: '#68512f', woodLight: '#c3a678', plank: '#a98b60',
   wall: '#ece4d0', wallShade: '#d6cbb0', roofs: ['#c19a5e', '#6f7a80', '#ad8a52', '#7b6a50'],
   windowDark: '#7e8a90', porchWindow: '#7e8a90', door: '#5f7d4e',
-  stone: '#bcc0b2', stoneDark: '#8f9486',
+  stone: '#cdc3a6', stoneDark: '#9c9072',
   tree: '#d9c06a', treeDark: '#bda152', treeLight: '#eddf96', trunk: '#8a7358',
   flowers: ['#e6c6dc', '#f6f0e0', '#d6dfa6', '#c6d0ea'],
   lighthouse: '#f0ece0', slate: '#8a93a0', lanternGlass: '#e4dcc4', cat: '#8a7f70',
@@ -3335,7 +3335,7 @@ const SHIRE_DUSK = {
   wood: '#65502f', woodDark: '#42351f', woodLight: '#8a7050', plank: '#75603f',
   wall: '#565244', wallShade: '#48453a', roofs: ['#5e4a34', '#454e55', '#544330', '#4b4335'],
   windowDark: '#2b3238', porchWindow: '#e8c985', door: '#33452b',
-  stone: '#5c6057', stoneDark: '#464a43',
+  stone: '#5e5644', stoneDark: '#453f31',
   tree: '#6b5c2f', treeDark: '#564a26', treeLight: '#877443', trunk: '#4a3d2e',
   flowers: ['#8a6f82', '#b9b3a2', '#7e8558', '#71789a'],
   lighthouse: '#9b968a', slate: '#565e69', lanternGlass: '#6a665b', cat: '#6b6157',
@@ -3529,11 +3529,21 @@ function fillPoly(g, points, fill, stroke, lineWidth = 1.5) {
   }
 }
 
-function fillEllipse(g, x, y, rx, ry, fill) {
+// Takes a stroke like fillRR and fillPoly do. It did not, and silently dropped one: a fill of null with an outline
+// asked for filled the shape in whatever colour was last set instead, which is how the parlour's round window
+// painted over its own view.
+function fillEllipse(g, x, y, rx, ry, fill, stroke, lineWidth = 1.5) {
   g.beginPath();
   g.ellipse(x, y, Math.max(0.1, rx), Math.max(0.1, ry), 0, 0, TAU);
-  g.fillStyle = fill;
-  g.fill();
+  if (fill) {
+    g.fillStyle = fill;
+    g.fill();
+  }
+  if (stroke) {
+    g.lineWidth = lineWidth;
+    g.strokeStyle = stroke;
+    g.stroke();
+  }
 }
 
 function line(g, x1, y1, x2, y2, stroke, width) {
@@ -4285,10 +4295,16 @@ function paintSaguaro(g, T, x, y, r) {
 // the village moves except what a session is doing.
 function paintEnt(g, T, x, y, r) {
   const turn = ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1 + 1) % 1;
-  const lean = (turn - 0.5) * 0.36 * r;
+  const turn2 = ((Math.sin(x * 4.898 + y * 21.773) * 19483.1234) % 1 + 1) % 1;
+  const lean = (turn - 0.5) * 0.44 * r;
   const tx = x + lean;
-  const top = y - r * 1.55;
-  const w = r * 0.46;
+  // Eight ents standing the same height in the same stance read as one ent drawn eight times. How tall it stands
+  // and how thick its bole is come off its own position, inside the box either way. The tallest bole takes 1.54r
+  // and its crown sits 0.18r above that with a half-height of up to 0.33r, which is 2.05r of the 2.08r the box
+  // allows. Raising the bole any further is what pushed a crown out of it.
+  const stand = 1.28 + turn2 * 0.26;
+  const top = y - r * stand;
+  const w = r * (0.38 + turn * 0.14);
   fillEllipse(g, x + 4, y + 2, r * 0.85, r * 0.3, T.shadow);
   // Roots: two splayed feet, inside the box's own width.
   for (const side of [-1, 1]) {
@@ -4326,7 +4342,7 @@ function paintEnt(g, T, x, y, r) {
   // the box and takes 0.50r of it: centre 0.16r above the bole, half-height 0.34r.
   fillEllipse(g, tx - r * 0.36, top - r * 0.04, r * 0.36, r * 0.24, T.treeDark);
   fillEllipse(g, tx + r * 0.36, top - r * 0.06, r * 0.34, r * 0.22, T.treeDark);
-  fillEllipse(g, tx, top - r * 0.18, r * 0.5, r * 0.32, T.tree);
+  fillEllipse(g, tx, top - r * 0.18, r * (0.44 + turn2 * 0.1), r * (0.28 + turn2 * 0.05), T.tree);
   fillEllipse(g, tx - r * 0.12, top - r * 0.3, r * 0.22, r * 0.13, T.treeLight);
 }
 
@@ -4729,6 +4745,26 @@ function paintHarbour(g, T) {
     fillEllipse(g, x, y, 7, 6, T.woodDark);
     fillEllipse(g, x, y - 2, 5, 3.5, T.wood);
   }
+  if (T.pack === 'shire') {
+    // Two slim arches at the head of the pier, on the deck's own footing: a quay you sail from, not a jetty.
+    for (const ax of [dx + 52, dx + 138]) {
+      for (const cx2 of [ax - 26, ax + 26]) fillRR(g, cx2 - 5, dy + 6, 10, 82, 3, T.lighthouse, T.slate, 1.5);
+      g.beginPath();
+      g.moveTo(ax - 31, dy + 30);
+      g.quadraticCurveTo(ax - 31, dy - 2, ax, dy - 14);
+      g.quadraticCurveTo(ax + 31, dy - 2, ax + 31, dy + 30);
+      g.lineTo(ax + 21, dy + 30);
+      g.quadraticCurveTo(ax + 21, dy + 8, ax, dy - 2);
+      g.quadraticCurveTo(ax - 21, dy + 8, ax - 21, dy + 30);
+      g.closePath();
+      g.fillStyle = T.lighthouse;
+      g.fill();
+      g.strokeStyle = T.slate;
+      g.lineWidth = 1.5;
+      g.stroke();
+      fillEllipse(g, ax, dy - 18, 6, 6, T.flagAlt, T.slate, 1.2);
+    }
+  }
   paintPatrolBooth(g, T);
 
   // The lighthouse on its rocks, top right.
@@ -5055,12 +5091,42 @@ function paintHall(g, T) {
   const west = T.pack === 'west';
   g.fillStyle = T.hallWall;
   g.fillRect(-3000, -3000, W + 6000, 3360);
-  for (let row = 0, y = 0; y < 352; row++, y += 34) {
-    for (let x = row % 2 ? -36 : 0; x < W; x += 72) {
-      g.globalAlpha = 0.5 + rand() * 0.4;
-      // Timber shoring on the brick courses' own rows: a mine is boarded, not bonded.
-      if (west) fillRR(g, x + 2, y + 4, 68, 26, 2, T.hallBrick, T.hallBrickEdge, 1);
-      else fillRR(g, x + 2, y + 2, 68, 30, 8, T.hallBrick, T.hallBrickEdge, 1);
+  const rivendell = T.pack === 'shire';
+  if (rivendell) {
+    // A blind arcade rather than a bonded wall: four bays of pointed arches on slender columns, placed in the
+    // stretches of wall the two windows, the archway and the plaque leave free.
+    for (const [x0, x1] of RIVENDELL_BAYS) {
+      const mid = (x0 + x1) / 2;
+      g.beginPath();
+      g.moveTo(x0, 330);
+      g.lineTo(x0, 150);
+      g.quadraticCurveTo(x0, 74, mid, 46);
+      g.quadraticCurveTo(x1, 74, x1, 150);
+      g.lineTo(x1, 330);
+      g.closePath();
+      g.fillStyle = T.hallBrick;
+      g.fill();
+      g.strokeStyle = T.hallBrickEdge;
+      g.lineWidth = 3;
+      g.stroke();
+      // The column either side, with a capital and a base, which is what turns a recess into an arcade.
+      for (const cx of [x0, x1]) {
+        fillRR(g, cx - 8, 120, 16, 214, 3, T.hallWall, T.hallBrickEdge, 2);
+        fillRR(g, cx - 13, 112, 26, 12, 3, T.hallWall, T.hallBrickEdge, 2);
+        fillRR(g, cx - 14, 326, 28, 12, 3, T.hallWall, T.hallBrickEdge, 2);
+      }
+      // A carved leaf where the arch meets its point.
+      fillPoly(g, [[mid, 56], [mid - 11, 74], [mid, 88], [mid + 11, 74]], T.hallWall, T.hallBrickEdge, 1.5);
+      line(g, mid, 58, mid, 86, T.hallBrickEdge, 1.2);
+    }
+  } else {
+    for (let row = 0, y = 0; y < 352; row++, y += 34) {
+      for (let x = row % 2 ? -36 : 0; x < W; x += 72) {
+        g.globalAlpha = 0.5 + rand() * 0.4;
+        // Timber shoring on the brick courses' own rows: a mine is boarded, not bonded.
+        if (west) fillRR(g, x + 2, y + 4, 68, 26, 2, T.hallBrick, T.hallBrickEdge, 1);
+        else fillRR(g, x + 2, y + 2, 68, 30, 8, T.hallBrick, T.hallBrickEdge, 1);
+      }
     }
   }
   g.globalAlpha = 1;
@@ -5068,16 +5134,66 @@ function paintHall(g, T) {
   if (west) for (const x of [66, 442, 800, 1158, 1534]) fillRR(g, x - 11, -10, 22, 366, 2, T.wood, T.woodDark, 1.5);
   // Windows looking out to sea.
   for (const wx of [300, 1300]) {
-    g.beginPath();
-    g.moveTo(wx - 70, 300);
-    g.lineTo(wx - 70, 140);
-    g.arc(wx, 140, 70, Math.PI, TAU);
-    g.lineTo(wx + 70, 300);
-    g.closePath();
+    // Laid as a closure because it is needed twice: everything drawn into the pane begins a path of its own, so
+    // the stroke that frames the window has to be given the pane's outline again or it outlines the last shape
+    // drawn inside it. It always did: the green hall's windows have never had their frames.
+    const pane = () => {
+      g.beginPath();
+      g.moveTo(wx - 70, 300);
+      if (rivendell) {
+        // A lancet: two curves meeting at a point, which is the one line that says this hall is not that hall.
+        g.lineTo(wx - 70, 156);
+        g.quadraticCurveTo(wx - 70, 74, wx, 46);
+        g.quadraticCurveTo(wx + 70, 74, wx + 70, 156);
+      } else {
+        g.lineTo(wx - 70, 140);
+        g.arc(wx, 140, 70, Math.PI, TAU);
+      }
+      g.lineTo(wx + 70, 300);
+      g.closePath();
+    };
+    pane();
     g.fillStyle = T.hallSky;
     g.fill();
     g.save();
     g.clip();
+    if (rivendell) {
+      // The gorge this hall is built over. The gap between the rock had been filled with the sky colour, which
+      // read as a white pillar rather than as distance: the depth is carried by the far wall, the near rock in
+      // front of it and the fall between them.
+      fillPoly(g, [[wx - 80, 250], [wx - 56, 96], [wx - 4, 96], [wx - 24, 250]], T.castleShade);
+      fillPoly(g, [[wx + 12, 250], [wx + 46, 96], [wx + 80, 96], [wx + 80, 250]], T.castleShade);
+      // Gold trees on the lip of the far wall: behind the near rock, in front of the wall they stand on.
+      for (const [tx, ty, tr] of [[wx - 62, 118, 15], [wx + 60, 110, 13], [wx - 40, 100, 10]]) {
+        fillRR(g, tx - 2, ty, 4, 26, 2, T.trunk);
+        fillEllipse(g, tx, ty, tr, tr * 0.78, T.tree, T.treeDark, 1.2);
+      }
+      fillPoly(g, [[wx - 80, 250], [wx - 50, 122], [wx - 26, 122], [wx - 42, 250]], T.castleDark);
+      fillPoly(g, [[wx + 30, 250], [wx + 52, 122], [wx + 80, 122], [wx + 80, 250]], T.castleDark);
+      // The fall keeps its width as it drops, with two grey threads down it for the water's own texture: a
+      // ribbon that tapered to a point read as a glass rather than as a fall.
+      fillPoly(g, [[wx - 18, 120], [wx + 20, 120], [wx + 15, 248], [wx - 13, 248]], T.sailCloth);
+      for (const fx of [wx - 7, wx + 7]) line(g, fx, 124, fx + (fx < wx ? -2 : 2), 246, T.castleShade, 3);
+      g.fillStyle = T.hallSea;
+      g.fillRect(wx - 80, 246, 160, 60);
+      for (const [sx, sy, sr] of [[wx - 20, 248, 18], [wx + 22, 250, 15], [wx + 1, 244, 25]]) {
+        fillEllipse(g, sx, sy, sr, sr * 0.38, T.sailCloth);
+      }
+      g.restore();
+      pane();
+      g.lineWidth = 8;
+      g.strokeStyle = T.castleDark;
+      g.stroke();
+      // Tracery in the head rather than a mullion: a bar down the full height, as the square windows have, cut
+      // the fall in two.
+      g.beginPath();
+      g.arc(wx, 84, 15, 0, TAU);
+      g.strokeStyle = T.castleDark;
+      g.lineWidth = 5;
+      g.stroke();
+      fillRR(g, wx - 84, 298, 168, 14, 4, T.castle, T.castleDark, 2);
+      continue;
+    }
     g.fillStyle = T.hallSea;
     g.fillRect(wx - 80, 236, 160, 70);
     if (west) {
@@ -5089,6 +5205,7 @@ function paintHall(g, T) {
       fillRR(g, wx - 4, 226, 44, 7, 3, T.wood);
     }
     g.restore();
+    pane();
     g.lineWidth = 8;
     g.strokeStyle = T.castleDark;
     g.stroke();
@@ -5096,35 +5213,69 @@ function paintHall(g, T) {
     fillRR(g, wx - 84, 298, 168, 14, 4, T.castle, T.castleDark, 2);
   }
   // Tapestry for the title and the count, and an open archway to the beach below it.
-  g.beginPath();
-  g.moveTo(740, 352);
-  g.lineTo(740, 250);
-  g.arc(800, 250, 60, Math.PI, TAU);
-  g.lineTo(860, 352);
-  g.closePath();
+  const archway = () => {
+    g.beginPath();
+    g.moveTo(740, 352);
+    g.lineTo(740, 250);
+    g.arc(800, 250, 60, Math.PI, TAU);
+    g.lineTo(860, 352);
+    g.closePath();
+  };
+  archway();
   g.fillStyle = T.hallSky;
   g.fill();
   g.save();
   g.clip();
-  g.fillStyle = T.hallSea;
-  g.fillRect(730, 280, 140, 40);
-  g.fillStyle = T.sandLight;
-  g.fillRect(730, 316, 140, 40);
+  if (rivendell) {
+    // A terrace over the valley: the far peaks, the woods under them, and the balustrade at the near edge.
+    fillPoly(g, [[730, 306], [764, 238], [792, 282], [822, 230], [870, 306]], T.castleShade);
+    fillPoly(g, [[730, 306], [758, 262], [788, 306]], T.castleDark);
+    for (const tx of [742, 768, 800, 830, 858]) fillEllipse(g, tx, 302, 17, 12, T.tree);
+    g.fillStyle = T.hallFloor;
+    g.fillRect(730, 306, 140, 50);
+    for (let bx = 740; bx <= 856; bx += 16) fillRR(g, bx, 286, 8, 22, 3, T.hallWall, T.hallBrickEdge, 1.2);
+    fillRR(g, 732, 280, 136, 8, 3, T.hallWall, T.hallBrickEdge, 1.5);
+    fillRR(g, 732, 304, 136, 8, 3, T.hallWall, T.hallBrickEdge, 1.5);
+  } else {
+    g.fillStyle = T.hallSea;
+    g.fillRect(730, 280, 140, 40);
+    g.fillStyle = T.sandLight;
+    g.fillRect(730, 316, 140, 40);
+  }
   g.restore();
+  archway();
   g.lineWidth = 8;
   g.strokeStyle = T.castleDark;
   g.stroke();
   fillRR(g, 582, 30, 436, 138, 8, T.tapestry, T.tapestryEdge, 3);
-  for (let i = 0; i < 12; i++) fillPoly(g, [[586 + i * 36, 166], [604 + i * 36, 184], [622 + i * 36, 166]], T.tapestry, T.tapestryEdge, 1.5);
-  line(g, 570, 30, 1030, 30, T.woodDark, 6);
+  if (rivendell) {
+    // Carved stone takes a moulded lintel and three leaves, where a hanging takes a scalloped fringe.
+    fillRR(g, 570, 22, 460, 14, 4, T.hallWall, T.hallBrickEdge, 2);
+    fillRR(g, 574, 164, 452, 13, 4, T.hallWall, T.hallBrickEdge, 2);
+    for (const lx of [640, 800, 960]) paintCarvedLeaf(g, T, lx, 188, 9, 0);
+  } else {
+    for (let i = 0; i < 12; i++) fillPoly(g, [[586 + i * 36, 166], [604 + i * 36, 184], [622 + i * 36, 166]], T.tapestry, T.tapestryEdge, 1.5);
+    line(g, 570, 30, 1030, 30, T.woodDark, 6);
+  }
   // Shells and starfish set into the wall.
   for (const [x, y, r, rot] of [[120, 60, 9, -0.3], [520, 90, 8, 0.2], [1080, 70, 9, -0.1], [1480, 96, 8, 0.4], [180, 250, 7, 0.1], [1420, 240, 7, -0.2]]) {
     if (west) paintCrossedPicks(g, T, x, y, r, rot);
+    else if (rivendell) paintCarvedLeaf(g, T, x, y, r, rot);
     else paintShell(g, T, x, y, r, rot);
   }
-  for (const [x, y, r, rot] of [[470, 220, 11, 0.2], [1140, 210, 12, -0.2], [60, 170, 9, 0]]) paintStarfish(g, T, x, y, r, rot);
+  for (const [x, y, r, rot] of [[470, 220, 11, 0.2], [1140, 210, 12, -0.2], [60, 170, 9, 0]]) {
+    if (rivendell) paintCarvedStar(g, T, x, y, r, rot);
+    else paintStarfish(g, T, x, y, r, rot);
+  }
   // Torch brackets; the flames flicker per frame.
   for (const [x, y] of HALL_TORCHES) {
+    if (rivendell) {
+      // A lamp hung on a chain from the arcade, rather than a torch jammed in a bracket.
+      line(g, x, y - 60, x, y - 6, T.hallBrickEdge, 1.6);
+      fillPoly(g, [[x - 13, y - 6], [x + 13, y - 6], [x + 9, y + 12], [x - 9, y + 12]], T.lanternGlass, T.hallBrickEdge, 1.8);
+      fillRR(g, x - 15, y - 10, 30, 6, 2, T.hallWall, T.hallBrickEdge, 1.5);
+      continue;
+    }
     fillRR(g, x - 9, y + 16, 18, 10, 3, T.torchIron);
     fillPoly(g, [[x - 7, y - 2], [x + 7, y - 2], [x + 3, y + 18], [x - 3, y + 18]], T.woodDark, T.torchIron, 1.5);
   }
@@ -5135,18 +5286,40 @@ function paintHall(g, T) {
   g.strokeStyle = T.hallFloorLine;
   g.lineWidth = 2;
   g.lineCap = 'round';
-  for (let i = 0; i < 70; i++) {
-    const x = rand() * W;
-    const y = 380 + rand() * 520;
-    g.globalAlpha = 0.5 + rand() * 0.4;
-    g.beginPath();
-    g.arc(x, y + 30, 36 + rand() * 20, Math.PI * 1.3, Math.PI * 1.7);
-    g.stroke();
+  if (rivendell) {
+    // Flagstones, jointed in courses that break every other row, where the beach floor has ripples in the sand.
+    g.globalAlpha = 0.8;
+    for (let row = 0, y = 392; y < 920; row++, y += 58) {
+      line(g, -20, y, W + 20, y, T.hallFloorLine, 2);
+      for (let x = -20 + (row % 2 ? 46 : 0); x < W + 20; x += 92) line(g, x, y, x, y + 58, T.hallFloorLine, 2);
+    }
+  } else {
+    for (let i = 0; i < 70; i++) {
+      const x = rand() * W;
+      const y = 380 + rand() * 520;
+      g.globalAlpha = 0.5 + rand() * 0.4;
+      g.beginPath();
+      g.arc(x, y + 30, 36 + rand() * 20, Math.PI * 1.3, Math.PI * 1.7);
+      g.stroke();
+    }
   }
   g.globalAlpha = 1;
   // Six tables dealt for poker, centred at 386. HALL.floor starts at 410, so the crowd wanders in front of them
   // rather than through them, and none of the six stands in the door arch at 740..860.
   if (west) for (const x of MINE_TABLES) paintPokerTable(g, T, x, 386);
+  if (T.pack === 'shire') {
+    // A star laid into the floor, and benches on the same six footings the mine puts its tables on.
+    g.globalAlpha = 0.85;
+    paintCarvedStar(g, T, 800, 660, 120, 0, 5);
+    paintCarvedStar(g, T, 800, 660, 52, Math.PI / 6, 4);
+    g.globalAlpha = 1;
+    for (const x of MINE_TABLES) {
+      fillEllipse(g, x + 3, 400, 62, 8, T.shadow);
+      fillRR(g, x - 62, 372, 124, 16, 5, T.hallWall, T.hallBrickEdge, 2);
+      for (const lx of [x - 48, x + 36]) fillRR(g, lx, 386, 12, 18, 3, T.hallBrick, T.hallBrickEdge, 1.5);
+      fillRR(g, x - 62, 350, 124, 8, 3, T.hallBrick, T.hallBrickEdge, 1.5);
+    }
+  }
 }
 
 // Six card tables along the mine's back wall, clear of the arch in the middle of it.
@@ -5186,6 +5359,46 @@ function paintPokerTable(g, T, x, y) {
   }
   for (let i = 0; i < 3; i++) fillEllipse(g, x - 4 + i * 5, y + 9 - i * 2, 6, 2.6, T.coin, T.coinEdge, 1);
   fillRR(g, x + rx - 18, y - 16, 10, 16, 2, T.lanternGlass, T.woodDark, 1.5);
+}
+
+// The stretches of the hall's back wall that the two lancets (230..370, 1230..1370), the archway (740..860) and
+// the plaque (582..1018) leave free, which is where an arcade can stand without covering any of them.
+const RIVENDELL_BAYS = Object.freeze([
+  Object.freeze([40, 200]), Object.freeze([400, 560]), Object.freeze([1040, 1200]), Object.freeze([1400, 1560]),
+]);
+
+// A carved leaf, where the green hall sets a shell into the wall and inside the same radius.
+function paintCarvedLeaf(g, T, x, y, r, rot) {
+  g.save();
+  g.translate(x, y);
+  g.rotate(rot);
+  g.beginPath();
+  g.moveTo(0, -r * 1.15);
+  g.quadraticCurveTo(r * 0.85, -r * 0.2, 0, r * 1.15);
+  g.quadraticCurveTo(-r * 0.85, -r * 0.2, 0, -r * 1.15);
+  g.closePath();
+  g.fillStyle = T.hallWall;
+  g.fill();
+  g.strokeStyle = T.hallBrickEdge;
+  g.lineWidth = 1.4;
+  g.stroke();
+  line(g, 0, -r * 1.05, 0, r * 1.05, T.hallBrickEdge, 1);
+  for (const k of [-0.5, 0, 0.5]) {
+    line(g, 0, r * k, r * 0.5, r * (k - 0.32), T.hallBrickEdge, 0.9);
+    line(g, 0, r * k, -r * 0.5, r * (k - 0.32), T.hallBrickEdge, 0.9);
+  }
+  g.restore();
+}
+
+// A carved star, on the starfish's own footing and radius.
+function paintCarvedStar(g, T, x, y, r, rot, lineWidth = 1.4) {
+  const pts = [];
+  for (let i = 0; i < 12; i += 1) {
+    const a = rot - Math.PI / 2 + (i * Math.PI) / 6;
+    const d = i % 2 ? r * 0.42 : r;
+    pts.push([x + Math.cos(a) * d, y + Math.sin(a) * d]);
+  }
+  fillPoly(g, pts, T.hallWall, T.hallBrickEdge, lineWidth);
 }
 
 const HALL_TORCHES = [[120, 190], [520, 190], [1080, 190], [1480, 190]];
@@ -5280,6 +5493,32 @@ function paintCottageRoom(g, T) {
   for (const x of [180, 560, 940, 1320]) fillRR(g, x, -40, 44, 120, 3, T.woodDark);
 
   for (const [x, y, w, h] of ROOM_WINDOWS) {
+    if (T.pack === 'shire') {
+      // A round window, as every opening in a hobbit hole is, looking onto the country outside.
+      const cx2 = x + w / 2;
+      const cy2 = y + h / 2;
+      const rr2 = Math.min(w, h) / 2;
+      fillEllipse(g, cx2, cy2, rr2 + 10, rr2 + 10, T.wood, T.woodDark, 2);
+      fillEllipse(g, cx2, cy2, rr2, rr2, T.hallSky);
+      g.save();
+      g.beginPath();
+      g.arc(cx2, cy2, rr2, 0, TAU);
+      g.clip();
+      fillEllipse(g, cx2, cy2 + rr2 * 0.55, rr2 * 1.3, rr2 * 0.8, T.grass);
+      fillEllipse(g, cx2 - rr2 * 0.5, cy2 + rr2 * 0.3, rr2 * 0.5, rr2 * 0.3, T.grassDark);
+      for (let hx = cx2 - rr2; hx < cx2 + rr2; hx += 13) fillEllipse(g, hx, cy2 + rr2 * 0.18, 7, 4, T.yew);
+      fillEllipse(g, cx2 + rr2 * 0.42, cy2 - rr2 * 0.42, 11, 11, T.lanternGlass);
+      g.globalAlpha = 0.6;
+      for (let k = -rr2 * 2; k < rr2 * 2; k += 16) {
+        line(g, cx2 + k, cy2 - rr2, cx2 + k + rr2 * 2, cy2 + rr2, T.woodDark, 1.2);
+        line(g, cx2 + k, cy2 + rr2, cx2 + k + rr2 * 2, cy2 - rr2, T.woodDark, 1.2);
+      }
+      g.globalAlpha = 1;
+      g.restore();
+      fillEllipse(g, cx2, cy2, rr2, rr2, null, T.woodDark, 3);
+      fillRR(g, x - 16, y + h + 10, w + 32, 10, 2, T.woodLight, T.woodDark, 1.5);
+      continue;
+    }
     fillRR(g, x - 10, y - 10, w + 20, h + 20, 4, T.wood, T.woodDark, 2);
     fillRR(g, x, y, w, h, 2, T.hallSky);
     fillEllipse(g, x + w * 0.7, y + h * 0.28, 16, 16, T.lanternGlass);
@@ -5370,6 +5609,22 @@ function paintCottageRoom(g, T) {
     fillRR(g, sx + 96, floorY - 108, 6, 104, 2, T.steel);
     fillRR(g, sx + 72, floorY - 16, 32, 8, 2, T.steel);
     fillEllipse(g, sx + 78, floorY - 2, 8, 8, T.woodDark);
+  }
+
+  if (T.pack === 'shire') {
+    // A dresser of plates on the wainscot, which is what a parlour has where a hall has a tapestry.
+    const dx = 440;
+    fillRR(g, dx - 62, floorY - 210, 124, 108, 3, T.wood, T.woodDark, 2);
+    fillRR(g, dx - 68, floorY - 216, 136, 10, 2, T.woodDark);
+    for (const sy of [floorY - 176, floorY - 140]) {
+      fillRR(g, dx - 58, sy, 116, 5, 1, T.woodDark);
+      for (let px = dx - 46; px < dx + 46; px += 30) {
+        fillEllipse(g, px, sy - 12, 12, 12, T.signBoard, T.woodDark, 1.4);
+        fillEllipse(g, px, sy - 12, 6, 6, T.flowers[0]);
+      }
+    }
+    fillRR(g, dx - 58, floorY - 128, 116, 26, 2, T.roomWallShade, T.woodDark, 1.5);
+    for (const hx of [dx - 30, dx + 30]) fillEllipse(g, hx, floorY - 115, 3, 3, T.thatch);
   }
 
   // Floor: boards, then a rug in the middle of the room.
@@ -6963,7 +7218,25 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     if (c.index % 2 === 0 && (c.slotDx || 0) >= 60 * k && umbrellaFits(x, y, k)) {
       const ux = x + 30;
       const uy = y - 84;
-      if (T.pack === 'west') {
+      if (T.pack === 'shire') {
+        // A mallorn in place of the parasol, on the parasol's own reach: the same 76 px of shade between
+        // ux - 35 and ux + 41, with the bole on the right so the crown shades the lounger without standing in it.
+        // The crown is cut to the parasol's own box: dx - r no lower than -38 and dx + r no higher than 38 about
+        // the bole, and no blob's top above uy - 16, which is where the dome's point was. The rest of the box's
+        // height goes to the bole, so the thing reads as a tree rather than as a canopy on a stick.
+        const bole = ux + 3;
+        line(ctx, bole, y + 4, bole, uy + 20, T.trunk, 5);
+        for (const side of [-1, 1]) line(ctx, bole, y + 4, bole + side * 7, y + 4, T.trunk, 3);
+        for (const [bx, by2] of [[-16, 6], [15, 4]]) line(ctx, bole, uy + 22, bole + bx, uy + by2, T.trunk, 2.5);
+        for (const [dx, dy, r] of [[-25, 12, 12], [26, 12, 11], [0, 14, 14]]) {
+          fillEllipse(ctx, bole + dx, uy + dy, r, r * 0.74, T.treeDark);
+        }
+        for (const [dx, dy, r] of [[-14, -2, 16], [12, 0, 15], [-1, -4, 15]]) {
+          fillEllipse(ctx, bole + dx, uy + dy, r, r * 0.74, T.tree);
+        }
+        fillEllipse(ctx, bole - 9, uy - 6, 7, 5, T.treeLight);
+        for (const [dx, dy] of [[-20, 22], [8, 24], [22, 20]]) fillEllipse(ctx, bole + dx, uy + dy, 3.5, 5, T.treeLight);
+      } else if (T.pack === 'west') {
         // A brush ramada in place of the parasol, on the parasol's own reach: the same 76 px of shade between
         // ux - 35 and ux + 41, which is what `umbrellaBox` declares and every beach check is laid out around.
         // Flat rather than domed, and posted on the right so the roof shades the lounger without standing in it.

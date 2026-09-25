@@ -6383,10 +6383,13 @@ check('one village mode draws exactly the scene it drew before the world of isla
   // does not move, and the hall digest below is rendered in day mode, where the disco (dusk-only) never draws.
   // It moved to b32b876b, same 157 shapes, when the tables grew to show their games and the seats moved to the
   // tables' sides and far rim.
+  // It moved to dd1ec513 (165 shapes) when fillEllipse started honouring the stroke its callers pass. Diffed
+  // shape for shape: the eight new shapes are the eight game pieces' own '#2b2b2b' outlines, which that call has
+  // asked for since the tables shipped and silently did not get. Nothing else moved, in any of the three scenes.
   eq(results.oneVillage, {
     village: { shapes: 1070, digest: 'e62d4286', ink: '33/60929b59', words: 'd00b4209' },
     hall: { shapes: 104, digest: '207527e9', ink: '3/f513068', words: '29cbbb2d' },
-    room: { shapes: 157, digest: 'b32b876b', ink: '7/6ec12c21', words: 'db3b0380' },
+    room: { shapes: 165, digest: 'dd1ec513', ink: '7/6ec12c21', words: 'db3b0380' },
   }, 'one village draws the same scene, shape for shape and word for word');
 });
 
