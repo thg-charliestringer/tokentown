@@ -4012,6 +4012,52 @@ const roadBands = V.ROAD_LINES.map(([[x0, y0], [x1, y1]]) => {
     : [x0 - half, Math.min(y0, y1), V.ROAD_BAND, Math.abs(y1 - y0)];
 });
 
+check('gollum creeps inside the graveyard fence all the way round, and holds still when asked', () => {
+  const [fx, fy, fw, fh] = V.GRAVEYARD.fence;
+  // The rails are drawn 3 px either side of the fence's own lines, so the inside is that rect inset by 3.
+  const inner = [fx + 3, fy + 3, fw - 6, fh - 6];
+  const loop = V.GOLLUM_CIRCUIT.reduce((sum, a, i) => {
+    const b = V.GOLLUM_CIRCUIT[(i + 1) % V.GOLLUM_CIRCUIT.length];
+    return sum + Math.hypot(b.x - a.x, b.y - a.y);
+  }, 0);
+  const period = loop / V.GOLLUM_SPEED;
+  let seen = 0;
+  for (let t = 0; t <= period * 2; t += period / 900) {
+    const g = V.gollumAt(t);
+    assert(Math.abs(g.dir) === 1, `gollum faces one way or the other at t ${t.toFixed(2)}`);
+    // A square reach rather than one measured across the leg: the circuit is a rectangle inside a rectangle, so
+    // this is both simpler than the horse's road maths and stricter at every corner.
+    assert(g.x - V.GOLLUM_REACH >= inner[0] && g.x + V.GOLLUM_REACH <= inner[0] + inner[2]
+      && g.y - V.GOLLUM_REACH >= inner[1] && g.y + V.GOLLUM_REACH <= inner[1] + inner[3],
+      `gollum reaches outside the fence at t ${t.toFixed(2)}: ${g.x.toFixed(1)},${g.y.toFixed(1)}`);
+    seen += 1;
+  }
+  assert(seen > 1000, 'the whole circuit was walked');
+
+  const places = new Set();
+  for (let t = 0; t <= period; t += period / 40) places.add(`${V.gollumAt(t).x.toFixed(0)},${V.gollumAt(t).y.toFixed(0)}`);
+  assert(places.size > 30, `gollum gets round the circuit (${places.size} places)`);
+  const still = new Set();
+  for (let t = 0; t <= period; t += period / 40) still.add(`${V.gollumAt(t, true).x},${V.gollumAt(t, true).y}`);
+  eq(still.size, 1, 'reduced motion holds him at one place');
+
+  // And the reach is honest about the drawing, not just about the circuit. Under reduced motion he stands at the
+  // circuit's first node, so everything he paints there can be measured against it. He is the only thing inside
+  // the fence drawn in the steel and the flame's core, which is what picks his shapes out of the frame.
+  const T = V.resolveTheme('shire', false);
+  const at = V.gollumAt(0, true);
+  const mine = lastFrame(paintedShapes(graveRows(6), { reduce: true, theme: 'shire' }).shapes)
+    .filter((s) => (s.style === T.steel || s.style === T.flameCore)
+      && s.box[0] >= inner[0] && s.box[2] <= inner[0] + inner[2]
+      && s.box[1] >= inner[1] && s.box[3] <= inner[1] + inner[3]);
+  assert(mine.length >= 8, `gollum is painted at all (${mine.length} shapes in the steel and the flame)`);
+  for (const sh of mine) {
+    const out = Math.max(at.x - V.GOLLUM_REACH - sh.box[0], sh.box[2] - (at.x + V.GOLLUM_REACH),
+      at.y - V.GOLLUM_REACH - sh.box[1], sh.box[3] - (at.y + V.GOLLUM_REACH));
+    assert(out <= sh.lw / 2, `gollum paints ${out.toFixed(2)} px past his own reach: ${JSON.stringify(sh.box.map((v) => Math.round(v * 10) / 10))}`);
+  }
+});
+
 check('the graveyard decides how many ghosts float over it, from two to twelve', () => {
   eq([0, 1, 20, 60, 157, 400].map((n) => V.ghostCount(n)), [0, 2, 5, 8, 12, 12], 'the counts Charlie will see');
   eq(V.ghostCount(1), V.GHOST_MIN, 'one grave shows the floor');

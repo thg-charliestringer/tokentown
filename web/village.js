@@ -3294,6 +3294,47 @@ export function horseAt(t, reduced = false) {
   return { x: HORSE_CIRCUIT[0].x, y: HORSE_CIRCUIT[0].y, dir: 1, axis: 'x' };
 }
 
+// Something creeps round the inside of the graveyard fence in Middle-earth, keeping to the wall and never
+// leaving. It rides the village's ambient tick, like the beam and the frontier's horse: a creature skulking round
+// the barrows is scenery, not a session going anywhere, and nothing that only moves the scenery may hold the
+// canvas at full rate.
+export const GOLLUM_CIRCUIT = Object.freeze([
+  Object.freeze({ x: 54, y: 392 }), Object.freeze({ x: 398, y: 392 }),
+  Object.freeze({ x: 398, y: 514 }), Object.freeze({ x: 54, y: 514 }),
+]);
+export const GOLLUM_SPEED = 18;
+// Half of what he paints, in any direction rather than across the leg: the circuit is a rectangle inside a
+// rectangle, so a square reach is both simpler than the road maths and stricter at the corners.
+export const GOLLUM_REACH = 19;
+
+// Where he is at t and which way he faces. On the two upright legs he already faces the way the next corner
+// takes him, so he turns before he walks rather than sliding along sideways.
+export function gollumAt(t, reduced = false) {
+  const legs = GOLLUM_CIRCUIT.map((a, i) => {
+    const b = GOLLUM_CIRCUIT[(i + 1) % GOLLUM_CIRCUIT.length];
+    return { a, b, len: Math.hypot(b.x - a.x, b.y - a.y) };
+  });
+  const facing = legs.map((l, i) => {
+    for (let k = 0; k < legs.length; k += 1) {
+      const m = legs[(i + k) % legs.length];
+      if (m.b.x !== m.a.x) return m.b.x < m.a.x ? -1 : 1;
+    }
+    return 1;
+  });
+  const loop = legs.reduce((sum, l) => sum + l.len, 0);
+  let d = reduced ? 0 : ((t * GOLLUM_SPEED) % loop + loop) % loop;
+  for (let i = 0; i < legs.length; i += 1) {
+    const l = legs[i];
+    if (d > l.len) {
+      d -= l.len;
+      continue;
+    }
+    const k = l.len ? d / l.len : 0;
+    return { x: l.a.x + (l.b.x - l.a.x) * k, y: l.a.y + (l.b.y - l.a.y) * k, dir: facing[i] };
+  }
+  return { x: GOLLUM_CIRCUIT[0].x, y: GOLLUM_CIRCUIT[0].y, dir: facing[0] };
+}
+
 // A green country: the Shire's own hills and hedgerows, oak and thatch, and a road west to the sea. The sea stays
 // a sea here, which is the point of a pack being colours rather than a rewrite: nothing nautical needed branching.
 // The trees are mallorns, silver-trunked and gold-crowned, which one palette line does across all eight of them.
@@ -3950,12 +3991,88 @@ const SHIRE_HOLES = Object.freeze([
   Object.freeze({ x: 372, y: 236, r: 42 }),
 ]);
 
-function paintShireCountry(g, T) {
-  // Fields: a lighter or darker green inside a hedge, which is what makes country read as farmed rather than wild.
-  SHIRE_FIELDS.forEach((field, i) => {
-    g.globalAlpha = 0.55;
-    fillPoly(g, field, i % 2 ? T.grassLight : T.grassDark);
+// Where a field's own edges sit on a horizontal line, so a drill row can be drawn across it without reaching the
+// hedge. Null when the line misses the field, which is how the top and bottom rows fall away on a sloped edge.
+function fieldSpan(field, y) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let e = 0; e < field.length; e += 1) {
+    const [ax, ay] = field[e];
+    const [bx, by] = field[(e + 1) % field.length];
+    if ((ay <= y && by > y) || (by <= y && ay > y)) {
+      const x = ax + ((y - ay) / (by - ay)) * (bx - ax);
+      lo = Math.min(lo, x);
+      hi = Math.max(hi, x);
+    }
+  }
+  return hi > lo ? [lo, hi] : null;
+}
+
+// A pony with its head down, standing in a pasture. Scenery in the background layer, so it never moves at all:
+// the one thing on the roads that does (the frontier's horse) is on the ambient tick and is drawn per frame.
+function paintPony(g, T, x, y, dir) {
+  g.save();
+  g.translate(x, y);
+  g.scale(dir < 0 ? -1 : 1, 1);
+  fillEllipse(g, 1, 11, 16, 3.5, T.shadow);
+  for (const lx of [-10, -5, 5, 10]) line(g, lx, -2, lx, 10, T.woodDark, 2.6);
+  fillRR(g, -13, -12, 26, 13, 6, T.cat, T.woodDark, 1.5);
+  // Neck and muzzle angled down into the grass, which is what makes a pony read as grazing rather than as a pig.
+  fillPoly(g, [[6, -12], [14, -11], [16, 2], [9, 2]], T.cat, T.woodDark, 1.5);
+  fillRR(g, 9, 0, 10, 6, 3, T.cat, T.woodDark, 1.5);
+  fillPoly(g, [[7, -12], [9, -16], [11, -11]], T.woodDark);
+  // Mane down the neck and a tail behind: without them the outline is a loaf on legs.
+  line(g, 4, -13, 13, -9, T.woodDark, 3);
+  line(g, -13, -11, -18, -1, T.woodDark, 2.6);
+  g.restore();
+}
+
+// Ponies grazing, in two of the pastures and well inside their hedges.
+const SHIRE_PONIES = Object.freeze([
+  Object.freeze({ x: 1010, y: 92, dir: 1 }), Object.freeze({ x: 1076, y: 58, dir: -1 }),
+  Object.freeze({ x: 282, y: 666, dir: -1 }), Object.freeze({ x: 360, y: 638, dir: 1 }),
+]);
+
+// What is growing in a field. Fields take it in turn: standing corn, ploughed earth, then pasture, which is the
+// green the field already was. Everything is laid on drill rows read off the field's own edges, so a crop cannot
+// reach its hedge however the quad is skewed.
+function paintFieldCrop(g, T, field, kind) {
+  if (kind === 2) return;
+  const ys = field.map((pt) => pt[1]);
+  const y0 = Math.min(...ys);
+  const y1 = Math.max(...ys);
+  for (let y = y0 + 15; y <= y1 - 13; y += 15) {
+    const span = fieldSpan(field, y);
+    if (!span) continue;
+    const [lo, hi] = span;
+    const a = lo + 15;
+    const b = hi - 15;
+    if (b - a < 20) continue;
+    if (kind === 1) {
+      // Ploughed: the furrow itself, with the ridge beside it.
+      line(g, a, y, b, y, T.pathEdge, 3);
+      line(g, a, y + 3.5, b, y + 3.5, T.path, 2);
+      continue;
+    }
+    // Standing corn: the drill row, then an ear every few paces along it.
+    g.globalAlpha = 0.7;
+    line(g, a, y + 5, b, y + 5, T.thatchDark, 2);
     g.globalAlpha = 1;
+    for (let x = a; x <= b; x += 14) {
+      line(g, x, y + 5, x, y - 3, T.thatchDark, 1.6);
+      fillEllipse(g, x, y - 5, 2.6, 4.4, T.thatch);
+    }
+  }
+}
+
+function paintShireCountry(g, T) {
+  // Fields: corn, plough or pasture inside a hedge, which is what makes country read as farmed rather than wild.
+  SHIRE_FIELDS.forEach((field, i) => {
+    const crop = i % 3;
+    g.globalAlpha = crop === 1 ? 0.72 : 0.55;
+    fillPoly(g, field, crop === 1 ? T.path : i % 2 ? T.grassLight : T.grassDark);
+    g.globalAlpha = 1;
+    paintFieldCrop(g, T, field, crop);
     // The hedge itself: a run of small dark clumps around the field's edge rather than a drawn line.
     for (let e = 0; e < field.length; e += 1) {
       const [ax, ay] = field[e];
@@ -3972,6 +4089,7 @@ function paintShireCountry(g, T) {
       }
     }
   });
+  for (const { x, y, dir } of SHIRE_PONIES) paintPony(g, T, x, y, dir);
   // Bag End's garden: a paling fence with a gate on the door's own centre line, and the path up to the step.
   const gateX = COTTAGE.x;
   fillRR(g, gateX - 7, 220, 14, 26, 2, T.path, T.pathEdge, 1.5);
@@ -5585,11 +5703,51 @@ function paintCottageRoom(g, T) {
     fillEllipse(g, hx + dx, hy - 208, 3, 4, T.flame);
   }
   if (!west) {
-    fillRR(g, hx - 24, hy - 46, 48, 30, 6, T.torchIron);
-    line(g, hx, hy - 60, hx, hy - 46, T.torchIron, 2);
-    for (const [dx, dy] of [[-30, -6], [0, -2], [26, -8]]) {
-      fillRR(g, hx + dx - 14, hy + dy - 8, 28, 10, 3, T.woodDark);
+    // A fire in the grate: a bed of embers, logs across it, flames between them and a pot on a crane over the
+    // lot, with the light washing up the back of the opening. It is painted into the room's own layer, so it is
+    // still, like the mantel's candles: nothing in here is on a frame.
+    // The back of the opening is sooted first: against the window grey the flames had nothing to burn against.
+    g.globalAlpha = 0.8;
+    g.beginPath();
+    g.moveTo(hx - hw / 2, hy);
+    g.lineTo(hx - hw / 2, hy - 92);
+    g.arc(hx, hy - 92, hw / 2, Math.PI, TAU);
+    g.lineTo(hx + hw / 2, hy);
+    g.closePath();
+    g.fillStyle = T.torchIron;
+    g.fill();
+    g.globalAlpha = 0.14;
+    fillEllipse(g, hx, hy - 26, hw / 2 - 8, 58, T.flame);
+    g.globalAlpha = 0.3;
+    fillEllipse(g, hx, hy - 12, 56, 28, T.flame);
+    g.globalAlpha = 1;
+    // Tongues, tallest in the middle, drawn before the logs so they come up between them.
+    for (const [dx, h2, w2] of [[-26, 28, 8], [-9, 52, 11], [10, 42, 10], [27, 24, 7]]) {
+      g.beginPath();
+      g.moveTo(hx + dx - w2, hy - 8);
+      g.quadraticCurveTo(hx + dx - w2 * 0.9, hy - 8 - h2 * 0.62, hx + dx + w2 * 0.3, hy - 8 - h2);
+      g.quadraticCurveTo(hx + dx + w2 * 0.7, hy - 8 - h2 * 0.5, hx + dx + w2, hy - 8);
+      g.closePath();
+      g.fillStyle = T.flame;
+      g.fill();
+      g.globalAlpha = 0.85;
+      fillEllipse(g, hx + dx, hy - 14, w2 * 0.3, h2 * 0.22, T.flameCore);
+      g.globalAlpha = 1;
     }
+    // Logs across the embers, each with its lit end, and the coals glowing under them.
+    for (const [dx, dy] of [[-30, -6], [0, -2], [26, -8]]) {
+      fillRR(g, hx + dx - 14, hy + dy - 8, 28, 10, 4, T.woodDark, T.torchIron, 1.2);
+      fillEllipse(g, hx + dx + 13, hy + dy - 3, 3.5, 4.5, T.flame);
+    }
+    for (const [dx, dy, r] of [[-38, 0, 5], [-16, 2, 4], [4, 1, 5.5], [24, 2, 4], [40, 0, 4.5]]) {
+      fillEllipse(g, hx + dx, hy + dy - 3, r, r * 0.6, T.flame);
+      fillEllipse(g, hx + dx, hy + dy - 3, r * 0.45, r * 0.3, T.flameCore);
+    }
+    // The crane: a bar across the opening, a hook down from it and the pot hanging in the flames.
+    fillRR(g, hx - 58, hy - 106, 116, 5, 2, T.torchIron);
+    line(g, hx, hy - 104, hx, hy - 62, T.torchIron, 2);
+    fillRR(g, hx - 24, hy - 62, 48, 30, 6, T.torchIron);
+    fillRR(g, hx - 28, hy - 64, 56, 6, 3, T.torchIron);
   }
   if (west) {
     // The teller's counter and its grille, in the one stretch of wall between the two windows.
@@ -6790,6 +6948,36 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     fillRR(ctx, 6, -13, 9, 6, 3, T.cat, T.woodDark, 1.5);
     fillPoly(ctx, [[8, -13], [10, -15], [12, -12]], T.woodDark);
     line(ctx, -11, -9, -14, -3, T.woodDark, 2.4);
+    ctx.restore();
+  }
+
+  // Creeping the inside of the graveyard fence. Everything he paints stays within GOLLUM_REACH of the point he
+  // is at, which is what keeps him off the rails at a corner.
+  function drawGollum(env) {
+    const T = env.theme;
+    const { x, y, dir } = gollumAt(env.t, env.reduced);
+    const creep = env.reduced ? 0 : Math.sin(env.t * 4.5);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(dir < 0 ? -1 : 1, 1);
+    fillEllipse(ctx, 0, 9, 15, 3.5, T.shadow);
+    // Limbs first, so the body covers only where they meet it. Long arms reaching ahead, legs folded under the
+    // rump: drawn thin and left showing, because a body wide enough to hide them reads as a wombat.
+    for (const [ax, phase] of [[15, 0], [12, 2.4]]) line(ctx, 4, -5, ax + creep * Math.sin(phase) * 2.2, 8, T.steel, 2.6);
+    for (const [lx, phase] of [[-9, 1.1], [-5, 3.4]]) line(ctx, -7, -7, lx + creep * Math.sin(phase) * 2, 8, T.steel, 2.6);
+    // Rump up at the back, shoulders down at the front: the sloping spine is the whole silhouette.
+    fillPoly(ctx, [[-11, -8], [4, -6], [5, -1], [-10, -3]], T.steel, T.slate, 1.3);
+    fillEllipse(ctx, -8, -7, 5.5, 4.5, T.steel, T.slate, 1.3);
+    // A scrawny neck, and a head too big for it.
+    line(ctx, 4, -6, 10, -8, T.steel, 3);
+    fillEllipse(ctx, 12, -9, 6, 5.5, T.steel, T.slate, 1.3);
+    // The eyes are the only thing anyone remembers, so they are lit in both schemes rather than shaded.
+    for (const ex of [10.5, 14.5]) {
+      fillEllipse(ctx, ex, -10, 2.3, 2.1, T.flameCore);
+      fillEllipse(ctx, ex + 0.5, -10, 1, 1.2, T.slate);
+    }
+    line(ctx, 10, -6, 15, -6.4, T.slate, 1.2);
+    for (const [hx, hy] of [[9, -13], [12, -14], [15, -13]]) line(ctx, hx, hy, hx - 1.5, hy - 4, T.slate, 1.3);
     ctx.restore();
   }
 
@@ -8969,6 +9157,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     const T = env.theme;
     drawAmbient(env);
     if (env.west) drawHorse(env);
+    if (env.pack === 'shire') drawGollum(env);
     for (const key of PLACE_KEYS) drawSign(key, env);
     drawGraveyardSign(env);
     drawRoomBadge(env, { id: CASTLE_ID, at: CASTLE.badge, lanes: SCENE_ART.castle.lanes });

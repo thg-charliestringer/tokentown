@@ -256,7 +256,7 @@ pick. Only the name painted on a board changes.
 
 | Place | Village | Middle-earth |
 |---|---|---|
-| The open ground | A wash of grass | **Hedged fields**, a hillside with two more holes in it, and the Misty Mountains on the horizon |
+| The open ground | A wash of grass | **Farmland**: hedged fields of standing corn, ploughed earth and pasture with ponies grazing, a hillside with two more holes in it, and the Misty Mountains on the horizon |
 | The Workshop | Workbenches under an awning | **The Forge**: a timber-framed smithy on a stone footing, under a tiled roof, with an anvil and a lit hearth |
 | The Cottages | A cottage on the green | **Bag End**: a green hill with a round door, leaded round windows, a paling fence and a bench by the gate |
 | The Porch | A porch house with a lantern | **The Green Dragon**: a half-timbered inn under thatch, with a sign on the gable |
@@ -268,8 +268,9 @@ pick. Only the name painted on a board changes.
 | The border patrol | A guard in uniform | A grey pilgrim with a staff, who decides what passes |
 | The Jail | A stone block under a slate roof | The same block, battlemented: an older keep |
 | The windows | Glass with a glazing bar | Leaded diamond panes, on every opening in the pack |
-| The Graveyard | Headstones | Barrows, each with a standing stone at its head |
+| The Graveyard | Headstones | Barrows, each with a standing stone at its head, and something creeping round inside the fence that never leaves |
 | The Cottages room | A parlour with square windows | **The Parlour**: round windows onto the country, and a dresser of plates |
+| The hearth | A pot over three logs | The same hearth, lit: embers, flames and a pot on a crane. The green village's hearth is lit too |
 | The castle hall | A sand castle hall | **The White Halls**: an arcade of pointed arches, lancets over a gorge and its fall, a terrace archway onto the valley, a flagstone floor with a star laid in it, and stone benches |
 
 
@@ -290,8 +291,9 @@ Night means dark mode, not the clock: the scene follows your Mac's appearance se
 windows glow, the lighthouse sweeps its beam round, and the sand castle hall has a disco with a mirror ball and
 coloured spotlights. In the Wild West the mine has a band instead, and every five seconds two of the crowd go at
 it: a brawl with a **POW!**, then a shootout with a **BANG!**. In Middle-earth the hall has starlight, and the
-dark tower's Eye sweeps where the lighthouse beam did. The beam, the disco, the band, the fights, the starlight,
-the horse and the ghosts all hold still when your Mac is set to reduce motion.
+dark tower's Eye sweeps where the lighthouse beam did, and the eyes of the thing in the graveyard catch the
+light. The beam, the disco, the band, the fights, the starlight, the horse, the creeper and the ghosts all hold
+still when your Mac is set to reduce motion.
 
 ### Visitors: PRs waiting on your review
 

@@ -362,7 +362,8 @@ class LaneContractTests(unittest.TestCase):
         for name in ("anyMotion", "nextMotionAt"):
             body = _fn(self.village, name)
             for banned in ("beam", "Beam", "ghost", "Ghost", "GHOST", "LIGHTHOUSE", "night",
-                           "horse", "Horse", "HORSE", "fight", "Fight", "west", "West"):
+                           "horse", "Horse", "HORSE", "fight", "Fight", "west", "West",
+                           "gollum", "Gollum", "GOLLUM", "pony", "Pony"):
                 self.assertNotIn(banned, body, f"{name} reads {banned}")
 
     def test_the_lit_castle_pane_takes_the_shape_of_the_opening_it_fills(self):
