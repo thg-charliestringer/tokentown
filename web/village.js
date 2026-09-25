@@ -3271,27 +3271,72 @@ export const HORSE_SPEED = 55;
 // under 19 or a hoof lands on the grass, and it is why the horse's head is carried forward rather than up.
 export const HORSE_REACH = 15;
 
-// Where the horse is at t, which way it faces, and which axis it is running along, so a check knows which way to
-// measure its width. Reduced motion holds it at the corner it starts from.
-export function horseAt(t, reduced = false) {
-  const legs = HORSE_CIRCUIT.map((a, i) => {
-    const b = HORSE_CIRCUIT[(i + 1) % HORSE_CIRCUIT.length];
+// Where anything walking a closed circuit is at t: which way it faces, and which axis it is on, so a check knows
+// which way to measure its width. Reduced motion holds it at the node it starts from. `facing` is how it turns:
+// 'leg' faces the way the leg it is on runs, which is what a horse does, and 'corner' faces the way the next
+// corner will take it, so a walker on an upright leg has already turned rather than sliding along sideways.
+// Four things walk a circuit now, and this is the part all four of them had a copy of.
+function walkAt(circuit, speed, t, reduced, facing = 'corner') {
+  const legs = circuit.map((a, i) => {
+    const b = circuit[(i + 1) % circuit.length];
     return { a, b, len: Math.hypot(b.x - a.x, b.y - a.y) };
   });
+  const dirs = legs.map((l, i) => {
+    if (facing === 'leg') return l.b.x < l.a.x ? -1 : 1;
+    for (let k = 0; k < legs.length; k += 1) {
+      const m = legs[(i + k) % legs.length];
+      if (m.b.x !== m.a.x) return m.b.x < m.a.x ? -1 : 1;
+    }
+    return 1;
+  });
   const loop = legs.reduce((sum, l) => sum + l.len, 0);
-  let d = reduced ? 0 : ((t * HORSE_SPEED) % loop + loop) % loop;
-  for (const l of legs) {
+  let d = reduced ? 0 : ((t * speed) % loop + loop) % loop;
+  for (let i = 0; i < legs.length; i += 1) {
+    const l = legs[i];
     if (d > l.len) {
       d -= l.len;
       continue;
     }
     const k = l.len ? d / l.len : 0;
     return {
-      x: l.a.x + (l.b.x - l.a.x) * k, y: l.a.y + (l.b.y - l.a.y) * k,
-      dir: l.b.x < l.a.x ? -1 : 1, axis: Math.abs(l.b.x - l.a.x) >= Math.abs(l.b.y - l.a.y) ? 'x' : 'y',
+      x: l.a.x + (l.b.x - l.a.x) * k, y: l.a.y + (l.b.y - l.a.y) * k, dir: dirs[i],
+      axis: Math.abs(l.b.x - l.a.x) >= Math.abs(l.b.y - l.a.y) ? 'x' : 'y',
     };
   }
-  return { x: HORSE_CIRCUIT[0].x, y: HORSE_CIRCUIT[0].y, dir: 1, axis: 'x' };
+  return { x: circuit[0].x, y: circuit[0].y, dir: dirs[0], axis: 'x' };
+}
+
+export function horseAt(t, reduced = false) {
+  return walkAt(HORSE_CIRCUIT, HORSE_SPEED, t, reduced, 'leg');
+}
+
+// An ent walks the same ring the four roads make round the workshop, which is the circuit the frontier's horse
+// trots. It goes at an ent's pace: about a minute and a half to get round, slower than anything else on the map.
+export const ENT_WALK_CIRCUIT = HORSE_CIRCUIT;
+export const ENT_WALK_SPEED = 22;
+// It walks at 25, which is 52 tall and the size of the middling standing ones. That is as big as the road will
+// take: its two roots reach 0.72r either side once one has stepped, and the band is only 19 either side of the
+// line. At 13 it was a sapling beside the sessions at the benches.
+export const ENT_WALK_R = 25;
+// One stride, in seconds.
+export const ENT_WALK_BEAT = 2.6;
+// What has to stay on the road is what it stands on: its two roots. A root is planted at 0.4r, steps 0.12r and
+// splays 0.2r, so it reaches 0.72r either side, and its poly rises 0.45r up the bole. The ground shadow and the
+// whole tree above them overhang the band, the way a session walking the road does, and the shadow is a soft
+// wash at 18 per cent either way.
+// Derived from the radius, never written out: as a pair of literals it did not move when the ent grew, so an
+// ent too big for the road passed every check it has.
+export const ENT_WALK_FOOT = Object.freeze([
+  -0.72 * ENT_WALK_R, -0.45 * ENT_WALK_R, 0.72 * ENT_WALK_R, 0,
+]);
+
+export function walkingEntAt(t, reduced = false) {
+  return walkAt(ENT_WALK_CIRCUIT, ENT_WALK_SPEED, t, reduced);
+}
+
+// Where it is in its stride at t, from -1 to 1. Reduced motion stands it still, roots down.
+export function entStride(t, reduced) {
+  return reduced ? 0 : Math.sin((TAU * (Number(t) || 0)) / ENT_WALK_BEAT);
 }
 
 // Something creeps round the inside of the graveyard fence in Middle-earth, keeping to the wall and never
@@ -3312,29 +3357,7 @@ export const GOLLUM_REACH = 26;
 // Where he is at t and which way he faces. On the two upright legs he already faces the way the next corner
 // takes him, so he turns before he walks rather than sliding along sideways.
 export function gollumAt(t, reduced = false) {
-  const legs = GOLLUM_CIRCUIT.map((a, i) => {
-    const b = GOLLUM_CIRCUIT[(i + 1) % GOLLUM_CIRCUIT.length];
-    return { a, b, len: Math.hypot(b.x - a.x, b.y - a.y) };
-  });
-  const facing = legs.map((l, i) => {
-    for (let k = 0; k < legs.length; k += 1) {
-      const m = legs[(i + k) % legs.length];
-      if (m.b.x !== m.a.x) return m.b.x < m.a.x ? -1 : 1;
-    }
-    return 1;
-  });
-  const loop = legs.reduce((sum, l) => sum + l.len, 0);
-  let d = reduced ? 0 : ((t * GOLLUM_SPEED) % loop + loop) % loop;
-  for (let i = 0; i < legs.length; i += 1) {
-    const l = legs[i];
-    if (d > l.len) {
-      d -= l.len;
-      continue;
-    }
-    const k = l.len ? d / l.len : 0;
-    return { x: l.a.x + (l.b.x - l.a.x) * k, y: l.a.y + (l.b.y - l.a.y) * k, dir: facing[i] };
-  }
-  return { x: GOLLUM_CIRCUIT[0].x, y: GOLLUM_CIRCUIT[0].y, dir: facing[0] };
+  return walkAt(GOLLUM_CIRCUIT, GOLLUM_SPEED, t, reduced);
 }
 
 // What keeps the lair. It walks the inside of the jail's own plot, on the village's ambient tick like the beam
@@ -3349,29 +3372,7 @@ export const SPIDER_SPEED = 26;
 export const SPIDER_REACH = 18;
 
 export function spiderAt(t, reduced = false) {
-  const legs = SPIDER_CIRCUIT.map((a, i) => {
-    const b = SPIDER_CIRCUIT[(i + 1) % SPIDER_CIRCUIT.length];
-    return { a, b, len: Math.hypot(b.x - a.x, b.y - a.y) };
-  });
-  const facing = legs.map((l, i) => {
-    for (let k = 0; k < legs.length; k += 1) {
-      const m = legs[(i + k) % legs.length];
-      if (m.b.x !== m.a.x) return m.b.x < m.a.x ? -1 : 1;
-    }
-    return 1;
-  });
-  const loop = legs.reduce((sum, l) => sum + l.len, 0);
-  let d = reduced ? 0 : ((t * SPIDER_SPEED) % loop + loop) % loop;
-  for (let i = 0; i < legs.length; i += 1) {
-    const l = legs[i];
-    if (d > l.len) {
-      d -= l.len;
-      continue;
-    }
-    const k = l.len ? d / l.len : 0;
-    return { x: l.a.x + (l.b.x - l.a.x) * k, y: l.a.y + (l.b.y - l.a.y) * k, dir: facing[i] };
-  }
-  return { x: SPIDER_CIRCUIT[0].x, y: SPIDER_CIRCUIT[0].y, dir: facing[0] };
+  return walkAt(SPIDER_CIRCUIT, SPIDER_SPEED, t, reduced);
 }
 
 // A green country: the Shire's own hills and hedgerows, oak and thatch, and a road west to the sea. The sea stays
@@ -4465,7 +4466,7 @@ export function entSway(t, reduced, x, y) {
 // position, so eight of them are eight different ents rather than one drawn eight times. Unlike every other tree
 // they are drawn per frame rather than into the background layer, because they dance: it rides the village's own
 // ambient tick, like the beam and the frontier's horse, and holds still under reduced motion.
-function paintEnt(g, T, x, y, r, sway = 0) {
+function paintEnt(g, T, x, y, r, sway = 0, stride = 0) {
   const turn = ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1 + 1) % 1;
   const turn2 = ((Math.sin(x * 4.898 + y * 21.773) * 19483.1234) % 1 + 1) % 1;
   // The dance is added to the lean it already had: both together reach 0.34r, which puts the far edge of the
@@ -4480,9 +4481,10 @@ function paintEnt(g, T, x, y, r, sway = 0) {
   const top = y - r * stand;
   const w = r * (0.38 + turn * 0.14);
   fillEllipse(g, x + 4, y + 2, r * 0.85, r * 0.3, T.shadow);
-  // Roots: two splayed feet, inside the box's own width.
+  // Roots: two splayed feet, inside the box's own width. One steps forward as the other steps back, which at
+  // 0.12r keeps the far edge of a foot at 0.72r of the 1.07r the box allows.
   for (const side of [-1, 1]) {
-    const rx = x + side * r * 0.4;
+    const rx = x + side * r * 0.4 + side * stride * r * 0.12;
     fillPoly(g, [[x + side * w * 0.3, y - r * 0.45], [rx + side * r * 0.2, y], [rx - side * r * 0.16, y]], T.trunk);
   }
   // The bole, leaning the way this one leans.
@@ -7201,6 +7203,15 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     for (const [x, y, r] of TREES) paintEnt(ctx, env.theme, x, y, r, entSway(env.t, env.reduced, x, y));
   }
 
+  // One ent walking the ring the four roads make round the workshop, where the frontier has its horse. Its
+  // footing stays on the road (ENT_WALK_FOOT); the rest of it rises well above the band, the way a session
+  // walking the road does. Ambient tick, still under reduced motion, like everything else that is only scenery.
+  function drawWalkingEnt(env) {
+    const { x, y } = walkingEntAt(env.t, env.reduced);
+    const stride = entStride(env.t, env.reduced);
+    paintEnt(ctx, env.theme, x, y, ENT_WALK_R, stride * 0.5, stride);
+  }
+
   function drawAmbient(env) {
     const { t, theme: T } = env;
     // Lit by whoever is in the room, idle or recent alike: dark windows with guests inside read as a bug.
@@ -9458,6 +9469,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     if (env.west) drawHorse(env);
     if (env.pack === 'shire') {
       drawEnts(env);
+      drawWalkingEnt(env);
       drawSpider(env);
       drawGollum(env);
     }

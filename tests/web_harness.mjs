@@ -4041,6 +4041,76 @@ const roadBands = V.ROAD_LINES.map(([[x0, y0], [x1, y1]]) => {
     : [x0 - half, Math.min(y0, y1), V.ROAD_BAND, Math.abs(y1 - y0)];
 });
 
+check('an ent walks the ring the roads make round the workshop, on its roots, and stands still when asked', () => {
+  for (const node of V.ENT_WALK_CIRCUIT) {
+    assert(V.ROAD_NODES.some(([x, y]) => x === node.x && y === node.y),
+      `the circuit turns at ${JSON.stringify(node)}, which is a road junction`);
+  }
+  const half = V.ROAD_BAND / 2;
+  const onRoad = (x, y) => V.ROAD_LINES.some(([[x0, y0], [x1, y1]]) => {
+    const vx = x1 - x0;
+    const vy = y1 - y0;
+    const k = Math.max(0, Math.min(1, ((x - x0) * vx + (y - y0) * vy) / (vx * vx + vy * vy)));
+    return Math.hypot(x - (x0 + vx * k), y - (y0 + vy * k)) <= half;
+  });
+  const [fl, ft, fr, fb] = V.ENT_WALK_FOOT;
+  assert(Math.max(-fl, fr) < half, `the ent's roots (${fr - fl} across) fit the road band (${V.ROAD_BAND})`);
+  const loop = V.ENT_WALK_CIRCUIT.reduce((sum, a, i) => {
+    const b = V.ENT_WALK_CIRCUIT[(i + 1) % V.ENT_WALK_CIRCUIT.length];
+    return sum + Math.hypot(b.x - a.x, b.y - a.y);
+  }, 0);
+  const period = loop / V.ENT_WALK_SPEED;
+  let seen = 0;
+  for (let t = 0; t <= period * 2; t += period / 900) {
+    const e = V.walkingEntAt(t);
+    assert(onRoad(e.x, e.y), `the ent stands off the road at t ${t.toFixed(2)}: ${e.x.toFixed(1)},${e.y.toFixed(1)}`);
+    // Measured across the leg it is on, never along it, for the reason the horse's own check gives: two bands
+    // meeting at a right angle leave the outer corner uncovered, so a box corner tested at a junction fails for
+    // a walker of any size at all. Only the roots are tested: an ent walking the road towers over it the way a
+    // session walking the road does, and nothing holds a walker's body to the band.
+    for (const d of e.axis === 'x' ? [ft, fb] : [fl, fr]) {
+      const p2 = e.axis === 'x' ? { x: e.x, y: e.y + d } : { x: e.x + d, y: e.y };
+      assert(onRoad(p2.x, p2.y),
+        `a root is off the road at t ${t.toFixed(2)}: ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`);
+    }
+    seen += 1;
+  }
+  assert(seen > 1000, 'the whole circuit was walked');
+  assert(period > 60, `it goes at an ent's pace (${period.toFixed(0)} s a lap)`);
+
+  const places = new Set();
+  for (let t = 0; t <= period; t += period / 40) places.add(`${V.walkingEntAt(t).x.toFixed(0)},${V.walkingEntAt(t).y.toFixed(0)}`);
+  assert(places.size > 30, `the ent gets round the circuit (${places.size} places)`);
+  const still = new Set();
+  for (let t = 0; t <= period; t += period / 40) still.add(`${V.walkingEntAt(t, true).x},${V.walkingEntAt(t, true).y}`);
+  eq(still.size, 1, 'reduced motion holds it at one place');
+  const rooted = new Set();
+  for (let t = 0; t <= V.ENT_WALK_BEAT; t += V.ENT_WALK_BEAT / 20) rooted.add(V.entStride(t, true));
+  eq([...rooted], [0], 'and its roots stay down');
+
+  // It is a tree on a footing that moves, so the box that holds a standing ent holds this one too. Under reduced
+  // motion it stands at the circuit's first node, which is in none of the eight boxes the standing ents take: a
+  // tree colour in the frame whose centre is outside all of them is this one.
+  const T = V.resolveTheme('shire', false);
+  const inks = new Set([T.tree, T.treeDark, T.treeLight, T.trunk, T.moss]);
+  const at = V.walkingEntAt(0, true);
+  const box = V.treeBox([at.x, at.y, V.ENT_WALK_R]);
+  const standing = V.TREES.map((tree) => V.treeBox(tree));
+  const mine = lastFrame(paintedShapes([], { reduce: true, theme: 'shire' }).shapes).filter((sh) => {
+    if (!inks.has(sh.style)) return false;
+    const cx = (sh.box[0] + sh.box[2]) / 2;
+    const cy = (sh.box[1] + sh.box[3]) / 2;
+    return !standing.some(([bx, by, bw, bh]) => cx >= bx && cx <= bx + bw && cy >= by && cy <= by + bh);
+  });
+  assert(mine.length >= 8, `the walking ent is painted at all (${mine.length} shapes in the tree's own colours)`);
+  for (const sh of mine) {
+    const pad = sh.kind === 'stroke' ? sh.lw / 2 : 0;
+    const out = Math.max(box[0] - (sh.box[0] - pad), (sh.box[2] + pad) - (box[0] + box[2]),
+      box[1] - (sh.box[1] - pad), (sh.box[3] + pad) - (box[1] + box[3]));
+    assert(out <= 0.01, `the walking ent paints ${out.toFixed(2)} px outside a tree's own box: ${JSON.stringify(sh.box.map((v) => Math.round(v * 10) / 10))}`);
+  }
+});
+
 check('the spider keeps inside the lair\'s own plot all the way round, and holds still when asked', () => {
   const [px, py, pw, ph] = V.JAIL.plot;
   const loop = V.SPIDER_CIRCUIT.reduce((sum, a, i) => {

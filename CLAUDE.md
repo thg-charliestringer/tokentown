@@ -208,11 +208,18 @@ again.
   as well, over a whole ent beat, and takes two passes to do it (with a background layer the village blits it and
   the frames come back empty; without one there is no document to make a layer at all).
 - **Scenery that walks needs a circuit, a reach and two checks.** The frontier's horse, the creature in the
-  graveyard and the spider in the lair are the same shape of thing: a closed circuit, a speed, a `*_REACH` that
+  graveyard, the spider in the lair and the ent on the ring road are the same shape of thing, and share
+  `walkAt(circuit, speed, t, reduced, facing)`. `facing` is the one thing they do not share: 'leg' faces the way
+  the leg runs, which is a horse, and 'corner' faces the way the next corner takes it, so a walker on an upright
+  leg has turned rather than sliding along sideways. Each one is: a closed circuit, a speed, a `*_REACH` that
   is half of everything it paints, an `*At(t, reduced)` that holds it at one place under reduced motion, and its
   name banned from `anyMotion` and `nextMotionAt` in `tests/test_web.py`. The checks come in pairs: one walks the
   circuit twice and fails if the reach leaves the ground it is allowed, the other measures what is painted under
-  reduced motion against that same reach, so the reach cannot quietly become a lie. Note the slack: the spy
+  reduced motion against that same reach, so the reach cannot quietly become a lie. On the roads, measure across
+  the leg and never along it: two bands meeting at a right angle leave the outer corner uncovered, so a box
+  corner tested at a junction fails for a walker of any size at all. And what has to stay on the road is what the
+  thing stands on, not all of it: the ent is 52 tall on a 38 px band, as a session walking the road is. Note the
+  slack: the spy
   records a stroke's path box and its `lw` apart, so a painted check has half a line width of give, and a
   mutation smaller than that will not be caught.
 - **Two of them in one place will find each other's colours.** The orcs' iron caps are the same `steel` as the

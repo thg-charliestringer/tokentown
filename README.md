@@ -264,6 +264,7 @@ pick. Only the name painted on a board changes.
 | Valhalla island | Sand, dune grass, a sand castle | **The Undying Lands**, under a white tower |
 | The sea | Water, ripples, foam | Unchanged: this pack keeps its sea |
 | The trees | Eight trees | Eight ents, each leaning its own way, and each dancing to its own beat |
+| The roads | Nothing walks them | A ninth ent walks the ring the four roads make round the workshop, where the frontier has its horse. About a minute and a half to get round |
 | The lighthouse | A lighthouse sweeping its beam | A dark tower, and at night an Eye that sweeps it instead |
 | The border patrol | A guard in uniform | A grey pilgrim with a staff, who decides what passes |
 | The Jail | A stone block under a slate roof | **Shelob's**: the same block cut into dark rock under a broken brow, a mouth in place of the door, silk in place of the bars, webs in the corners of the cage and a spider walking the plot |
@@ -292,8 +293,8 @@ windows glow, the lighthouse sweeps its beam round, and the sand castle hall has
 coloured spotlights. In the Wild West the mine has a band instead, and every five seconds two of the crowd go at
 it: a brawl with a **POW!**, then a shootout with a **BANG!**. In Middle-earth the hall has starlight, and the
 dark tower's Eye sweeps where the lighthouse beam did, and the eyes of the thing in the graveyard catch the
-light. The beam, the disco, the band, the fights, the starlight, the horse, the creeper, the spider, the dancing
-ents and the ghosts all hold still when your Mac is set to reduce motion.
+light. The beam, the disco, the band, the fights, the starlight, the horse, the creeper, the spider, the walking
+ent, the dancing ents and the ghosts all hold still when your Mac is set to reduce motion.
 
 ### Visitors: PRs waiting on your review
 
