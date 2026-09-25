@@ -169,6 +169,13 @@ again.
   `app_dirs`, and find a transcript through `Scanner._transcript_candidates`, never `transcript_path` alone.
   `tests/fixtures.claude_project_dir_name` is Claude Code's naming, checked against its JavaScript. Health must keep
   saying when nothing was found: an empty town under a green light is the failure it guards against.
+- **A cloud session is never on this Mac.** One started on claude.ai/code runs in Anthropic's container, which writes
+  the transcript and `sessions/<pid>.json` there in the shapes the scanner reads, both marked
+  `entrypoint: "remote_desktop"` (beside `claude-desktop` and `claude-vscode`). Nothing reaches this Mac: checked
+  2026-09-25 with a cloud session live, the app had written no record for it under `claude-code-sessions`, only the
+  usual `local_*.json`, and the desktop glob takes that prefix alone. The app lists those sessions from its own API,
+  which Tokentown will not do: that is a network call, and a credential from the denylist. A missing cloud session is
+  not a bug to chase, and the README and How it works now say so.
 - **Nothing on disk says which editor a chat ran in.** The Claude Code extension sets entrypoint `claude-vscode` in
   VS Code, VS Code Insiders and Cursor alike, so only a live session's process tree tells them apart. The scanner
   remembers the editor it saw each session live under, in memory only, and a chat never seen live falls back to the

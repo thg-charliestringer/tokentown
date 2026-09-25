@@ -266,6 +266,7 @@
     <h3>What it reads and sends</h3>
     <ul>
       <li>It reads Claude's session files on this Mac, and never changes them: in <code>~/.claude</code>, in the folder <code>CLAUDE_CONFIG_DIR</code> names if you set it, and in the Claude app's own folder. If it finds none of them, or no sessions in them, <strong>Health</strong> says so</li>
+      <li>A session you start on claude.ai/code runs in the cloud, not on this Mac, so it leaves nothing here and never appears in the village. The Claude app lists those by asking Anthropic for them, which Tokentown does not do</li>
       <li>It asks GitHub, read-only and through your own <code>gh</code> login, for your PRs' states and the PRs waiting on your review. If <code>gh</code> is not signed in, <strong>Health</strong> says so: run <code>gh auth login</code> in Terminal</li>
       <li>About once an hour it asks GitHub the same way whether a new release of Tokentown is out, and reads which version you have from its own git folder. When one is, a banner under the top bar offers <strong>What's new</strong>, with the release notes, and <strong>Update now</strong>: it updates with git, only ever as a fast-forward, and restarts Tokentown. It never updates without that click, and <strong>Later</strong> hides the banner until the next release. <strong>Health</strong> names your version</li>
       <li>Nothing else leaves your Mac, and it only answers on this Mac (127.0.0.1)</li>
