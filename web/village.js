@@ -3337,6 +3337,43 @@ export function gollumAt(t, reduced = false) {
   return { x: GOLLUM_CIRCUIT[0].x, y: GOLLUM_CIRCUIT[0].y, dir: facing[0] };
 }
 
+// What keeps the lair. It walks the inside of the jail's own plot, on the village's ambient tick like the beam
+// and the frontier's horse: something patrolling a web is scenery, not a session going anywhere.
+export const SPIDER_CIRCUIT = Object.freeze([
+  Object.freeze({ x: 92, y: 68 }), Object.freeze({ x: 308, y: 68 }),
+  Object.freeze({ x: 308, y: 230 }), Object.freeze({ x: 92, y: 230 }),
+]);
+export const SPIDER_SPEED = 26;
+// Half of what it paints, in any direction: the legs reach furthest, at 14.7 from the body plus a step and half
+// a line, which is 17.2 of the 18 the plot leaves once the circuit is inset.
+export const SPIDER_REACH = 18;
+
+export function spiderAt(t, reduced = false) {
+  const legs = SPIDER_CIRCUIT.map((a, i) => {
+    const b = SPIDER_CIRCUIT[(i + 1) % SPIDER_CIRCUIT.length];
+    return { a, b, len: Math.hypot(b.x - a.x, b.y - a.y) };
+  });
+  const facing = legs.map((l, i) => {
+    for (let k = 0; k < legs.length; k += 1) {
+      const m = legs[(i + k) % legs.length];
+      if (m.b.x !== m.a.x) return m.b.x < m.a.x ? -1 : 1;
+    }
+    return 1;
+  });
+  const loop = legs.reduce((sum, l) => sum + l.len, 0);
+  let d = reduced ? 0 : ((t * SPIDER_SPEED) % loop + loop) % loop;
+  for (let i = 0; i < legs.length; i += 1) {
+    const l = legs[i];
+    if (d > l.len) {
+      d -= l.len;
+      continue;
+    }
+    const k = l.len ? d / l.len : 0;
+    return { x: l.a.x + (l.b.x - l.a.x) * k, y: l.a.y + (l.b.y - l.a.y) * k, dir: facing[i] };
+  }
+  return { x: SPIDER_CIRCUIT[0].x, y: SPIDER_CIRCUIT[0].y, dir: facing[0] };
+}
+
 // A green country: the Shire's own hills and hedgerows, oak and thatch, and a road west to the sea. The sea stays
 // a sea here, which is the point of a pack being colours rather than a rewrite: nothing nautical needed branching.
 // The trees are mallorns, silver-trunked and gold-crowned, which one palette line does across all eight of them.
@@ -3403,7 +3440,7 @@ const SHIRE_DUSK = {
 // The Jail and the Graveyard keep their names in every pack: a cell is a cell and a grave is a grave.
 const SHIRE_NAMES = Object.freeze({
   workshop: 'The Forge', cottages: 'Bag End', porch: 'The Green Dragon',
-  harbour: 'The Grey Havens', beach: 'Undying Lands',
+  harbour: 'The Grey Havens', beach: 'Undying Lands', jail: "Shelob's",
 });
 const SHIRE_ROOMS = Object.freeze({ castle: 'The White Halls', cottages: 'The Parlour' });
 
@@ -5112,11 +5149,50 @@ function paintLeadedWindow(g, T, x, y, w, h, radius = 2) {
 // One iron bar, dark-cored with a light edge so it reads on the yard, on a stone wall and across a body of any
 // repo colour.
 function paintBar(g, T, x, y0, y1) {
+  if (T.pack === 'shire') {
+    // Silk on the bar's own line and over its own span, so the cage is the same cage: what holds a session in
+    // is a strand rather than an iron bar, and every box that measures the cage measures the same thing. Thin
+    // and part see-through, because at the bar's own weight it read as a painted railing.
+    g.globalAlpha = 0.5;
+    line(g, x, y0, x, y1, T.slate, JAIL.barW * 0.6);
+    g.globalAlpha = 0.9;
+    line(g, x, y0, x, y1, T.sailCloth, JAIL.barW * 0.3);
+    g.globalAlpha = 1;
+    return;
+  }
   fillRR(g, x - JAIL.barW / 2, y0, JAIL.barW, y1 - y0, JAIL.barW / 2, T.steel, T.stoneDark, 1);
 }
 
 function paintRail(g, T, x0, x1, y) {
+  if (T.pack === 'shire') {
+    g.globalAlpha = 0.5;
+    line(g, x0, y, x1, y, T.slate, 3);
+    g.globalAlpha = 0.9;
+    line(g, x0, y, x1, y, T.sailCloth, 1.6);
+    g.globalAlpha = 1;
+    return;
+  }
   fillRR(g, x0, y - 2.2, x1 - x0, 4.4, 2, T.steel, T.stoneDark, 1);
+}
+
+// A web spun into a corner: a few radials from the corner and the spiral hung between them. `dx`/`dy` say which
+// way the corner opens, so one routine does all four of them.
+function paintWeb(g, T, cx, cy, r, dx, dy) {
+  const spokes = 5;
+  g.globalAlpha = 0.75;
+  for (let i = 0; i <= spokes; i += 1) {
+    const a = (i / spokes) * (Math.PI / 2);
+    line(g, cx, cy, cx + dx * Math.cos(a) * r, cy + dy * Math.sin(a) * r, T.sailCloth, 1.1);
+  }
+  for (let ring = 0.34; ring <= 1.001; ring += 0.22) {
+    for (let i = 0; i < spokes; i += 1) {
+      const a0 = (i / spokes) * (Math.PI / 2);
+      const a1 = ((i + 1) / spokes) * (Math.PI / 2);
+      line(g, cx + dx * Math.cos(a0) * r * ring, cy + dy * Math.sin(a0) * r * ring,
+        cx + dx * Math.cos(a1) * r * ring, cy + dy * Math.sin(a1) * r * ring, T.sailCloth, 1);
+    }
+  }
+  g.globalAlpha = 1;
 }
 
 // The jail: the cell block, the yard, and the part of the cage that stands behind the prisoners. The bars below the
@@ -5132,42 +5208,74 @@ function paintJail(g, T) {
   g.globalAlpha = 0.5;
   fillRR(g, yx + 6, yy + 6, yw - 12, yh - 12, 4, T.path);
   g.globalAlpha = 1;
-  // The block: stone wall under a slate roof.
+  const lair = T.pack === 'shire';
+  // The block: stone wall under a slate roof, or in Middle-earth the rock the lair is cut into. The dark stone
+  // is the tower's own, which is the one thing in the pack's palette that is nearly black.
   fillEllipse(g, bx + bw / 2 + 6, wallY + bh - JAIL.roofH + 2, bw / 2, 8, T.shadow);
-  fillRR(g, bx, wallY, bw, by + bh - wallY, 3, T.stone, T.stoneDark, 2);
-  // Masonry: courses, with the joints in each one offset from the last, so the wall reads as stone not boards.
-  g.globalAlpha = 0.4;
-  let course = 0;
-  for (let ly = wallY + 11; ly < by + bh - 4; ly += 11) {
-    line(g, bx + 3, ly, bx + bw - 3, ly, T.stoneDark, 1);
-    for (let jx = bx + 12 + (course % 2) * 14; jx < bx + bw - 8; jx += 28) line(g, jx, ly, jx, ly + 11, T.stoneDark, 1);
-    course += 1;
+  fillRR(g, bx, wallY, bw, by + bh - wallY, 3, lair ? T.towerStone : T.stone, lair ? T.towerEdge : T.stoneDark, 2);
+  if (lair) {
+    // Rock takes cracks, not courses: the same wall, split rather than laid.
+    g.globalAlpha = 0.6;
+    for (const [sx, sy, ex, ey] of [[26, 8, 40, 44], [40, 44, 30, 68], [96, 4, 108, 40], [150, 10, 138, 52],
+      [196, 6, 210, 50], [210, 50, 202, 68], [58, 30, 72, 66], [170, 40, 180, 68]]) {
+      line(g, bx + sx, wallY + sy, bx + ex, wallY + ey, T.towerEdge, 1.6);
+    }
+    g.globalAlpha = 1;
+  } else {
+    // Masonry: courses, with the joints in each one offset from the last, so the wall reads as stone not boards.
+    g.globalAlpha = 0.4;
+    let course = 0;
+    for (let ly = wallY + 11; ly < by + bh - 4; ly += 11) {
+      line(g, bx + 3, ly, bx + bw - 3, ly, T.stoneDark, 1);
+      for (let jx = bx + 12 + (course % 2) * 14; jx < bx + bw - 8; jx += 28) line(g, jx, ly, jx, ly + 11, T.stoneDark, 1);
+      course += 1;
+    }
+    g.globalAlpha = 1;
   }
-  g.globalAlpha = 1;
-  if (T.pack === 'shire') {
-    // A flat crown of merlons on the block's own roof line, rather than a pitched slate roof: an older keep.
-    fillRR(g, bx - 6, wallY - 4, bw + 12, 10, 1, T.stoneDark);
-    for (let mx = bx - 2; mx < bx + bw - 2; mx += 26) fillRR(g, mx, by + 2, 15, wallY - by - 2, 1, T.stone, T.stoneDark, 1.5);
-    fillRR(g, bx - 6, by - 2, bw + 12, 6, 1, T.stoneDark);
+  if (lair) {
+    // A broken rock brow over the mouth, on the roof's own line: the teeth run down rather than up, so the same
+    // band of roof reads as an overhang instead of a battlement.
+    fillRR(g, bx - 6, by - 2, bw + 12, wallY - by + 4, 1, T.towerStone, T.towerEdge, 1.5);
+    for (let mx = bx - 4; mx < bx + bw + 4; mx += 19) {
+      fillPoly(g, [[mx, wallY - 3], [mx + 9.5, wallY + 9], [mx + 19, wallY - 3]], T.towerStone, T.towerEdge, 1.2);
+    }
+    fillRR(g, bx - 6, by - 4, bw + 12, 6, 1, T.towerEdge);
   } else {
     fillPoly(g, [[bx - 6, wallY + 2], [bx + 28, by], [bx + bw - 28, by], [bx + bw + 6, wallY + 2]], T.slate, T.stoneDark, 2);
     line(g, bx + 28, by + 1.5, bx + bw - 28, by + 1.5, T.stoneDark, 1.5);
   }
-  // Barred windows: a dark recess behind three bars, under a stone lintel.
+  // Barred windows: a dark recess behind three bars, under a stone lintel. In the lair they are holes in the
+  // rock with the web grown over them.
   for (const [wx, wy, ww, wh2] of JAIL.windows) {
-    fillRR(g, wx - 3, wy - 5, ww + 6, 5, 1, T.stoneDark);
-    if (T.pack === 'shire') paintLeadedWindow(g, T, wx, wy, ww, wh2, 2);
+    fillRR(g, wx - 3, wy - 5, ww + 6, 5, 1, lair ? T.towerEdge : T.stoneDark);
+    if (lair) fillRR(g, wx, wy, ww, wh2, 7, T.towerEdge);
     else fillRR(g, wx, wy, ww, wh2, 2, T.windowDark, T.stoneDark, 2);
     for (let i = 1; i <= 3; i++) paintBar(g, T, wx + (ww * i) / 4, wy + 1, wy + wh2 - 1);
-    line(g, wx, wy + wh2 / 2, wx + ww, wy + wh2 / 2, T.steel, 1.4);
+    line(g, wx, wy + wh2 / 2, wx + ww, wy + wh2 / 2, lair ? T.sailCloth : T.steel, 1.4);
   }
-  // A heavy door with studs and a grille.
   const [dx, dy, dw, dh] = JAIL.door;
-  fillRR(g, dx, dy, dw, dh, 2, T.wood, T.woodDark, 2);
-  for (let i = 0; i < 3; i++) line(g, dx + 4 + i * ((dw - 8) / 2), dy + 3, dx + 4 + i * ((dw - 8) / 2), dy + dh - 3, T.woodDark, 1.2);
-  fillRR(g, dx + dw / 2 - 8, dy + 7, 16, 11, 1, T.windowDark, T.woodDark, 1.5);
-  for (let i = 1; i <= 2; i++) paintBar(g, T, dx + dw / 2 - 8 + (16 * i) / 3, dy + 8, dy + 17);
-  fillEllipse(g, dx + dw - 8, dy + dh / 2 + 4, 2.4, 2.4, T.steel);
+  if (lair) {
+    // The mouth: an opening in the rock on the door's own footing, wider at the floor than at the head, with
+    // silk hanging across it. The door is what a session walks through, so the opening keeps its own box.
+    fillPoly(g, [
+      [dx + 6, dy], [dx + dw - 6, dy], [dx + dw, dy + dh * 0.45], [dx + dw - 2, dy + dh],
+      [dx + 2, dy + dh], [dx, dy + dh * 0.45],
+    ], T.towerEdge);
+    g.globalAlpha = 0.55;
+    for (let i = 1; i <= 4; i += 1) {
+      const sx = dx + (dw * i) / 5;
+      line(g, sx, dy + 2, sx + (i % 2 ? 2.5 : -2.5), dy + dh - 3, T.sailCloth, 1.2);
+    }
+    for (const hy of [dy + dh * 0.3, dy + dh * 0.62]) line(g, dx + 3, hy, dx + dw - 3, hy + 2, T.sailCloth, 1);
+    g.globalAlpha = 1;
+  } else {
+    // A heavy door with studs and a grille.
+    fillRR(g, dx, dy, dw, dh, 2, T.wood, T.woodDark, 2);
+    for (let i = 0; i < 3; i++) line(g, dx + 4 + i * ((dw - 8) / 2), dy + 3, dx + 4 + i * ((dw - 8) / 2), dy + dh - 3, T.woodDark, 1.2);
+    fillRR(g, dx + dw / 2 - 8, dy + 7, 16, 11, 1, T.windowDark, T.woodDark, 1.5);
+    for (let i = 1; i <= 2; i++) paintBar(g, T, dx + dw / 2 - 8 + (16 * i) / 3, dy + 8, dy + 17);
+    fillEllipse(g, dx + dw - 8, dy + dh / 2 + 4, 2.4, 2.4, T.steel);
+  }
   // The cage: corner posts, the rail along the block's base, and the bars that stand behind the crowd.
   for (const px2 of [yx, yx + yw]) fillRR(g, px2 - 3, JAIL.top - 6, 6, JAIL.foot - JAIL.top + 8, 2, T.steel, T.stoneDark, 1);
   const [topRail] = jailRails();
@@ -5180,6 +5288,15 @@ function paintJail(g, T) {
   g.globalAlpha = 0.45;
   fillEllipse(g, (gateL + gateR) / 2, JAIL.foot - 6, (gateR - gateL) / 2 - 6, 9, T.pebble);
   g.globalAlpha = 1;
+  if (lair) {
+    // A web spun into each upper corner of the cage, and egg sacs bunched under the rock. All of it inside the
+    // plot the jail already declares, and clear of the gap the gate leaves.
+    paintWeb(g, T, yx + 2, JAIL.top - 4, 54, 1, 1);
+    paintWeb(g, T, yx + yw - 2, JAIL.top - 4, 54, -1, 1);
+    for (const [sx, sy, sr] of [[bx + 26, wallY + 62, 7], [bx + 38, wallY + 58, 5], [bx + bw - 30, wallY + 60, 6]]) {
+      fillEllipse(g, sx, sy, sr, sr * 1.2, T.sailCloth, T.slate, 1);
+    }
+  }
 }
 
 function paintGraveyard(g, T) {
@@ -6994,26 +7111,86 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     // as a creature with two heads, which is what the first go at him looked like.
     // He skulks upright rather than trotting on all fours: knees bent deep, arms hanging past them, head craned
     // out in front of the body. On all fours he was a grey insect, whatever size the head was.
+    // Limbs taper: thigh and upper arm are drawn thick, shin and forearm thin over the top of them, which is
+    // most of what stops a stick figure reading as a stick figure.
     for (const [fx, phase] of [[-5, 1.3], [2, 3.8]]) {
       const swing = creep * Math.sin(phase) * 2.4;
-      strokePolyline(ctx, [[-2, -4], [1 + swing * 0.5, 1], [fx + swing, 7]], T.steel, 2.8);
+      const knee = [1 + swing * 0.5, 1];
+      line(ctx, -2, -4, knee[0], knee[1], T.steel, 3.4);
+      line(ctx, knee[0], knee[1], fx + swing, 7, T.steel, 2.4);
+      // A splayed foot, because a leg that ends in a point is a stick.
+      for (const toe of [-2.2, 0, 2.2]) line(ctx, fx + swing, 7, fx + swing + toe, 8.4, T.slate, 1.1);
     }
     for (const [hx, phase] of [[4, 2.6], [9, 0]]) {
       const swing = creep * Math.sin(phase) * 1.8;
-      strokePolyline(ctx, [[0, -9], [hx * 0.7 + swing, -3], [hx + swing, 4]], T.steel, 2.6);
+      const elbow = [hx * 0.7 + swing, -3];
+      line(ctx, 0, -9, elbow[0], elbow[1], T.steel, 3.2);
+      line(ctx, elbow[0], elbow[1], hx + swing, 4, T.steel, 2.2);
+      for (const f of [-1.6, 0, 1.6]) line(ctx, hx + swing, 4, hx + swing + f * 0.7, 6, T.slate, 1);
     }
-    // A narrow hunched body with its ribs showing, and a neck craned forward under the head.
+    // A narrow hunched body: ribs over the chest, a shaded flank under it, and a neck craned forward.
     fillEllipse(ctx, -1, -6, 4.5, 5.5, T.steel, T.slate, 1.3);
-    for (const ry of [-8, -6, -4]) line(ctx, -4, ry, 1.5, ry, T.slate, 0.9);
+    ctx.globalAlpha = 0.45;
+    fillEllipse(ctx, -2.2, -4, 3, 3.4, T.slate);
+    ctx.globalAlpha = 1;
+    for (const [ry, rw] of [[-8.4, 3.4], [-6.6, 4], [-4.8, 3.6]]) line(ctx, -1 - rw / 2, ry, -1 + rw / 2, ry + 0.4, T.slate, 0.9);
     line(ctx, 0, -9, 3, -11, T.steel, 3.2);
-    // The head, half again the body, and the eyes that all but fill it.
-    fillEllipse(ctx, 5, -15, 7, 6.5, T.steel, T.slate, 1.4);
+    // The head: a cranium over a smaller jaw rather than one ellipse, with the jaw shaded and the cheek hollow
+    // above it. Two circles stacked is the difference between a skull and a ball.
+    fillEllipse(ctx, 4.6, -12.4, 5.4, 4.4, T.steel, T.slate, 1.3);
+    fillEllipse(ctx, 5, -16, 6.9, 6, T.steel, T.slate, 1.4);
+    ctx.globalAlpha = 0.4;
+    fillEllipse(ctx, 4.6, -11.6, 4.4, 3, T.slate);
+    fillEllipse(ctx, 1.6, -13.6, 2, 1.6, T.slate);
+    ctx.globalAlpha = 1;
+    // The eyes, with a lid over the top of each: a plain disc is the one shape that reads as a cartoon.
     for (const ex of [2.5, 8.5]) {
-      fillEllipse(ctx, ex, -16, 3, 2.8, T.flameCore, T.slate, 1);
-      fillEllipse(ctx, ex + 0.6, -16, 1.3, 1.5, T.slate);
+      fillEllipse(ctx, ex, -16.4, 3, 2.8, T.flameCore, T.slate, 1);
+      fillEllipse(ctx, ex + 0.6, -16.4, 1.3, 1.6, T.slate);
+      ctx.beginPath();
+      ctx.arc(ex, -16.4, 3, Math.PI * 1.06, Math.PI * 1.94);
+      ctx.strokeStyle = T.slate;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
-    line(ctx, 2, -10.5, 9, -11, T.slate, 1.3);
+    // Two nostril slits where a nose would be, and a wide thin mouth across the jaw with a few teeth in it.
+    for (const nx of [4.8, 6.4]) line(ctx, nx, -13.9, nx + 0.3, -13.1, T.slate, 1);
+    // In the slate the mouth vanished into the shading on the jaw, and three teeth made a skull of him.
+    line(ctx, 1.8, -11.6, 8, -11.2, T.ink, 1.4);
+    for (const tx of [3.6, 6.4]) line(ctx, tx, -11.5, tx + 0.15, -10.7, T.flameCore, 0.8);
     for (const [hx, hy] of [[2, -20], [5, -20.5], [8, -20]]) line(ctx, hx, hy, hx - 1.5, hy - 2.5, T.slate, 1.3);
+    ctx.restore();
+  }
+
+  // What keeps the lair, walking the inside of the jail's plot. Everything it paints stays within SPIDER_REACH
+  // of the point it is at, which is what keeps a leg off the road at a corner.
+  function drawSpider(env) {
+    const T = env.theme;
+    const { x, y, dir } = spiderAt(env.t, env.reduced);
+    const step = env.reduced ? 0 : Math.sin(env.t * 6);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(dir < 0 ? -1 : 1, 1);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    fillEllipse(ctx, 0, 8, 11, 3, T.shadow);
+    // Eight legs arched over the body, the near four stepping out of phase with the far four.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 4; i += 1) {
+        const sp = step * Math.sin(i * 1.7 + (side > 0 ? 0 : 1.9)) * 1.6;
+        const reach = 7.5 + i * 1.1;
+        const ax = (i - 1.5) * 2.6;
+        strokePolyline(ctx, [[ax, -2], [ax + side * reach * 0.6, -8 - i * 0.6 + sp], [ax + side * reach, 6 + sp]], T.towerEdge, 1.8);
+      }
+    }
+    // Abdomen behind, thorax in front, a cluster of eyes on it and two fangs under.
+    fillEllipse(ctx, -6, -3, 8, 6.5, T.towerStone, T.towerEdge, 1.3);
+    fillEllipse(ctx, -7, -4.5, 3.4, 2.2, T.slate);
+    fillEllipse(ctx, 3, -2, 5, 4.2, T.towerStone, T.towerEdge, 1.3);
+    for (const [ex, ey, er] of [[6, -4, 1.3], [7.4, -2, 1.1], [5.4, -0.4, 1], [7.8, -4.4, 0.9]]) {
+      fillEllipse(ctx, ex, ey, er, er, T.flame);
+    }
+    for (const side of [-1, 1]) line(ctx, 6.4, 0.6, 7.8 + side * 0.7, 3.6, T.towerEdge, 1.4);
     ctx.restore();
   }
 
@@ -9281,6 +9458,7 @@ export function createVillage(canvas, { onSelect, onOpen, onHover, onScene, onIs
     if (env.west) drawHorse(env);
     if (env.pack === 'shire') {
       drawEnts(env);
+      drawSpider(env);
       drawGollum(env);
     }
     for (const key of PLACE_KEYS) drawSign(key, env);

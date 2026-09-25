@@ -201,6 +201,23 @@ again.
   thirty calls asked for an outline and went without, and one passed `null` for the fill with an outline asked
   for, which filled the shape in whatever colour was last set and painted over its own view. A drawing helper
   that takes a fill takes `(fill, stroke, lineWidth = 1.5)` in that order, and skips the fill when it is falsy.
+- **A pack that wants something to move has to take it out of the background layer.** The background is painted
+  once and kept until the theme or the size changes, so anything in it is still by construction. Middle-earth's
+  ents dance, so in that pack `paintTrees` paints no tree at all and `drawEnts` draws them per frame instead.
+  That moves them out of reach of every check that reads the layer: `tests/web_harness.mjs` now reads the frame
+  as well, over a whole ent beat, and takes two passes to do it (with a background layer the village blits it and
+  the frames come back empty; without one there is no document to make a layer at all).
+- **Scenery that walks needs a circuit, a reach and two checks.** The frontier's horse, the creature in the
+  graveyard and the spider in the lair are the same shape of thing: a closed circuit, a speed, a `*_REACH` that
+  is half of everything it paints, an `*At(t, reduced)` that holds it at one place under reduced motion, and its
+  name banned from `anyMotion` and `nextMotionAt` in `tests/test_web.py`. The checks come in pairs: one walks the
+  circuit twice and fails if the reach leaves the ground it is allowed, the other measures what is painted under
+  reduced motion against that same reach, so the reach cannot quietly become a lie. Note the slack: the spy
+  records a stroke's path box and its `lw` apart, so a painted check has half a line width of give, and a
+  mutation smaller than that will not be caught.
+- **Two of them in one place will find each other's colours.** The orcs' iron caps are the same `steel` as the
+  creature's skin, so with graves on the board his painted check was measuring their helmets. Both checks run on
+  an empty board, where the walker is drawn and nothing else in that colour is.
 - **Transcripts are big.** Token counts and PR links are read incrementally with a byte budget per scan. Never
   re-read whole transcripts on each scan.
 - **Claude's files are not always where they are on this Mac.** Claude Code uses `CLAUDE_CONFIG_DIR` instead of

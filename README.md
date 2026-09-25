@@ -263,12 +263,12 @@ pick. Only the name painted on a board changes.
 | The Harbour | A deck and a pier | **The Grey Havens** |
 | Valhalla island | Sand, dune grass, a sand castle | **The Undying Lands**, under a white tower |
 | The sea | Water, ripples, foam | Unchanged: this pack keeps its sea |
-| The trees | Eight trees | Eight ents, each leaning its own way |
+| The trees | Eight trees | Eight ents, each leaning its own way, and each dancing to its own beat |
 | The lighthouse | A lighthouse sweeping its beam | A dark tower, and at night an Eye that sweeps it instead |
 | The border patrol | A guard in uniform | A grey pilgrim with a staff, who decides what passes |
-| The Jail | A stone block under a slate roof | The same block, battlemented: an older keep |
+| The Jail | A stone block under a slate roof | **Shelob's**: the same block cut into dark rock under a broken brow, a mouth in place of the door, silk in place of the bars, webs in the corners of the cage and a spider walking the plot |
 | The windows | Glass with a glazing bar | Leaded diamond panes, on every opening in the pack |
-| The Graveyard | Headstones | Barrows, each with a standing stone at its head, and something creeping round inside the fence that never leaves |
+| The Graveyard | Headstones | Barrows, each with a standing stone at its head. Orcs haunt them in place of ghosts, and something creeps round inside the fence that never leaves |
 | The Cottages room | A parlour with square windows | **The Parlour**: round windows onto the country, and a dresser of plates |
 | The hearth | A pot over three logs | The same hearth, lit: embers, flames and a pot on a crane. The green village's hearth is lit too |
 | The castle hall | A sand castle hall | **The White Halls**: an arcade of pointed arches, lancets over a gorge and its fall, a terrace archway onto the valley, a flagstone floor with a star laid in it, and stone benches |
@@ -292,8 +292,8 @@ windows glow, the lighthouse sweeps its beam round, and the sand castle hall has
 coloured spotlights. In the Wild West the mine has a band instead, and every five seconds two of the crowd go at
 it: a brawl with a **POW!**, then a shootout with a **BANG!**. In Middle-earth the hall has starlight, and the
 dark tower's Eye sweeps where the lighthouse beam did, and the eyes of the thing in the graveyard catch the
-light. The beam, the disco, the band, the fights, the starlight, the horse, the creeper and the ghosts all hold
-still when your Mac is set to reduce motion.
+light. The beam, the disco, the band, the fights, the starlight, the horse, the creeper, the spider, the dancing
+ents and the ghosts all hold still when your Mac is set to reduce motion.
 
 ### Visitors: PRs waiting on your review
 

@@ -4041,6 +4041,46 @@ const roadBands = V.ROAD_LINES.map(([[x0, y0], [x1, y1]]) => {
     : [x0 - half, Math.min(y0, y1), V.ROAD_BAND, Math.abs(y1 - y0)];
 });
 
+check('the spider keeps inside the lair\'s own plot all the way round, and holds still when asked', () => {
+  const [px, py, pw, ph] = V.JAIL.plot;
+  const loop = V.SPIDER_CIRCUIT.reduce((sum, a, i) => {
+    const b = V.SPIDER_CIRCUIT[(i + 1) % V.SPIDER_CIRCUIT.length];
+    return sum + Math.hypot(b.x - a.x, b.y - a.y);
+  }, 0);
+  const period = loop / V.SPIDER_SPEED;
+  let seen = 0;
+  for (let t = 0; t <= period * 2; t += period / 900) {
+    const sp = V.spiderAt(t);
+    assert(Math.abs(sp.dir) === 1, `the spider faces one way or the other at t ${t.toFixed(2)}`);
+    assert(sp.x - V.SPIDER_REACH >= px && sp.x + V.SPIDER_REACH <= px + pw
+      && sp.y - V.SPIDER_REACH >= py && sp.y + V.SPIDER_REACH <= py + ph,
+      `the spider reaches outside the plot at t ${t.toFixed(2)}: ${sp.x.toFixed(1)},${sp.y.toFixed(1)}`);
+    seen += 1;
+  }
+  assert(seen > 1000, 'the whole circuit was walked');
+
+  const places = new Set();
+  for (let t = 0; t <= period; t += period / 40) places.add(`${V.spiderAt(t).x.toFixed(0)},${V.spiderAt(t).y.toFixed(0)}`);
+  assert(places.size > 30, `the spider gets round the circuit (${places.size} places)`);
+  const still = new Set();
+  for (let t = 0; t <= period; t += period / 40) still.add(`${V.spiderAt(t, true).x},${V.spiderAt(t, true).y}`);
+  eq(still.size, 1, 'reduced motion holds it at one place');
+
+  // And the reach is honest about the drawing. The lair's rock is painted in the same two colours, but that is in
+  // the background layer, which this pass has no document to make: what is left in the plot is the spider.
+  const T = V.resolveTheme('shire', false);
+  const at = V.spiderAt(0, true);
+  const mine = lastFrame(paintedShapes([], { reduce: true, theme: 'shire' }).shapes)
+    .filter((sh) => (sh.style === T.towerStone || sh.style === T.towerEdge)
+      && sh.box[0] >= px && sh.box[2] <= px + pw && sh.box[1] >= py && sh.box[3] <= py + ph);
+  assert(mine.length >= 8, `the spider is painted at all (${mine.length} shapes in the tower's own stone)`);
+  for (const sh of mine) {
+    const out = Math.max(at.x - V.SPIDER_REACH - sh.box[0], sh.box[2] - (at.x + V.SPIDER_REACH),
+      at.y - V.SPIDER_REACH - sh.box[1], sh.box[3] - (at.y + V.SPIDER_REACH));
+    assert(out <= sh.lw / 2, `the spider paints ${out.toFixed(2)} px past its own reach: ${JSON.stringify(sh.box.map((v) => Math.round(v * 10) / 10))}`);
+  }
+});
+
 check('gollum creeps inside the graveyard fence all the way round, and holds still when asked', () => {
   const [fx, fy, fw, fh] = V.GRAVEYARD.fence;
   // The rails are drawn 3 px either side of the fence's own lines, so the inside is that rect inset by 3.
