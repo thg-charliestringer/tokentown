@@ -29,6 +29,7 @@ BUSY_LANES = frozenset({"needs_you", "errored", "running"})
 # be sent too. Island rows are already there: a merged one has nothing to undo, a done one shows Bring back.
 NO_DONE_LANES = ISLAND_LANES
 NEEDS_INPUT_LABEL = "Needs input"
+PR_TO_CHECK_LABEL = "PR to check"
 
 ROW_KEYS = ("id", "kind", "surface", "editor", "lane", "label", "hints", "since", "title", "shortId", "repo",
             "worktree", "branch", "model", "effort", "live", "unread", "pr", "lastActivityAt", "canOpen",
@@ -109,6 +110,7 @@ class PrVerdict:
     merged_at: int | None = None  # set when a merge sails: some PR MERGED, none OPEN, none unresolved
     closed: bool = False  # every PR is CLOSED: the jail
     closed_at: int | None = None  # the newest closure GitHub gave a time for; dates the jail's D30 window
+    unresolved: bool = False  # some PR is in none of those states: nobody has answered about it yet
 
 
 NO_PRS = PrVerdict()
@@ -264,20 +266,20 @@ def pr_verdict(prs: tuple[EffectivePr, ...], last_activity_at: int) -> PrVerdict
     shows the PR that decided."""
     if not prs:
         return NO_PRS
+    unresolved = any(pr.state not in RESOLVED_PR_STATES for pr in prs)
     opened = [pr for pr in prs if pr.state == "OPEN"]
     if opened:
-        return PrVerdict(opened[-1], open=True)
-    unresolved = any(pr.state not in RESOLVED_PR_STATES for pr in prs)
+        return PrVerdict(opened[-1], open=True, unresolved=unresolved)
     merged = [pr for pr in prs if pr.state == "MERGED"]
     if not merged:
         # Nothing open, nothing merged: with nothing unresolved either, every candidate is CLOSED, so prs[-1] is
         # both the newest candidate and the newest closed one. The newest closure dates the jail's own D30 window,
         # so a PR rejected today reaches the jail however long the session has been quiet.
         closed_times = [pr.closed_at for pr in prs if pr.closed_at is not None]
-        return PrVerdict(prs[-1], closed=not unresolved,
+        return PrVerdict(prs[-1], closed=not unresolved, unresolved=unresolved,
                          closed_at=max(closed_times) if closed_times and not unresolved else None)
     if unresolved:
-        return PrVerdict(prs[-1])
+        return PrVerdict(prs[-1], unresolved=True)
     best, best_at = merged[0], None
     for pr in merged:
         # The app has no merge time, so an unverified merge dates from the session's last activity.
@@ -294,6 +296,11 @@ def _island_lane(merged_at: int, now: int) -> _Lane:
 
 def _open_pr_lane(last_activity_at: int) -> _Lane:
     return _Lane("open_pr", "PR open", last_activity_at)
+
+
+def _unchecked_pr_lane(last_activity_at: int) -> _Lane:
+    """The Harbour for a PR nobody has answered about. Its own label, since the PR may not be open at all."""
+    return _Lane("open_pr", PR_TO_CHECK_LABEL, last_activity_at)
 
 
 def _jail_lane(last_activity_at: int) -> _Lane:
@@ -375,10 +382,17 @@ def _pr_or_done_lane(pr: PrVerdict, done_at: int | None, last_activity_at: int, 
 
 def _archived_lane(pr: PrVerdict, done_at: int | None, last_activity_at: int, now: int) -> _Lane:
     """Where an archived chat rests. Unfinished business still places it first: a PR still open holds it in the
-    harbour, and a merge or a done mark sails it."""
+    harbour, and a merge or a done mark sails it.
+
+    A PR nobody has answered about yet is unfinished business too, so a recent one waits in the harbour instead of
+    being buried: the answer often sails it moments later, and the grave first is a walk across the whole village.
+    Past D7 the answer is not coming (gh may not be signed in at all) and the row rests.
+    """
     placed = _pr_or_done_lane(pr, done_at, last_activity_at, now)
     if placed is not None:
         return placed
+    if pr.unresolved and _within_d7(last_activity_at, now):
+        return _unchecked_pr_lane(last_activity_at)
     return _Lane("graveyard", "Archived", last_activity_at, rest_reason="archived")
 
 

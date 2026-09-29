@@ -14,8 +14,8 @@ from pathlib import Path
 from unittest import mock
 
 from town import github
-from town.github import (FAILURE_BACKOFF_MS, JQ_FILTER, OPEN_RECHECK_MS, PAUSE_MAX_MS, PAUSE_MS, PrStateResolver,
-                        parse_pr_state)
+from town.github import (FAILURE_BACKOFF_MS, GONE_BACKOFF_MS, JQ_FILTER, OPEN_RECHECK_MS, PAUSE_MAX_MS,
+                        PAUSE_MS, PrStateResolver, parse_pr_state)
 from town.model import GitHubPr
 
 GH = "/opt/homebrew/bin/gh"
@@ -28,6 +28,9 @@ MINUTE = 60_000
 OPEN_OUT = b'{"closed_at":null,"merged_at":null,"state":"open"}\n'
 MERGED_OUT = b'{"closed_at":"2026-09-15T10:22:33Z","merged_at":"2026-09-15T10:22:33Z","state":"closed"}\n'
 CLOSED_OUT = b'{"closed_at":"2026-09-14T08:00:00Z","merged_at":null,"state":"closed"}\n'
+# What gh prints on stdout when GitHub cannot find the PR: a deleted or renamed repo, or one this
+# sign-in cannot see.
+NOT_FOUND = b'{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}\n'
 MERGED_MS = 1_789_467_753_000
 CLOSED_MS = 1_789_372_800_000
 
@@ -509,6 +512,50 @@ class OutageTests(ResolverTestCase):
         self.clock.t += MINUTE
         self.assertEqual(self.resolver.refresh(self.URLS[:2]), 1)
         self.assertEqual(set(self.resolver.snapshot()), {self.URLS[1]})
+
+
+class GoneUrlTests(ResolverTestCase):
+    """A PR that is not there is one URL's answer, not the channel failing: four of them must never stop the
+    board's live PRs being re-checked, which is how a merge stopped sailing for half an hour at a time."""
+
+    GONE = {1, 2, 3, 4}
+    URLS = [f"https://github.com/o/r/pull/{n}" for n in range(1, 7)]
+
+    def setUp(self):
+        super().setUp()
+        self.run.side_effect = lambda argv, **kw: (
+            done(NOT_FOUND, code=1) if int(argv[2].rsplit("/", 1)[1]) in self.GONE else done(MERGED_OUT))
+
+    def test_a_cycle_of_nothing_but_gone_urls_leaves_the_next_one_free(self):
+        # Every call is made: a gone URL does not end the cycle the way three channel failures do.
+        self.assertEqual(self.resolver.refresh(self.URLS), 6)
+        health = self.resolver.health()
+        self.assertEqual((health["known"], health["failed"], health["lastError"]), (2, 4, "HTTP 404"))
+        # The settled two are terminal, so when the gone four come due again the cycle has nothing that can succeed.
+        self.clock.t += GONE_BACKOFF_MS
+        self.assertEqual(self.resolver.refresh(self.URLS), 4)
+        # A PR raised now is asked about at the next cycle, not after a pause.
+        fresh = "https://github.com/o/r/pull/9"
+        self.clock.t += MINUTE
+        self.assertEqual(self.resolver.refresh(self.URLS + [fresh]), 1)
+        self.assertEqual(self.resolver.snapshot()[fresh].state, "MERGED")
+
+    def test_a_gone_url_waits_six_hours_not_fifteen_minutes(self):
+        one = self.URLS[:1]
+        self.assertEqual(self.resolver.refresh(one), 1)
+        self.clock.t += FAILURE_BACKOFF_MS
+        self.assertEqual(self.resolver.refresh(one), 0)
+        self.clock.t += GONE_BACKOFF_MS - FAILURE_BACKOFF_MS
+        self.assertEqual(self.resolver.refresh(one), 1)
+
+    def test_an_outage_beside_gone_urls_still_pauses(self):
+        self.run.side_effect = None
+        self.run.return_value = done(code=4)
+        self.assertEqual(self.resolver.refresh(self.URLS), 3)
+        self.clock.t += MINUTE
+        self.assertEqual(self.resolver.refresh(self.URLS), 0)
+        self.clock.t += PAUSE_MS
+        self.assertEqual(self.resolver.refresh(self.URLS), 3)
 
 
 class FakePopen:

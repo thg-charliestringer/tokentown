@@ -178,7 +178,7 @@
         <tr><td>Hover the border patrol</td><td>See how many sessions wait at the Harbour to merge</td></tr>
         <tr><td>The Porch</td><td>Blocked: waiting for you to approve, answer or review a plan. Waves under an orange light. Needs input, Errored and Stopped wait here too</td></tr>
         <tr><td>The Cottages</td><td>Idle: quiet for 2 hours or more. Recent: active in the last 7 days. Click to look inside</td></tr>
-        <tr><td>The Harbour</td><td>PR open: a PR is still open</td></tr>
+        <tr><td>The Harbour</td><td>PR open: a PR is still open. Also PR to check: an archived chat whose PR GitHub has not answered about yet</td></tr>
         <tr><td>The Jail</td><td>PR closed: a PR was closed without merging</td></tr>
         <tr><td>Valhalla island</td><td>A PR merged and none are still open, or you marked it done</td></tr>
         <tr><td>Character colour</td><td>The repo it works in. The Repos legend shows which is which</td></tr>
@@ -218,7 +218,7 @@
         <tr><td>The Porch</td><td>Blocked sessions, waving under an orange light: they are waiting for you to approve, answer or review a plan. Sessions that finished a turn in the last 2 hours wait here too, as Needs input, with any that errored or stopped mid-turn</td></tr>
         <tr><td>The Workshop</td><td>Sessions working right now, including any still running a background task</td></tr>
         <tr><td>The Cottages</td><td>Idle sessions, open but quiet for 2 hours or more, and Recent ones, closed but active in the past week. Click to look inside, where they play board games</td></tr>
-        <tr><td>The Harbour</td><td>Sessions with a PR still open on GitHub, queueing behind the border patrol. When the PR merges, the guard stamps their passport and they sail</td></tr>
+        <tr><td>The Harbour</td><td>Sessions with a PR still open on GitHub, queueing behind the border patrol. When the PR merges, the guard stamps their passport and they sail. An archived chat whose PR GitHub has not answered about yet waits here too, as PR to check, rather than being buried while the answer is still coming</td></tr>
         <tr><td>Valhalla island</td><td>Sessions whose PR merged, with none still open, or that you sent there. They lie on the beach for 14 days, then move into the sand castle</td></tr>
         <tr><td>The Jail</td><td>Sessions whose PRs were all closed without merging, for 30 days</td></tr>
         <tr><td>The Graveyard</td><td>Archived chats, terminal and VS Code sessions that have ended, and any with no activity for 30 days</td></tr>
@@ -234,7 +234,7 @@
       <li><strong>Blocked</strong>: it is waiting for you to approve or answer</li>
       <li><strong>Errored</strong>: it hit an error recently</li>
       <li><strong>Running</strong>: it is working, or a background task it started is still going</li>
-      <li><strong>PR open</strong>: one of its PRs is still open, unless you sent it to Valhalla</li>
+      <li><strong>PR open</strong>: one of its PRs is still open, unless you sent it to Valhalla. An archived chat with a PR GitHub has not answered about waits here for up to 7 days, as PR to check</li>
       <li><strong>Valhalla</strong>: a PR merged and none is still open, or you sent it there</li>
       <li><strong>Needs input</strong>: its turn ended in the last 2 hours</li>
       <li><strong>Graveyard</strong>: it is a terminal or VS Code session that has ended</li>
@@ -249,7 +249,7 @@
     <ul>
       <li>Press <strong>Send to Valhalla</strong> on its card, or pick it and press <kbd>d</kbd></li>
       <li>Drag its card onto the Valhalla column on the Board</li>
-      <li>Type <strong>go to valhalla</strong> as a message in the session. It sails once Claude has replied</li>
+      <li>Type <strong>go to valhalla</strong> as a message in the session. It sails once Claude has replied. Any short wording that ends on Valhalla counts, but a question, a refusal or a “later” does not</li>
     </ul>
     <p><strong>Bring back</strong> undoes it. A session also comes back by itself the moment it does anything new.</p>
 
