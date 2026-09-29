@@ -1667,6 +1667,21 @@ class TailFlagTests(HomeTestCase):
               "don't go to valhalla", "what is valhalla?", "", "ok go to valhalla " + "x" * 50, None, 12]
         self.assertEqual([t for t in yes if not sources.asks_valhalla(t)], [])
         self.assertEqual([t for t in no if sources.asks_valhalla(t)], [])
+
+    def test_valhalla_ask_takes_any_wording_that_ends_on_valhalla(self):
+        """The words before Valhalla are not a closed list: "no, go to valhalla" was missed by one that was."""
+        yes = ["you go to valhalla", "pls go to valhalla", "off you go to valhalla", "time to sail to valhalla",
+               "away to valhalla", "job done, to valhalla", "sail away to valhalla thanks", "valhalla now",
+               "no, go to valhalla", "No. Go to Valhalla", "nah, off to valhalla", "nope, valhalla"]
+        self.assertEqual([t for t in yes if not sources.asks_valhalla(t)], [])
+
+    def test_valhalla_ask_refuses_a_refusal_a_question_or_a_plan_for_later(self):
+        """A no that stands on its own turns down the last turn; a no in the middle turns down the sailing."""
+        no = ["no need to go to valhalla", "no going to valhalla", "no go to valhalla", "no, don't go to valhalla",
+              "no, valhalla later", "not valhalla", "never go to valhalla", "should it go to valhalla",
+              "valhalla or the jail", "wait before valhalla", "valhalla is where merged prs go",
+              "valhalla valhalla", " ".join(["a"] * sources.VALHALLA_ASK_MAX_WORDS) + " valhalla"]
+        self.assertEqual([t for t in no if sources.asks_valhalla(t)], [])
         as_blocks = fx.user_text(self.now, text="x")
         as_blocks["message"]["content"] = [{"type": "image", "source": {"data": MARKER}},
                                            {"type": "text", "text": "go to valhalla"}]

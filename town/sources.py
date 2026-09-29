@@ -52,14 +52,25 @@ LAUNCH_TASK_KEYS = ("backgroundTaskId", "taskId", "agentId")
 TASK_NOTIFICATION_PREFIX = "<task-notification"
 SCHEDULE_WAKEUP_TOOL = "ScheduleWakeup"
 # A message that is nothing but a request to sail, such as "ok go to valhalla" or "send it to Valhalla please". The
-# whole message must match: a sentence that only mentions Valhalla ("yes to saying go to valhalla in chat") never does.
+# message has to end on Valhalla, so a sentence that only mentions it ("Send to Valhalla button on every card") never
+# counts, and it has to be short. The words before it are deliberately not a closed list: the first wording this
+# missed in real use was four words long, and no list of the ways of saying "off you go" is ever finished. What keeps
+# a message out instead is a question mark or a word that refuses, questions or defers the instruction: neither is a
+# session being sent off, and they are how the wrong reading would happen ("don't go to valhalla").
 VALHALLA_ASK_MAX_CHARS = 60
-_ASK_FILLER = (r"(?:ok|okay|k|right|alright|great|cool|nice|lovely|perfect|brilliant|thanks|thank you|ta|cheers|yes"
-               r"|yeah|yep|now|please|so|and|then|done|all done)")
-_ASK_VERB = (r"(?:(?:you can |now )?(?:go|head|sail|off|send|send it|send this|send yourself|ship it|ship this"
-             r"|lets go|time to go))")
+VALHALLA_ASK_MAX_WORDS = 12
 _ASK_TAIL = r"(?:please|thanks|thank you|now|then|cheers|ta)"
-VALHALLA_ASK_RE = re.compile(rf"(?:{_ASK_FILLER} )*(?:(?:{_ASK_VERB} )?to )?valhalla(?: {_ASK_TAIL})*")
+VALHALLA_TAIL_RE = re.compile(rf"valhalla(?: {_ASK_TAIL})*")
+VALHALLA_ASK_STOP = frozenset({
+    "not", "dont", "doesnt", "didnt", "isnt", "wont", "cant", "cannot", "never", "no", "nope", "nor", "without",
+    "why", "what", "whats", "how", "when", "where", "who", "whether", "if", "unless", "but", "or",
+    "later", "after", "before", "until", "first", "instead", "maybe", "almost", "nearly", "wait", "hold",
+    "should", "would", "could", "might", "nothing", "stop",
+})
+# "no, go to valhalla" turns down what the last turn asked and then sends the session off; "no need to go to
+# valhalla" turns down the sailing itself. The punctuation is what tells the two apart, so a no that stands on its
+# own at the front is dropped as the interjection it is, while a no anywhere else keeps the whole message out.
+VALHALLA_ASK_LEAD_RE = re.compile(r"^(?:no|nope|nah)\s*[,.!;:–—]+\s*", re.IGNORECASE)
 PS_TABLE_ARGV = ("/bin/ps", "-A", "-o", "pid=,ppid=,etime=,args=")
 PS_TABLE_ENV = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
 PS_TABLE_INTERVAL_S = 5.0
@@ -373,11 +384,16 @@ def asks_valhalla(text: object) -> bool:
     """True when a typed message is only a request to sail to Valhalla. The verdict is kept, never the text."""
     if not isinstance(text, str):
         return False
-    text = text.strip()
-    if not text or len(text) > VALHALLA_ASK_MAX_CHARS:
+    text = VALHALLA_ASK_LEAD_RE.sub("", text.strip(), count=1)
+    if not text or len(text) > VALHALLA_ASK_MAX_CHARS or "?" in text:
         return False
-    words = re.sub(r"[^a-z0-9]+", " ", text.lower().replace("'", "").replace("’", "")).strip()
-    return VALHALLA_ASK_RE.fullmatch(words) is not None
+    words = re.sub(r"[^a-z0-9]+", " ", text.lower().replace("'", "").replace("’", "")).split()
+    if not words or len(words) > VALHALLA_ASK_MAX_WORDS or words.count("valhalla") != 1:
+        return False
+    if not VALHALLA_ASK_STOP.isdisjoint(words):
+        return False
+    # Only a tail of thanks may follow Valhalla: "go to valhalla" sails, "go to valhalla later" does not.
+    return VALHALLA_TAIL_RE.fullmatch(" ".join(words[words.index("valhalla"):])) is not None
 
 
 def _content_asks_valhalla(content: object) -> bool:

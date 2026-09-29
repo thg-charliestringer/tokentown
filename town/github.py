@@ -30,8 +30,16 @@ GH_ENV_KEYS = ("GH_CONFIG_DIR", "XDG_CONFIG_HOME", "GH_TOKEN")
 JQ_FILTER = "{state: .state, merged_at: .merged_at, closed_at: .closed_at}"
 OPEN_RECHECK_MS = 10 * 60 * 1000
 FAILURE_BACKOFF_MS = 15 * 60 * 1000
-# While GitHub, the proxy or gh's sign-in is down every URL fails: after BREAKER_FAILURES failed calls in a row the
-# cycle stops and no re-check runs for PAUSE_MS, doubling up to PAUSE_MAX_MS until a call succeeds.
+# GitHub answered, and the answer was that this PR is not there: the repo was deleted or renamed, or this sign-in
+# cannot see it. That is about the URL, not about the channel, so it waits far longer than a failure that might
+# clear, and it never counts towards the breaker below.
+GONE_ERRORS = frozenset({"HTTP 404", "HTTP 410"})
+GONE_BACKOFF_MS = 6 * 60 * 60 * 1000
+# While GitHub, the proxy or gh's sign-in is down every URL fails: after BREAKER_FAILURES such calls in a row the
+# cycle stops and no re-check runs for PAUSE_MS, doubling up to PAUSE_MAX_MS until a call succeeds. Only a failure
+# that says the channel is down counts. A handful of URLs that are gone for good would otherwise come due together,
+# fail together and pause every live PR's re-check: measured on a real board, four of them left the whole village
+# blind for half an hour at a time, so a merge could not sail and an archived chat was buried instead.
 BREAKER_FAILURES = 3
 PAUSE_MS = 15 * 60 * 1000
 PAUSE_MAX_MS = 2 * 60 * 60 * 1000
@@ -250,7 +258,7 @@ class PrStateResolver:
                         due.append((0 if entry.error is None else 1, url, parts))
             due.sort(key=lambda d: d[0])
 
-            calls = successes = failures = streak = 0
+            calls = successes = outages = streak = 0
             done = now
             for _, url, (owner, repo, number) in due:
                 if calls >= max_calls or streak >= BREAKER_FAILURES or self._cancelled:
@@ -265,10 +273,12 @@ class PrStateResolver:
                     if state is None:
                         # A failed re-check keeps the last state GitHub gave: still fresher than the app's.
                         entry.error, entry.failed_at = error, done
-                        entry.next_check_at = done + FAILURE_BACKOFF_MS
-                        failures += 1
-                        streak += 1
-                        self._failures_in_a_row += 1
+                        gone = error in GONE_ERRORS
+                        entry.next_check_at = done + (GONE_BACKOFF_MS if gone else FAILURE_BACKOFF_MS)
+                        if not gone:
+                            outages += 1
+                            streak += 1
+                            self._failures_in_a_row += 1
                         continue
                     name, merged_at, closed_at = state
                     entry.pr = GitHubPr(state=name, merged_at=merged_at, closed_at=closed_at, checked_at=done)
@@ -281,7 +291,7 @@ class PrStateResolver:
             with self._lock:
                 if successes:
                     self._paused_until, self._pause_ms = None, PAUSE_MS
-                elif failures and self._failures_in_a_row >= BREAKER_FAILURES:
+                elif outages and self._failures_in_a_row >= BREAKER_FAILURES:
                     self._paused_until = done + self._pause_ms
                     self._pause_ms = min(self._pause_ms * 2, PAUSE_MAX_MS)
             return calls

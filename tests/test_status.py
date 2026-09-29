@@ -1391,11 +1391,38 @@ class GraveyardLaneTests(unittest.TestCase):
     """Rules 13 and 17: archived, or no activity for more than 30 days."""
 
     def test_archived_ignores_age_stopped_and_a_closed_pr(self):
-        cases = [dict(last_activity_at=NOW - 400 * DAY), dict(prs=pr9("CLOSED")), dict(prs=pr9("DRAFT")), {}]
+        # A PR still to be checked is the one case that holds an archived row out of the graveyard: see below.
+        cases = [dict(last_activity_at=NOW - 400 * DAY), dict(prs=pr9("CLOSED")), {}]
         for kw in cases:
             with self.subTest(kw=kw):
                 lane, row, _ = one(rec_kw=dict(is_archived=True, **kw), live=False, tail_=tail(prompt()))
                 self.assertEqual((lane, row["label"], row["restReason"]), ("graveyard", "Archived", "archived"))
+
+    def test_archived_with_a_pr_github_has_not_answered_about_waits_in_the_harbour(self):
+        """A merge cannot sail a row while its state is unknown, so burying it would be a grave and then a sail."""
+        for state in ("UNKNOWN", "DRAFT"):
+            with self.subTest(state=state):
+                lane, row, b = one(rec_kw=dict(is_archived=True, prs=pr9(state)), live=False, tail_=tail(prompt()))
+                self.assertEqual((lane, row["label"], row["restReason"], row["pr"]["verified"], row["canMarkDone"]),
+                                 ("open_pr", "PR to check", None, False, True))
+                self.assertEqual((b["counts"]["graveyard"], b["counts"]["open_pr"]), (0, 1))
+        # GitHub answers, and the row goes where the answer sends it.
+        for gh_state, expected in (("MERGED", "valhalla"), ("OPEN", "open_pr"), ("CLOSED", "graveyard")):
+            with self.subTest(gh_state=gh_state):
+                merged = NOW - MIN if gh_state == "MERGED" else None
+                lane, row, _ = one(rec_kw=dict(is_archived=True, prs=pr9("UNKNOWN")), live=False,
+                                   tail_=tail(prompt()), github={URL9: gh(gh_state, merged_at=merged)})
+                self.assertEqual((lane, row["pr"]["verified"]), (expected, True))
+        # D7 is the wait: past it the answer is not coming, and the row rests.
+        for last, expected in ((NOW - 7 * DAY, "open_pr"), (NOW - 7 * DAY - 1, "graveyard")):
+            with self.subTest(last=last):
+                lane, _, _ = one(rec_kw=dict(is_archived=True, prs=pr9("UNKNOWN"), last_activity_at=last),
+                                 live=False, tail_=tail(prompt(ts=last)))
+                self.assertEqual(lane, expected)
+        # A done mark still beats it, and still sails.
+        lane, row, _ = one(rec_kw=dict(is_archived=True, prs=pr9("UNKNOWN")), live=False, tail_=tail(prompt()),
+                           done=NOW - MIN)
+        self.assertEqual((lane, row["valhallaReason"]), ("valhalla", "done"))
 
     def test_archived_with_an_open_pr_waits_in_the_harbour(self):
         # (g)
@@ -2225,10 +2252,11 @@ class AllPrCandidatesTests(unittest.TestCase):
             ((ep(1, "OPEN"), ep(2, "OPEN"), ep(3, "MERGED", NOW - DAY)), bd.PrVerdict(ep(2, "OPEN"), open=True)),
             ((ep(1, "CLOSED"), ep(2, "OPEN")), bd.PrVerdict(ep(2, "OPEN"), open=True)),
             ((ep(1, "MERGED", NOW - DAY), ep(2, "UNKNOWN", verified=False)),
-             bd.PrVerdict(ep(2, "UNKNOWN", verified=False))),
+             bd.PrVerdict(ep(2, "UNKNOWN", verified=False), unresolved=True)),
             # A closed PR beside an unresolved one: no jail, since the unresolved one may still be open.
-            ((ep(1, "CLOSED"), ep(2, "UNKNOWN", verified=False)), bd.PrVerdict(ep(2, "UNKNOWN", verified=False))),
-            ((ep(1, "DRAFT", verified=False), ep(2, "CLOSED")), bd.PrVerdict(ep(2, "CLOSED"))),
+            ((ep(1, "CLOSED"), ep(2, "UNKNOWN", verified=False)),
+             bd.PrVerdict(ep(2, "UNKNOWN", verified=False), unresolved=True)),
+            ((ep(1, "DRAFT", verified=False), ep(2, "CLOSED")), bd.PrVerdict(ep(2, "CLOSED"), unresolved=True)),
             ((ep(1, "MERGED", NOW - DAY), ep(2, "CLOSED"), ep(3, "MERGED", NOW - 2 * DAY)),
              bd.PrVerdict(ep(1, "MERGED", NOW - DAY), merged_at=NOW - DAY)),
             # Equal merge times: the newer PR is shown.

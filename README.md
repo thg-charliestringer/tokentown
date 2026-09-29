@@ -184,7 +184,7 @@ Cursor you have installed.
 | **The Porch** | **Blocked** by the door, waving under an orange light. **Needs input** on the swings (finished a turn in the last 2 hours). **Errored** (a puff of smoke) and **Stopped** (a pause sign) on the steps. One sign names all four, and orange on the Porch always means blocked |
 | **The Workshop** | **Running**: busy, or idle while a task it started in the background still runs (`background task · N min`) |
 | **The Cottages** | **Idle** (live, quiet for 2 hours or more) and **Recent** (active in the last 7 days). One cottage with lit windows and a count on its sign. Click it to go inside, where the sessions wander and sit down to chess, ludo, snakes and ladders or cards. In the Wild West it is **The Bank**, and the room behind it is the counting room |
-| **The Harbour** | **PR open**. Sessions queue behind the border patrol. When a PR merges, the guard stamps that character's passport, the barrier lifts, and it walks down the pier to a boat |
+| **The Harbour** | **PR open**, and an archived chat whose PR GitHub has not answered about yet (**PR to check**). Sessions queue behind the border patrol. When a PR merges, the guard stamps that character's passport, the barrier lifts, and it walks down the pier to a boat |
 | **Valhalla island** | A PR merged with none still open, or you sent it there. For 14 days they lounge on the beach with margaritas, then move into the **sand castle**. Click the castle to go inside. In the Wild West the island is a mesa, the castle is a mine, and they lounge under a brush ramada with whiskey |
 | **The Jail** | Every PR was closed without merging. They stand in a barred yard. A merge always beats a closure |
 | **The Graveyard** | Archived, a terminal or VS Code session that has ended, or no activity for 30+ days. One headstone per session, newest first, with friendly ghosts floating over them: two from the first grave, up to twelve in a full graveyard |
@@ -339,7 +339,9 @@ PR still open:
 
 - Press **Send to Valhalla** on its card, or pick it and press `d`.
 - Drag its card onto the Valhalla column.
-- Type **go to valhalla** as the whole message in the session. It sails once Claude has replied.
+- Type **go to valhalla** as the whole message in the session. It sails once Claude has replied. Any short wording
+  that ends on Valhalla counts ("off you go to valhalla", "no, go to valhalla"), but a question or a message that
+  turns it down or defers it does not ("don't go to valhalla", "go to valhalla later").
 
 An **Undo** button shows for 6 s afterwards, and **Bring back** (or `d` again) undoes it later. A session also comes
 back by itself as soon as it does anything new. Sessions that are live and blocked, errored or running cannot be sent,
@@ -387,33 +389,36 @@ and merged sessions are already there.
 | Running | Busy; or idle while a background task it started still runs (a background shell, agent or workflow with no report back yet, a monitor until its first event, or a scheduled wake-up) |
 | Stopped | Ended mid-turn (running only local commands such as `/context` does not count) |
 | Idle | Live, not archived, and quiet for 2 hours or more |
-| PR open | Any PR is still open, live or not |
+| PR open | Any PR is still open, live or not. Also an archived chat with a PR GitHub has not answered about, active in the last 7 days, labelled **PR to check**: the answer may still sail it |
 | Recent | A desktop session active in the last 7 days |
 | Valhalla beach | A PR merged with none still open, or sent there, in the last 14 days |
 | Valhalla sand castle | The same, more than 14 days ago |
 | Jail | Every PR was closed without merging: none open, none merged, none still unknown. Live sessions stay as long as they are live; desktop sessions for 30 days after the closure or the last activity, whichever is later |
-| Graveyard | Archived, live or not, with no open or merged PR and no done mark, a terminal or VS Code session that has ended (a terminal has no archive: ending a session is how you put it away), or no activity for 30+ days with no open or merged PR |
+| Graveyard | Archived, live or not, with no open or merged PR, no PR still to be checked and no done mark, a terminal or VS Code session that has ended (a terminal has no archive: ending a session is how you put it away), or no activity for 30+ days with no open or merged PR |
 | Older | No activity for 7 to 30 days and nothing else applies. Count only |
 
 The first matching rule wins:
 
 | Session | Order |
 |---|---|
-| Live, archived | Open PR > a merge that sails > a done mark > the Graveyard |
+| Live, archived | Open PR > a merge that sails > a done mark > a PR still to be checked (within 7 days) > the Graveyard |
 | Live, not archived | Blocked > errored > running > open PR > a merge that sails > a done mark > needs input > jail > idle |
-| Not live | Errored (recent, not archived, not done) > open PR > a merge that sails > a done mark > archived > stopped > ended (a terminal or VS Code session) > jail > recent > inactive over 30 days > older |
+| Not live | Errored (recent, not archived, not done) > open PR > a merge that sails > a done mark > a PR still to be checked (archived, within 7 days) > archived > stopped > ended (a terminal or VS Code session) > jail > recent > inactive over 30 days > older |
 
 **Archiving puts a chat away at once**, whatever its session is still doing. It goes straight to the place it would
 rest in once its session had gone, so it walks there once and stays: the Graveyard, unless a PR of its own is still
-open (the Harbour) or one merged, or you marked it done (Valhalla).
+open (the Harbour) or one merged, or you marked it done (Valhalla). A PR GitHub has not answered about yet waits in
+the Harbour too, for up to 7 days: burying it and then sailing it when the answer came would be a walk across the
+whole village.
 
 **Every PR counts, not just the newest.** An open PR anywhere keeps a session in the Harbour. A merge sails only when
 nothing is open and nothing is still unresolved, so a merged PR beats a closed one. The jail takes a session only
 when every PR is closed.
 
 `tokentown check` does not ask GitHub about PRs, so its lanes use the Claude app's PR states. Those rarely record a
-closure, so its `jail` count reads low; the running server uses GitHub's. Its only calls to GitHub are the update
-check's two, which also show whether `gh` is signed in.
+closure, so its `jail` count reads low and its `open_pr` count reads high (every PR it cannot ask about counts as
+one still to be checked); the running server uses GitHub's. Its only calls to GitHub are the update check's two,
+which also show whether `gh` is signed in.
 
 ## Where the data comes from
 
@@ -459,7 +464,7 @@ are waiting on, which puts "waiting on ana and sam" in a Harbour session's toolt
 | Process check | `/bin/ps -o lstart= -p <pid>` | Start time, to reject a recycled pid |
 | Background shells and editors | `/bin/ps -A -o pid=,ppid=,etime=,args=`, at most every 5 s while a session is live | pid, parent pid, elapsed time, and whether the args mark a Claude shell or a VS Code, VS Code Insiders or Cursor process, and which, so a live session with an editor among its ancestors is known to run there. The args themselves are dropped at once |
 | Installed editors | `Visual Studio Code.app`, `Visual Studio Code - Insiders.app` and `Cursor.app` in `/Applications` and `~/Applications` | Whether each is there, so a chat that closed before Tokentown saw it opens in an editor you have |
-| PR state | `gh api repos/<owner>/<repo>/pulls/<number>`, at most 120 calls a minute-long cycle | State, and the merge and close times. In memory only |
+| PR state | `gh api repos/<owner>/<repo>/pulls/<number>`, at most 120 calls a minute-long cycle. An open PR is asked again after 10 minutes, a merged or closed one never, one GitHub cannot find after 6 hours, and any other failure after 15 minutes | State, and the merge and close times. In memory only |
 | Review requests | `gh search prs user-review-requested:@me` and `gh search prs review-requested:@me`, both `--state open --limit 100` | Per PR: URL, title, author login, when it opened, and whether it asked you or a team. At most 50. In memory only |
 | Requested reviewers | `gh api repos/<owner>/<repo>/pulls/<number>/requested_reviewers`, at most 20 calls a cycle | Up to 10 reviewer logins and team slugs per PR. In memory only |
 | This copy of Tokentown | Its own `.git`: `HEAD`, `refs/heads/main`, `refs/tags` or `packed-refs`, and `config` (for a worktree, all but `HEAD` in the main clone's `.git`) | Whether it is on `main`, the commit `main` is at, the release tags naming it, and the owner and repo `origin` names when that is on github.com |

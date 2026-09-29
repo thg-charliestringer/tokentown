@@ -8755,6 +8755,18 @@ check('a session in VS Code Insiders or Cursor is named and opened as one of the
   eq(app.openAppName({ surface: 'terminal', editor: 'cursor' }), 'Claude', 'a terminal row');
 });
 
+check('the Harbour note says whether the PR is open or still to be checked', () => {
+  if (!app) throw new Error('app.js did not load');
+  // An archived chat waits in the Harbour while GitHub has not answered about its PR, so the note reads off the
+  // PR's own state rather than claiming the PR is open.
+  const open = { number: 7, state: 'OPEN', url: 'https://github.com/o/r/pull/7', verified: true, mergedAt: null };
+  const note = (pr, label) => app.statusNote(row(A, 'open_pr', { label, pr }));
+  eq(note(open, 'PR open'), 'A PR is still open', 'a PR GitHub says is open');
+  eq(note({ ...open, state: 'UNKNOWN', verified: false }, 'PR to check'),
+    'Waiting for GitHub to say what happened to its PR', 'a PR nobody has answered about');
+  eq(note(null, 'PR open'), 'A PR is still open', 'an older server that sends no pr');
+});
+
 check('holding a toggle key acts once: d never sends Done and then undoes it', () => {
   if (!app) throw new Error('app.js did not load');
   for (const key of ['d', 'v', 'p', 's', 'i']) {

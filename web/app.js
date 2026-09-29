@@ -39,6 +39,9 @@ export const LANE_HELP = Object.freeze({
   graveyard: 'Archived, or no activity for 30+ days',
 });
 const MERGED_HELP = 'A PR merged and none are still open';
+// An archived chat whose PR GitHub has not answered about waits in the Harbour too, so its note says what it is
+// waiting for rather than claiming the PR is open. Read off the PR's own state, not the server's label.
+const PR_CHECK_HELP = 'Waiting for GitHub to say what happened to its PR';
 // The Board's ten columns, left to right in workflow order, and the lanes each one holds. Every lane in
 // LANE_ORDER appears exactly once: `stopped` joins Blocked and keeps its own dashed pill, and `castle` folds
 // into Valhalla the way it already folds into that HUD pill. `old` is a count only, so it has no column and
@@ -498,7 +501,11 @@ export function displayLabel(s) {
 // whose rule is easy to misread; a graveyard row has its Resting line and a done island row its Marked done line.
 export function statusNote(s) {
   if (!s || typeof s !== 'object') return '';
-  if (s.lane === 'your_turn' || s.lane === 'idle' || s.lane === 'open_pr' || s.lane === 'jail') return LANE_HELP[s.lane];
+  if (s.lane === 'open_pr') {
+    const state = s.pr && typeof s.pr.state === 'string' ? s.pr.state : 'OPEN';
+    return state === 'OPEN' ? LANE_HELP.open_pr : PR_CHECK_HELP;
+  }
+  if (s.lane === 'your_turn' || s.lane === 'idle' || s.lane === 'jail') return LANE_HELP[s.lane];
   if (valhallaReasonOf(s) === 'merged') return MERGED_HELP;
   return '';
 }
