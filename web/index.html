@@ -173,11 +173,11 @@
         <tr><td>Older sessions</td><td>No activity for 7 to 30 days: a count in the note under the columns, no cards</td></tr>
         <tr><td>The update banner</td><td>A new release of Tokentown is out. What's new shows its notes. Update now updates to it with git and restarts Tokentown, and the page reloads onto it. If git is not there or the update fails, it copies the command for Terminal instead. Later hides the banner until the next release</td></tr>
         <tr><td>Click a character</td><td>Open it in Claude, or in its editor for a session in VS Code, VS Code Insiders or Cursor. A terminal session that has ended copies its resume command; one still running says to switch to its terminal</td></tr>
-        <tr><td>Click the cottages</td><td>Go inside: sessions quiet for 2 hours or more, or active in the past week</td></tr>
+        <tr><td>Click the cottages</td><td>Go inside: sessions resting, or gone but active in the past week</td></tr>
         <tr><td>Click the sand castle</td><td>Go inside: sessions merged or marked done over 14 days ago</td></tr>
         <tr><td>Hover the border patrol</td><td>See how many sessions wait at the Harbour to merge</td></tr>
         <tr><td>The Porch</td><td>Blocked: waiting for you to approve, answer or review a plan. Waves under an orange light. Needs input, Errored and Stopped wait here too</td></tr>
-        <tr><td>The Cottages</td><td>Idle: quiet for 2 hours or more. Recent: active in the last 7 days. Click to look inside</td></tr>
+        <tr><td>The Cottages</td><td>Idle: live, with a turn that has not finished. Recent: gone, active in the last 7 days and opened since. Click to look inside</td></tr>
         <tr><td>The Harbour</td><td>PR open: a PR is still open. Also PR to check: an archived chat whose PR GitHub has not answered about yet</td></tr>
         <tr><td>The Jail</td><td>PR closed: a PR was closed without merging</td></tr>
         <tr><td>Valhalla island</td><td>A PR merged and none are still open, or you marked it done</td></tr>
@@ -215,9 +215,9 @@
     <h3>Where everyone goes</h3>
     <table class="keys">
       <tbody>
-        <tr><td>The Porch</td><td>Blocked sessions, waving under an orange light: they are waiting for you to approve, answer or review a plan. Sessions that finished a turn in the last 2 hours wait here too, as Needs input, with any that errored or stopped mid-turn</td></tr>
+        <tr><td>The Porch</td><td>Blocked sessions, waving under an orange light: they are waiting for you to approve, answer or review a plan. Sessions that finished a turn wait here too, as Needs input, until you answer them, with any that errored or stopped mid-turn</td></tr>
         <tr><td>The Workshop</td><td>Sessions working right now, including any still running a background task</td></tr>
-        <tr><td>The Cottages</td><td>Idle sessions, open but quiet for 2 hours or more, and Recent ones, closed but active in the past week. Click to look inside, where they play board games</td></tr>
+        <tr><td>The Cottages</td><td>Idle sessions, open with a turn that has not finished, and Recent ones, closed but active in the past week. Click to look inside, where they play board games</td></tr>
         <tr><td>The Harbour</td><td>Sessions with a PR still open on GitHub, queueing behind the border patrol. When the PR merges, the guard stamps their passport and they sail. An archived chat whose PR GitHub has not answered about yet waits here too, as PR to check, rather than being buried while the answer is still coming</td></tr>
         <tr><td>Valhalla island</td><td>Sessions whose PR merged, with none still open, or that you sent there. They lie on the beach for 14 days, then move into the sand castle</td></tr>
         <tr><td>The Jail</td><td>Sessions whose PRs were all closed without merging, for 30 days</td></tr>
@@ -236,7 +236,7 @@
       <li><strong>Running</strong>: it is working, or a background task it started is still going</li>
       <li><strong>PR open</strong>: one of its PRs is still open, unless you sent it to Valhalla. An archived chat with a PR GitHub has not answered about waits here for up to 7 days, as PR to check</li>
       <li><strong>Valhalla</strong>: a PR merged and none is still open, or you sent it there</li>
-      <li><strong>Needs input</strong>: its turn ended in the last 2 hours</li>
+      <li><strong>Needs input</strong>: its turn ended, so it is your move until you answer it</li>
       <li><strong>Graveyard</strong>: it is a terminal or VS Code session that has ended</li>
       <li><strong>Jail</strong>: its PRs were all closed without merging</li>
       <li>Otherwise by how long it has been quiet: <strong>Idle</strong>, <strong>Recent</strong>, <strong>Graveyard</strong> or <strong>Older</strong></li>
