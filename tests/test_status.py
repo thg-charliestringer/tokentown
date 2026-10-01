@@ -62,6 +62,13 @@ def api_error(kind="server_error", ts=NOW - MIN, **kw):
     return rec("assistant", block_types=("text",), is_api_error=True, error_kind=kind, timestamp=ts, **kw)
 
 
+# The one shape of tail that leaves a live, idle session resting: still retrying, so its turn has not finished
+# and it is not waiting on you. Any finished turn is Needs input now, whatever else is true of the row, so a check
+# about the cottages, the harbour or the jail on a live row reaches them through this.
+def resting(ts=NOW - MIN):
+    return tail(prompt(ts=ts - MIN), system("api_error", ts=ts, retry_attempt=1, max_retries=10))
+
+
 def tail(*records, found=True, newest_mtime=None, unknown_types=(), title=None, cwd=None):
     return Tail(found=found, records=tuple(records), newest_mtime=newest_mtime, unknown_types=tuple(unknown_types),
                 title=title, cwd=cwd)
@@ -71,7 +78,9 @@ def desktop(n: int = 1, **kw) -> DesktopRecord:
     base = dict(session_id=f"local_{uid(n)}", cli_session_id=uid(1000 + n), cwd="/Users/t/code/repo-a",
                 origin_cwd="/Users/t/code/repo-a", title=f"Session {n}", model="opus", effort="high",
                 branch="main", permission_mode="default", created_at=NOW - 3 * HOUR,
-                last_activity_at=NOW - HOUR, last_focused_at=None, is_archived=False, error_at=None, prs=(),
+                # Focused when it was last active: you were there when it last spoke, so the default row is read.
+                # A test that wants one waiting on you gives it a later turn, or an older last_focused_at.
+                last_activity_at=NOW - HOUR, last_focused_at=NOW - HOUR, is_archived=False, error_at=None, prs=(),
                 transcript_unavailable=False)
     base.update(kw)
     return DesktopRecord(**base)
@@ -404,52 +413,56 @@ class LiveLaneTests(unittest.TestCase):
     def test_needs_input_after_end(self):
         for t in (tail(prompt(), text()), None):
             with self.subTest(tail=t is not None):
-                lane, row, _ = one(entry_kw=dict(status_updated_at=NOW - 30 * MIN), tail_=t)
+                lane, row, _ = one(rec_kw=dict(last_focused_at=NOW - 3 * HOUR),
+                                   entry_kw=dict(status_updated_at=NOW - 30 * MIN), tail_=t)
                 self.assertEqual((lane, row["label"], row["since"]), ("your_turn", "Needs input", NOW - 30 * MIN))
 
     def test_needs_input_since_uses_last_activity_when_it_predates_process_start(self):
-        _, row, _ = one(rec_kw=dict(last_activity_at=NOW - HOUR),
+        _, row, _ = one(rec_kw=dict(last_activity_at=NOW - HOUR, last_focused_at=NOW - 3 * HOUR),
                         entry_kw=dict(started_at=NOW - 10 * MIN, status_updated_at=NOW - 9 * MIN),
                         tail_=tail(text(ts=NOW - HOUR)))
         self.assertEqual((row["lane"], row["since"]), ("your_turn", NOW - HOUR))
 
-    def test_needs_input_ignores_whether_it_was_read(self):
-        # (d) Charlie has looked since the turn ended: still his move for 2 hours.
-        ended = NOW - 30 * MIN
-        for focused in (None, ended - HOUR, ended - 120_001, ended - 120_000, ended + MIN, NOW):
-            with self.subTest(focused=focused):
-                lane, row, _ = one(rec_kw=dict(last_activity_at=ended, last_focused_at=focused),
-                                   tail_=tail(prompt(ts=ended - MIN), text(ts=ended)))
-                self.assertEqual((lane, row["label"], row["unread"]), ("your_turn", "Needs input", False))
+    def test_a_live_finished_turn_waits_however_long_it_takes(self):
+        # (d) Nothing about a chat waiting on you changes while it waits, so neither a clock nor a glance moves it
+        # off the Porch. Only answering it, archiving it or marking it done does. Reading a reply is not answering.
+        for ended in (NOW - MIN, NOW - 3 * HOUR, NOW - 3 * DAY, NOW - 6 * DAY):
+            for focused in (None, ended - HOUR, ended + MIN, NOW):
+                with self.subTest(ended=ended, focused=focused):
+                    lane, row, _ = one(rec_kw=dict(last_activity_at=ended, last_focused_at=focused),
+                                       entry_kw=dict(status_updated_at=NOW - 5 * HOUR),
+                                       tail_=tail(prompt(ts=ended - MIN), text(ts=ended)))
+                    self.assertEqual((lane, row["label"]), ("your_turn", "Needs input"))
+        # A terminal or editor session records no focus and never needed one.
+        lane, _, _ = one_cli(cli_kw=dict(last_activity_at=NOW - 3 * DAY),
+                             entry_kw=dict(status_updated_at=NOW - 5 * HOUR),
+                             tail_=tail(prompt(ts=NOW - 3 * DAY - MIN), text(ts=NOW - 3 * DAY)))
+        self.assertEqual(lane, "your_turn")
+        self.assertFalse(hasattr(bd, "NEEDS_INPUT_MS"))
 
-    def test_needs_input_lasts_2_hours_from_the_turn_end(self):
-        # (d) then Idle: the Cottages.
-        for ended, expected in ((NOW - 2 * HOUR, "your_turn"), (NOW - 2 * HOUR - 1, "idle"),
-                                (NOW - 2 * HOUR - MIN, "idle"), (NOW - 3 * DAY, "idle"), (NOW + MIN, "your_turn")):
-            with self.subTest(ended=ended):
-                lane, row, _ = one(rec_kw=dict(last_activity_at=min(ended, NOW), last_focused_at=NOW),
-                                   entry_kw=dict(status_updated_at=NOW - 5 * HOUR),
-                                   tail_=tail(prompt(ts=ended - MIN), text(ts=ended)))
-                self.assertEqual((lane, row["label"]), (expected, "Needs input" if expected == "your_turn" else "Idle"))
-        self.assertEqual(bd.NEEDS_INPUT_MS, 2 * HOUR)
-
-    def test_needs_input_clock_is_the_ended_record_not_later_app_times(self):
-        # The app's lastActivityAt moving on does not restart the 2 hours; with no transcript it is all there is.
+    def test_a_dead_turn_is_read_from_the_ended_record_not_later_app_times(self):
+        # A chat whose process has gone keeps the Porch only while unread, and the app's lastActivityAt moving on
+        # does not decide when the turn ended; with no transcript it is all there is.
         ended = NOW - 3 * HOUR
-        lane, row, _ = one(rec_kw=dict(last_activity_at=NOW - 10 * MIN), tail_=tail(text(ts=ended)))
-        self.assertEqual((lane, row["lastActivityAt"]), ("idle", NOW - 10 * MIN))
-        self.assertEqual(one(rec_kw=dict(last_activity_at=NOW - 10 * MIN))[0], "your_turn")
-        self.assertEqual(one(rec_kw=dict(last_activity_at=NOW - 2 * HOUR - 1))[0], "idle")
+        rec_kw = dict(last_activity_at=NOW - 10 * MIN, last_focused_at=NOW - 2 * HOUR)
+        lane, row, _ = one(rec_kw=rec_kw, live=False, tail_=tail(text(ts=ended)))
+        self.assertEqual((lane, row["lastActivityAt"]), ("recent", NOW - 10 * MIN))
+        self.assertEqual(one(rec_kw=rec_kw, live=False)[0], "your_turn")
+        self.assertEqual(one(rec_kw=dict(rec_kw, last_focused_at=NOW - 5 * MIN), live=False)[0], "recent")
         # A turn that ended with a stop hook summary is timed from it.
         t = tail(text(ts=NOW - 2 * HOUR - 5 * SEC), system("stop_hook_summary", ts=NOW - 2 * HOUR + 5 * SEC))
-        self.assertEqual(one(rec_kw=dict(last_activity_at=NOW - 3 * HOUR), tail_=t)[0], "your_turn")
+        self.assertEqual(one(rec_kw=dict(last_activity_at=NOW - 3 * HOUR, last_focused_at=NOW - 3 * HOUR),
+                             live=False, tail_=t)[0], "your_turn")
+        self.assertEqual(bd.FOCUS_GRACE_MS, 120_000)
 
     # Rule 9
-    def test_idle_when_turn_not_ended(self):
+    def test_a_live_turn_that_never_finished_is_stopped(self):
+        # Your own prompt or an abandoned tool call last, with the registry idle: interrupted, or the status not
+        # caught up yet. Either way it is not resting, and a dead session reads the same tail the same way.
         for t in (tail(prompt()), tail(prompt(), use("a", "Bash"))):
             with self.subTest():
                 lane, row, _ = one(entry_kw=dict(status_updated_at=NOW - 4 * MIN), tail_=t)
-                self.assertEqual((lane, row["label"], row["since"]), ("idle", "Idle", NOW - 4 * MIN))
+                self.assertEqual((lane, row["label"], row["since"]), ("stopped", "Stopped mid-turn", NOW - MIN))
 
     def test_archiving_a_live_session_puts_it_away(self):
         # Whatever the session is still doing: the turn it just ended, a busy one, and one waiting on an approval.
@@ -641,12 +654,17 @@ class DeadLaneTests(unittest.TestCase):
         self.assertEqual((lane, row, b["counts"]["old"]), ("old", None, 1))
 
     def test_unread_only_in_recent(self):
-        _, row, _ = one(rec_kw=dict(last_activity_at=NOW - HOUR, last_focused_at=NOW - HOUR - 120_001), live=False)
-        self.assertTrue(row["unread"])
-        _, row, _ = one(rec_kw=dict(last_activity_at=NOW - HOUR, last_focused_at=NOW - HOUR - 120_000), live=False)
-        self.assertFalse(row["unread"])
-        _, row, _ = one(rec_kw=dict(last_focused_at=None), live=False)
-        self.assertTrue(row["unread"])
+        # A finished turn nobody has read is on the Porch now, so what is left unread in the cottages is a row the
+        # tail calls neither finished nor mid-turn: one still retrying when the process went.
+        retrying = tail(prompt(ts=NOW - HOUR - MIN),
+                        system("api_error", ts=NOW - HOUR, retry_attempt=1, max_retries=10))
+        _, row, _ = one(rec_kw=dict(last_activity_at=NOW - HOUR, last_focused_at=NOW - HOUR - 120_001), live=False,
+                        tail_=retrying)
+        self.assertEqual((row["lane"], row["unread"]), ("recent", True))
+        _, row, _ = one(rec_kw=dict(last_activity_at=NOW - HOUR, last_focused_at=NOW - HOUR - 120_000), live=False,
+                        tail_=retrying)
+        self.assertEqual((row["lane"], row["unread"]), ("recent", False))
+        # Every other lane keeps it false, the Porch included: a row waiting on you says so by standing there.
         _, row, _ = one(rec_kw=dict(last_focused_at=None), live=False, tail_=tail(prompt()))
         self.assertEqual((row["lane"], row["unread"]), ("stopped", False))
         _, row, _ = one(rec_kw=dict(last_focused_at=None), tail_=tail(text()))
@@ -667,19 +685,20 @@ class EffectiveLastActivityTests(unittest.TestCase):
                          ("stopped", "Stopped mid-turn", NOW - 5 * DAY, NOW - 5 * DAY))
 
     def test_quit_time_alone_moves_last_activity(self):
-        lane, row, _ = one(rec_kw=dict(last_activity_at=NOW - 8 * DAY, interrupted_by_quit_at=NOW - 2 * DAY),
-                           live=False)
-        self.assertEqual((lane, row["lastActivityAt"], row["unread"]), ("recent", NOW - 2 * DAY, True))
+        lane, row, _ = one(rec_kw=dict(last_activity_at=NOW - 8 * DAY, last_focused_at=None,
+                                       interrupted_by_quit_at=NOW - 2 * DAY), live=False)
+        self.assertEqual((lane, row["lastActivityAt"]), ("your_turn", NOW - 2 * DAY))
 
-    def test_later_transcript_turn_is_your_turn_and_unread(self):
+    def test_later_transcript_turn_is_your_turn_live_or_not(self):
         activity = NOW - 429 * MIN
         rec_kw = dict(last_activity_at=activity, last_focused_at=activity - 60 * SEC)
         t = tail(prompt(ts=NOW - 80 * MIN), text(ts=NOW - 74 * MIN))
-        self.assertEqual(one(rec_kw=rec_kw, tail_=tail(text(ts=activity)))[0], "idle")
+        self.assertEqual(one(rec_kw=rec_kw, tail_=resting(activity))[0], "idle")
         lane, row, _ = one(rec_kw=rec_kw, tail_=t, entry_kw=dict(started_at=NOW - 8 * HOUR))
         self.assertEqual((lane, row["lastActivityAt"]), ("your_turn", NOW - 74 * MIN))
+        # The process going is not an answer: the reply is still unread, so it keeps the Porch.
         lane, row, _ = one(rec_kw=rec_kw, tail_=t, live=False)
-        self.assertEqual((lane, row["unread"], row["pr"]), ("recent", True, None))
+        self.assertEqual((lane, row["lastActivityAt"], row["pr"]), ("your_turn", NOW - 74 * MIN, None))
 
     def test_d7_and_d30_use_it(self):
         lane, row, _ = one(rec_kw=dict(last_activity_at=NOW - 40 * DAY), live=False, tail_=tail(text(ts=NOW - DAY)))
@@ -719,14 +738,13 @@ class CliRowTests(unittest.TestCase):
         lane, row, _ = one_cli(entry_kw=dict(status_updated_at=NOW - 5 * MIN), tail_=tail(prompt(), text()))
         self.assertEqual((lane, row["label"], row["since"], row["unread"]), ("your_turn", "Needs input", NOW - 5 * MIN,
                                                                              False))
-        # With no transcript the file time is all there is.
+        # With no transcript the file time is all there is, and age never rests it.
         self.assertEqual(one_cli(cli_kw=dict(last_activity_at=NOW - HOUR))[0], "your_turn")
-        self.assertEqual(one_cli(cli_kw=dict(last_activity_at=NOW - 2 * HOUR - 1))[0], "idle")
+        self.assertEqual(one_cli(cli_kw=dict(last_activity_at=NOW - 6 * DAY))[0], "your_turn")
 
-    def test_cli_needs_input_is_timed_from_the_record_not_the_file_time(self):
-        # Writing a title, a mode or a pr-link moves the mtime; the turn ended 3 hours ago.
+    def test_a_cli_row_rests_only_while_its_turn_is_unfinished(self):
         lane, row, _ = one_cli(cli_kw=dict(last_activity_at=NOW - MIN), entry_kw=dict(status_updated_at=NOW - 3 * HOUR),
-                               tail_=tail(prompt(ts=NOW - 3 * HOUR - MIN), text(ts=NOW - 3 * HOUR)))
+                               tail_=resting(NOW - 3 * HOUR))
         self.assertEqual((lane, row["label"]), ("idle", "Idle"))
 
     def test_same_table_otherwise(self):
@@ -757,7 +775,7 @@ class CliRowTests(unittest.TestCase):
         for status, expected in (("idle", "idle"), ("busy", "running")):
             with self.subTest(status=status):
                 lane, row, _ = one_cli(cli_kw=dict(last_activity_at=NOW - 90 * DAY),
-                                       entry_kw=dict(status=status), tail_=tail(text(ts=NOW - 90 * DAY)))
+                                       entry_kw=dict(status=status), tail_=resting(NOW - 90 * DAY))
                 self.assertEqual((lane, row["restReason"]), (expected, None))
 
     def test_tool_hint_without_permission_mode(self):
@@ -992,7 +1010,7 @@ def full_snapshot() -> RawSnapshot:
            entry(ds[3].cli_session_id, status="busy"), entry(ds[4].cli_session_id),
            entry(ds[2].cli_session_id)]
     tails = {ds[1].cli_session_id: tail(api_error()), ds[2].cli_session_id: tail(text()),
-             ds[9].cli_session_id: tail(prompt())}
+             ds[4].cli_session_id: resting(NOW - 3 * HOUR), ds[9].cli_session_id: tail(prompt())}
     clis = [cli(1), cli(2, last_activity_at=NOW - 20 * DAY), cli(3, last_activity_at=NOW - 31 * DAY)]
     tokens = {ds[1].cli_session_id: tokens_for(output=5), clis[0].session_id: tokens_for(output=7, complete=False)}
     return snap(ds, reg, clis, tails, tokens=tokens, plan_usage=PlanUsage(40, 60, NOW - MIN))
@@ -1299,7 +1317,7 @@ class IslandLaneTests(unittest.TestCase):
 
     def test_live_idle_with_merge_goes_to_the_island_before_needs_input(self):
         needs_input = dict(rec_kw=dict(prs=pr9("OPEN"), last_focused_at=None), tail_=tail(text()))
-        self.assertEqual(one(**needs_input)[0], "open_pr")
+        self.assertEqual(one(**needs_input)[0], "your_turn")
         lane, row, _ = one(**needs_input, github={URL9: gh(merged_at=NOW - 3 * HOUR)})
         self.assertEqual((lane, row["live"], row["since"], row["unread"], row["label"]),
                          ("valhalla", True, NOW - 3 * HOUR, False, "Merged"))
@@ -1467,7 +1485,7 @@ class GraveyardLaneTests(unittest.TestCase):
 
     def test_live_sessions_never_rest_unless_archived(self):
         kw = dict(rec_kw=dict(last_activity_at=NOW - 90 * DAY, last_focused_at=NOW),
-                  entry_kw=dict(status_updated_at=NOW - 90 * DAY), tail_=tail(text(ts=NOW - 90 * DAY)))
+                  entry_kw=dict(status_updated_at=NOW - 90 * DAY), tail_=resting(NOW - 90 * DAY))
         lane, row, _ = one(**kw)
         self.assertEqual((lane, row["restReason"]), ("idle", None))
         # Archiving is the one thing that rests a live session, and it rests as archived, not as inactive.
@@ -1539,7 +1557,7 @@ class SortTests(unittest.TestCase):
               desktop(2, last_activity_at=NOW - 3 * HOUR, last_focused_at=NOW),
               desktop(3, last_activity_at=NOW - 4 * HOUR, last_focused_at=NOW)]
         reg = [entry(d.cli_session_id, status_updated_at=NOW - 30 * DAY) for d in ds]
-        b = bd.build_board(snap(ds, reg), NOW)
+        b = bd.build_board(snap(ds, reg, tails={d.cli_session_id: resting(NOW - 5 * HOUR) for d in ds}), NOW)
         self.assertEqual([r["lane"] for r in b["sessions"]], ["idle"] * 3)
         self.assertEqual([r["id"] for r in b["sessions"]], [ds[1].session_id, ds[2].session_id, ds[0].session_id])
 
@@ -1844,7 +1862,7 @@ class BackgroundLaneTests(unittest.TestCase):
         for work in (None, bg(), bg(shells=0, oldest=NOW - HOUR, pending=0, wakeup=False)):
             with self.subTest(work=work):
                 self.assertEqual(one(tail_=t, background=work)[0], "your_turn")
-                self.assertEqual(one(rec_kw=dict(last_activity_at=NOW - 3 * HOUR), tail_=tail(text(ts=NOW - 3 * HOUR)),
+                self.assertEqual(one(rec_kw=dict(last_activity_at=NOW - 3 * HOUR), tail_=resting(NOW - 3 * HOUR),
                                      background=work)[0], "idle")
 
     def test_needs_you_and_live_errors_beat_background(self):
@@ -1876,7 +1894,8 @@ class BackgroundLaneTests(unittest.TestCase):
                          ("running", None, False, NOW - MIN))
 
     def test_only_live_sessions(self):
-        lane, row, _ = one(live=False, tail_=tail(text()), background=bg(shells=3, oldest=NOW - HOUR))
+        lane, row, _ = one(rec_kw=dict(last_focused_at=NOW), live=False, tail_=tail(text()),
+                           background=bg(shells=3, oldest=NOW - HOUR))
         self.assertEqual((lane, row["hints"]), ("recent", []))
 
     def test_cli_rows_and_future_start(self):
@@ -1935,11 +1954,12 @@ class DoneLaneTests(unittest.TestCase):
         done_at = NOW - HOUR
         for last, counted in ((done_at + 120_000, True), (done_at + 120_001, False), (done_at - DAY, True)):
             with self.subTest(last=last):
-                lane, row, _ = one(rec_kw=dict(last_activity_at=last), live=False, done=done_at)
+                lane, row, _ = one(rec_kw=dict(last_activity_at=last, last_focused_at=last), live=False,
+                                   done=done_at)
                 self.assertEqual((lane, row["doneAt"], row["valhallaReason"], row["canMarkDone"]),
                                  ("valhalla", done_at, "done", False) if counted else ("recent", None, None, True))
         # A later transcript record moves the effective last activity past the mark too.
-        lane, row, _ = one(rec_kw=dict(last_activity_at=done_at - HOUR, last_focused_at=NOW),
+        lane, row, _ = one(rec_kw=dict(last_activity_at=done_at - HOUR, last_focused_at=done_at - HOUR),
                            tail_=tail(prompt(ts=NOW - 30 * MIN), text(ts=NOW - 20 * MIN)), done=done_at)
         self.assertEqual((lane, row["doneAt"]), ("your_turn", None))
 
@@ -2050,7 +2070,7 @@ class DoneLaneTests(unittest.TestCase):
                          done=NOW - MIN)
         self.assertEqual(lane, "valhalla")
         # New activity after the mark takes it back, and the open PR holds the row in the Harbour again.
-        lane, row, _ = one(rec_kw=dict(prs=pr9("OPEN")), live=True, tail_=tail(text(ts=NOW - MIN)), done=NOW - HOUR)
+        lane, row, _ = one(rec_kw=dict(prs=pr9("OPEN")), live=True, tail_=resting(), done=NOW - HOUR)
         self.assertEqual((lane, row["doneAt"], row["canMarkDone"]), ("open_pr", None, True))
         # Once the PR closes unmerged the mark still counts.
         lane, row, _ = one(rec_kw=dict(prs=pr9("OPEN")), live=False, done=NOW - MIN,
@@ -2143,18 +2163,23 @@ class AllPrCandidatesTests(unittest.TestCase):
         # Not live, the same.
         self.assertEqual(one(**session, github=github, live=False)[0], "valhalla")
 
-    def test_an_open_538_puts_an_idle_live_session_in_the_harbour(self):
-        # (b) The PR was raised, the turn ended 5 minutes ago: the Harbour, not Needs input.
+    def test_an_open_538_does_not_hide_a_turn_waiting_on_you(self):
+        # (b) The PR was raised and the turn has finished: Needs input, not the Harbour. The PR can sit there for
+        # days while the question in the chat is yours to answer now, and the row still shows it.
         links = [lk(537, NOW - 3 * HOUR), lk(538, NOW - 6 * MIN)]
         github = {url(537, REPO): gh(merged_at=NOW - 2 * HOUR), url(538, REPO): gh("OPEN", merged_at=None)}
         session = dict(rec_kw=dict(last_activity_at=NOW - 5 * MIN),
                        tail_=tail(prompt(ts=NOW - 20 * MIN), text(ts=NOW - 5 * MIN)), links=links)
         lane, row, b = one(**session, github=github)
-        self.assertEqual((lane, row["label"], row["since"], row["live"], row["canMarkDone"], row["valhallaReason"]),
-                         ("open_pr", "PR open", NOW - 5 * MIN, True, True, None))
+        self.assertEqual((lane, row["label"], row["live"], row["canMarkDone"], row["valhallaReason"]),
+                         ("your_turn", "Needs input", True, True, None))
         self.assertEqual(row["pr"], {"number": 538, "state": "OPEN", "url": url(538, REPO), "verified": True,
                                      "mergedAt": None})
-        self.assertEqual((b["counts"]["your_turn"], b["counts"]["open_pr"], b["alert"]), (0, 1, 0))
+        self.assertEqual((b["counts"]["your_turn"], b["counts"]["open_pr"]), (1, 0))
+        # Only a turn that has not finished leaves the open PR to place the row.
+        lane, row, _ = one(**dict(session, tail_=resting(NOW - 5 * MIN)), github=github)
+        self.assertEqual((lane, row["label"], row["since"], row["pr"]["number"]),
+                         ("open_pr", "PR open", NOW - 5 * MIN, 538))
         # (c) Busy, or blocked on Charlie: the live lane wins, and the row still shows the open PR.
         cases = [(dict(status="busy"), session["tail_"], None, "running", "Running"),
                  (dict(status="shell"), session["tail_"], None, "running", "Running"),
@@ -2172,25 +2197,27 @@ class AllPrCandidatesTests(unittest.TestCase):
                 self.assertEqual((lane, row["label"], row["pr"]["number"], row["pr"]["state"]),
                                  (expected, label, 538, "OPEN"))
 
-    def test_needs_input_for_30_minutes_after_viewing_then_idle(self):
-        # (d)
-        viewed = dict(last_focused_at=NOW - 10 * MIN)
-        lane, row, _ = one(rec_kw=dict(last_activity_at=NOW - 30 * MIN, **viewed), tail_=tail(text(ts=NOW - 30 * MIN)))
-        self.assertEqual((lane, row["label"], row["pr"]), ("your_turn", "Needs input", None))
-        lane, row, _ = one(rec_kw=dict(last_activity_at=NOW - 121 * MIN, **viewed), tail_=tail(text(ts=NOW - 121 * MIN)))
+    def test_needs_input_until_you_answer_it(self):
+        # (d) Opening the chat does not rest it, and neither does age: only answering, archiving or marking it done.
+        rec_kw = dict(last_activity_at=NOW - 30 * MIN)
+        for focused in (NOW - 40 * MIN, NOW - 10 * MIN, NOW):
+            with self.subTest(focused=focused):
+                lane, row, _ = one(rec_kw=dict(rec_kw, last_focused_at=focused), tail_=tail(text(ts=NOW - 30 * MIN)))
+                self.assertEqual((lane, row["label"], row["pr"]), ("your_turn", "Needs input", None))
+        lane, row, _ = one(rec_kw=rec_kw, tail_=resting(NOW - 30 * MIN))
         self.assertEqual((lane, row["label"]), ("idle", "Idle"))
 
     def test_an_open_pr_beats_an_older_merge_and_an_unknown_one_holds_it(self):
         # (e)
         both = [lk(1, NOW - 3 * HOUR), lk(2, NOW - 2 * HOUR)]
-        for live, t in ((True, tail(text(ts=NOW - 10 * MIN))), (False, None)):
+        for live, t, quiet in ((True, tail(text(ts=NOW - 10 * MIN)), resting(NOW - 10 * MIN)), (False, None, None)):
             with self.subTest(live=live):
                 github = {url(1, REPO): gh(merged_at=NOW - DAY), url(2, REPO): gh("OPEN", merged_at=None)}
-                lane, row, _ = one(links=both, github=github, live=live, tail_=t)
+                lane, row, _ = one(rec_kw=dict(last_focused_at=NOW), links=both, github=github, live=live, tail_=quiet)
                 self.assertEqual((lane, row["pr"]["number"], row["pr"]["state"]), ("open_pr", 2, "OPEN"))
                 # The open one is older: it still decides, and is the PR shown.
                 github = {url(1, REPO): gh("OPEN", merged_at=None), url(2, REPO): gh(merged_at=NOW - DAY)}
-                lane, row, _ = one(links=both, github=github, live=live, tail_=t)
+                lane, row, _ = one(rec_kw=dict(last_focused_at=NOW), links=both, github=github, live=live, tail_=quiet)
                 self.assertEqual((lane, row["pr"]["number"], row["pr"]["state"]), ("open_pr", 1, "OPEN"))
                 # #2 unknown: it may still be open, so no island, and no Harbour either.
                 lane, row, _ = one(links=both, github={url(1, REPO): gh(merged_at=NOW - DAY)}, live=live, tail_=t)
@@ -2237,7 +2264,11 @@ class AllPrCandidatesTests(unittest.TestCase):
         self.assertEqual((lane, row["pr"]["number"]), ("valhalla", 1))
 
     def test_live_cli_row_with_an_open_link_is_in_the_harbour(self):
+        # A turn still inside the clock beats the open link, as a turn waiting on you does on any row.
         lane, row, _ = one_cli(links=[link(3)], github={url(3): gh("OPEN", merged_at=None)}, tail_=tail(text()))
+        self.assertEqual((lane, row["live"], row["canMarkDone"]), ("your_turn", True, True))
+        lane, row, _ = one_cli(links=[link(3)], github={url(3): gh("OPEN", merged_at=None)},
+                               tail_=resting(NOW - 3 * HOUR))
         self.assertEqual((lane, row["live"], row["canMarkDone"]), ("open_pr", True, True))
         lane, row, _ = one_cli(links=[link(3), link(4, NOW - MIN)], tail_=tail(text()),
                                github={url(3): gh(merged_at=NOW - DAY), url(4): gh("CLOSED", merged_at=None)})
@@ -2291,7 +2322,9 @@ class JailLaneTests(unittest.TestCase):
         return one(links=[lk(30, NOW - 3 * HOUR)], github=self.CLOSED_GH, **kw)
 
     def test_a_closed_only_session_is_jailed_live_or_not(self):
-        ended = dict(rec_kw=dict(last_activity_at=NOW - 3 * HOUR), tail_=tail(text(ts=NOW - 3 * HOUR)))
+        # A live row reaches the jail only while its turn has not finished: a finished one is waiting on you, and
+        # Needs input outranks the jail.
+        ended = dict(rec_kw=dict(last_activity_at=NOW - 3 * HOUR), tail_=resting(NOW - 3 * HOUR))
         lane, row, b = self.closed(**ended)
         self.assertEqual((lane, row["label"], row["live"], row["since"], b["counts"]["jail"]),
                          ("jail", "PR closed", True, NOW - 3 * HOUR, 1))
@@ -2315,7 +2348,7 @@ class JailLaneTests(unittest.TestCase):
     def test_an_open_pr_beats_a_closed_one_newer_or_older(self):
         github = {url(31, REPO): gh("OPEN", merged_at=None), **self.CLOSED_GH}
         for order in ([lk(30, NOW - 5 * HOUR), lk(31, NOW - 4 * HOUR)], [lk(31, NOW - 5 * HOUR), lk(30, NOW - 4 * HOUR)]):
-            for live, t in ((True, tail(text(ts=NOW - 3 * HOUR))), (False, None)):
+            for live, t in ((True, resting(NOW - 3 * HOUR)), (False, None)):
                 with self.subTest(first=order[0].number, live=live):
                     lane, row, b = one(links=order, github=github, live=live, tail_=t)
                     self.assertEqual((lane, row["pr"]["number"], row["pr"]["state"], b["counts"]["jail"]),
@@ -2338,11 +2371,16 @@ class JailLaneTests(unittest.TestCase):
                 lane, row, _ = one(links=order, github=github, live=False)
                 self.assertEqual((lane, row["pr"]["number"]), ("jail", order[-1].number))
 
-    def test_needs_input_holds_a_live_row_for_two_hours_then_the_jail(self):
-        for ago, expected, label in ((5 * MIN, "your_turn", "Needs input"), (3 * HOUR, "jail", "PR closed")):
+    def test_needs_input_holds_a_live_row_out_of_the_jail_however_old(self):
+        for ago in (5 * MIN, 3 * HOUR, 3 * DAY):
             with self.subTest(ago=ago):
                 lane, row, _ = self.closed(rec_kw=dict(last_activity_at=NOW - ago), tail_=tail(text(ts=NOW - ago)))
-                self.assertEqual((lane, row["label"], row["pr"]["state"]), (expected, label, "CLOSED"))
+                self.assertEqual((lane, row["label"], row["pr"]["state"]), ("your_turn", "Needs input", "CLOSED"))
+        # The jail takes it once its turn has not finished, or once the process has gone.
+        self.assertEqual(self.closed(rec_kw=dict(last_activity_at=NOW - 3 * HOUR), tail_=resting(NOW - 3 * HOUR))[0],
+                         "jail")
+        self.assertEqual(self.closed(rec_kw=dict(last_activity_at=NOW - 3 * HOUR, last_focused_at=NOW),
+                                     live=False)[0], "jail")
 
     def test_a_busy_or_blocked_live_session_keeps_its_own_lane(self):
         ended = tail(text(ts=NOW - 3 * HOUR))
@@ -2416,7 +2454,8 @@ class JailLaneTests(unittest.TestCase):
 
     def test_a_cli_row_is_jailed_by_its_own_link(self):
         closed = {url(3): gh("CLOSED", merged_at=None)}
-        lane, row, _ = one_cli(links=[link(3)], github=closed, cli_kw=dict(last_activity_at=NOW - 3 * HOUR))
+        lane, row, _ = one_cli(links=[link(3)], github=closed, cli_kw=dict(last_activity_at=NOW - 3 * HOUR),
+                               tail_=resting(NOW - 3 * HOUR))
         self.assertEqual((lane, row["id"].startswith("cli:"), row["pr"]["number"], row["canMarkDone"]),
                          ("jail", True, 3, True))
         # Ended, it rests in the graveyard instead, as an archived desktop session does.
@@ -2435,7 +2474,8 @@ class PrecedenceTests(unittest.TestCase):
 
     def test_live_chain(self):
         ended = tail(text(ts=NOW - 10 * MIN))
-        quiet = tail(text(ts=NOW - 3 * HOUR))
+        # The only live row that still rests: its turn has not finished, so it is not waiting on you.
+        quiet = resting(NOW - 3 * HOUR)
         steps = [
             # Blocked > errored
             (dict(entry_kw=dict(status="waiting", waiting_for="input needed"), tail_=tail(api_error())), "needs_you"),
@@ -2445,8 +2485,10 @@ class PrecedenceTests(unittest.TestCase):
             # running > open PR
             (dict(entry_kw=dict(status="busy"), rec_kw=dict(prs=self.OPEN), tail_=ended), "running"),
             (dict(rec_kw=dict(prs=self.OPEN), tail_=ended, background=bg(wakeup=True)), "running"),
-            # open PR > merged
-            (dict(rec_kw=dict(prs=self.MERGED + self.OPEN), tail_=ended), "open_pr"),
+            # needs input > open PR: the PR can wait, the question in the chat cannot
+            (dict(rec_kw=dict(prs=self.OPEN), tail_=ended), "your_turn"),
+            # open PR > merged, on a row whose turn has not finished
+            (dict(rec_kw=dict(prs=self.MERGED + self.OPEN), tail_=quiet), "open_pr"),
             # done mark > open PR: a finished session can leave a PR open for someone else
             (dict(rec_kw=dict(prs=self.OPEN), tail_=ended, done=NOW - MIN), "valhalla"),
             # merged > done mark, when no PR is open: the merge dates the island

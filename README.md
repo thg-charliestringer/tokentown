@@ -181,9 +181,9 @@ Cursor you have installed.
 
 | Place | Who is there |
 |---|---|
-| **The Porch** | **Blocked** by the door, waving under an orange light. **Needs input** on the swings (finished a turn in the last 2 hours). **Errored** (a puff of smoke) and **Stopped** (a pause sign) on the steps. One sign names all four, and orange on the Porch always means blocked |
+| **The Porch** | **Blocked** by the door, waving under an orange light. **Needs input** on the swings (finished its turn, so it is your move). **Errored** (a puff of smoke) and **Stopped** (a pause sign) on the steps. One sign names all four, and orange on the Porch always means blocked |
 | **The Workshop** | **Running**: busy, or idle while a task it started in the background still runs (`background task · N min`) |
-| **The Cottages** | **Idle** (live, quiet for 2 hours or more) and **Recent** (active in the last 7 days). One cottage with lit windows and a count on its sign. Click it to go inside, where the sessions wander and sit down to chess, ludo, snakes and ladders or cards. In the Wild West it is **The Bank**, and the room behind it is the counting room |
+| **The Cottages** | **Idle** (live, with a turn that has not finished, such as one still retrying) and **Recent** (gone, active in the last 7 days, and opened since it last spoke). One cottage with lit windows and a count on its sign. Click it to go inside, where the sessions wander and sit down to chess, ludo, snakes and ladders or cards. In the Wild West it is **The Bank**, and the room behind it is the counting room |
 | **The Harbour** | **PR open**, and an archived chat whose PR GitHub has not answered about yet (**PR to check**). Sessions queue behind the border patrol. When a PR merges, the guard stamps that character's passport, the barrier lifts, and it walks down the pier to a boat |
 | **Valhalla island** | A PR merged with none still open, or you sent it there. For 14 days they lounge on the beach with margaritas, then move into the **sand castle**. Click the castle to go inside. In the Wild West the island is a mesa, the castle is a mine, and they lounge under a brush ramada with whiskey |
 | **The Jail** | Every PR was closed without merging. They stand in a barred yard. A merge always beats a closure |
@@ -385,12 +385,12 @@ and merged sessions are already there.
 |---|---|
 | Blocked | Waiting on a permission prompt, a question or a plan review (lane id `needs_you`) |
 | Errored | Rate limited, signed out or an API error |
-| Needs input | Claude finished its turn in the last 2 hours (lane id `your_turn`) |
+| Needs input | Claude finished its turn, so nothing has been typed since and it is your move (lane id `your_turn`). It waits here until you answer it, archive it or mark it done: no clock moves it on, and reading a reply is not answering it. A chat whose session has gone waits here too, for its 7 days, unless you have opened it since it last spoke |
 | Running | Busy; or idle while a background task it started still runs (a background shell, agent or workflow with no report back yet, a monitor until its first event, or a scheduled wake-up) |
 | Stopped | Ended mid-turn (running only local commands such as `/context` does not count) |
-| Idle | Live, not archived, and quiet for 2 hours or more |
+| Idle | Live, not archived, and its turn has not finished, so it is not waiting on you: in practice one still retrying after an API error |
 | PR open | Any PR is still open, live or not. Also an archived chat with a PR GitHub has not answered about, active in the last 7 days, labelled **PR to check**: the answer may still sail it |
-| Recent | A desktop session active in the last 7 days |
+| Recent | A desktop session active in the last 7 days, whose last turn you have opened the chat since. Unopened, it is Needs input |
 | Valhalla beach | A PR merged with none still open, or sent there, in the last 14 days |
 | Valhalla sand castle | The same, more than 14 days ago |
 | Jail | Every PR was closed without merging: none open, none merged, none still unknown. Live sessions stay as long as they are live; desktop sessions for 30 days after the closure or the last activity, whichever is later |
@@ -402,8 +402,8 @@ The first matching rule wins:
 | Session | Order |
 |---|---|
 | Live, archived | Open PR > a merge that sails > a done mark > a PR still to be checked (within 7 days) > the Graveyard |
-| Live, not archived | Blocked > errored > running > open PR > a merge that sails > a done mark > needs input > jail > idle |
-| Not live | Errored (recent, not archived, not done) > open PR > a merge that sails > a done mark > a PR still to be checked (archived, within 7 days) > archived > stopped > ended (a terminal or VS Code session) > jail > recent > inactive over 30 days > older |
+| Live, not archived | Blocked > errored > running > a merge that sails > a done mark > needs input > open PR > stopped > jail > idle |
+| Not live | Errored (recent, not archived, not done) > open PR > a merge that sails > a done mark > a PR still to be checked (archived, within 7 days) > archived > stopped > ended (a terminal or VS Code session) > jail > needs input > recent > inactive over 30 days > older |
 
 **Archiving puts a chat away at once**, whatever its session is still doing. It goes straight to the place it would
 rest in once its session had gone, so it walks there once and stays: the Graveyard, unless a PR of its own is still

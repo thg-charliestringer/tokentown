@@ -992,8 +992,8 @@ check('the cottage door counts the room, not one of its two lanes', () => {
     loop.pump(0.2);
     w.village.destroy();
   });
-  const note = inside.find((s) => s.startsWith('Quiet'));
-  eq(note, 'Quiet for 2 hours, or active this week', `the room's note covers both of its lanes (${JSON.stringify(inside.slice(0, 8))})`);
+  const note = inside.find((s) => s.includes('this week'));
+  eq(note, 'Not waiting on you, or gone this week', `the room's note covers both of its lanes (${JSON.stringify(inside.slice(0, 8))})`);
   for (const n of ['2', '6']) assert(inside.includes(n), `a count pill per lane on the plaque (${n})`);
 
   // The page's tooltip names both lanes and totals the same number.
@@ -6700,10 +6700,14 @@ check('one village mode draws exactly the scene it drew before the world of isla
   // It moved to dd1ec513 (165 shapes) when fillEllipse started honouring the stroke its callers pass. Diffed
   // shape for shape: the eight new shapes are the eight game pieces' own '#2b2b2b' outlines, which that call has
   // asked for since the tables shipped and silently did not get. Nothing else moved, in any of the three scenes.
+  // The room's `words` alone moved to 49e731c1 when its plaque stopped saying "Quiet for 2 hours": a finished
+  // turn now waits on the Porch until you answer it, so the cottages hold what is not waiting on you. Its shapes,
+  // digest and ink are all unchanged, as are all three of the village's and the hall's, because a note is a word
+  // and nothing else moved.
   eq(results.oneVillage, {
     village: { shapes: 1070, digest: 'e62d4286', ink: '33/60929b59', words: 'd00b4209' },
     hall: { shapes: 104, digest: '207527e9', ink: '3/f513068', words: '29cbbb2d' },
-    room: { shapes: 165, digest: 'dd1ec513', ink: '7/6ec12c21', words: 'db3b0380' },
+    room: { shapes: 165, digest: 'dd1ec513', ink: '7/6ec12c21', words: '49e731c1' },
   }, 'one village draws the same scene, shape for shape and word for word');
 });
 

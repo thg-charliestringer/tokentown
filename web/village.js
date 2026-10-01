@@ -6156,10 +6156,10 @@ const SCENE_ART = Object.freeze({
     note: 'Merged or done over 14 days ago', lanes: Object.freeze(['castle']),
   }),
   cottages: Object.freeze({
-    // The note has to cover both lanes in the room: a recent row is one that is not live and was active in the past
-    // week, which is not "quiet for 2 hours or more".
+    // The note has to cover both lanes in the room: an idle row is live with a turn that has not finished, a
+    // recent one has gone and was active in the past week. What both share is that neither is waiting on you.
     spec: ROOM, paint: paintCottageRoom, floor: 'roomFloor', title: 'The Cottages',
-    note: 'Quiet for 2 hours, or active this week', lanes: Object.freeze(['idle', 'recent']),
+    note: 'Not waiting on you, or gone this week', lanes: Object.freeze(['idle', 'recent']),
   }),
 });
 

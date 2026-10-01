@@ -789,8 +789,9 @@ def populate_demo(home: SyntheticHome) -> dict[str, str]:
     desktop("running_busy", "tool_pending", live_status="busy")
     desktop("your_turn", "ended", live_status="idle", last_activity_at=now - 10 * MINUTE,
             last_focused_at=now - HOUR)
-    # The turn ended over 2 hours ago (Needs input lasts 2 hours), and was looked at since.
-    desktop("idle", "ended", live_status="idle", last_activity_at=now - 3 * HOUR, last_focused_at=now - HOUR,
+    # A live chat rests in the cottages only while its turn has not finished: a finished one is waiting on you,
+    # however old, so this one is still retrying rather than done.
+    desktop("idle", "retrying", live_status="idle", last_activity_at=now - 3 * HOUR, last_focused_at=now - HOUR,
             records_now=now - 3 * HOUR)
     desktop("archived", "ended", is_archived=True, last_activity_at=recent)
     desktop("errored_dead_api", "auth_error", last_activity_at=recent)
@@ -799,7 +800,8 @@ def populate_demo(home: SyntheticHome) -> dict[str, str]:
     desktop("open_pr", None, last_activity_at=old, prs=[home.pr(7, "MERGED"), home.pr(8, "OPEN")])
     desktop("done", None, last_activity_at=old, prs=[home.pr(9, "CLOSED"), home.pr(10, "MERGED")])
     desktop("jail", "ended", last_activity_at=recent, prs=[home.pr(11, "CLOSED")])
-    desktop("recent", "ended", last_activity_at=recent)
+    # Dead, and looked at when it last spoke: an unread turn would be Needs input instead.
+    desktop("recent", "ended", last_activity_at=recent, records_now=recent)
     desktop("old", None, last_activity_at=old)
 
     cli_cwd = home.real_dir("cli-repo")

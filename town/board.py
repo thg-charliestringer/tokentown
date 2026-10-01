@@ -43,7 +43,6 @@ D7_MS = 7 * DAY_MS
 BEACH_MS = 14 * DAY_MS
 GRAVEYARD_INACTIVE_MS = 30 * DAY_MS
 FOCUS_GRACE_MS = 120_000
-NEEDS_INPUT_MS = 2 * 60 * 60 * 1000
 TOOL_HINT_MS = 90_000
 QUIET_MS = 10 * 60 * 1000
 ERROR_AT_SLACK_MS = 1000
@@ -369,6 +368,21 @@ def _turn_ended_at(verdict: st.Verdict, last_activity_at: int, now: int) -> int:
     return last_activity_at
 
 
+def awaits_reply(verdict: st.Verdict) -> bool:
+    """Whether the turn finished, so nothing has been typed since and the chat is waiting on you.
+
+    Nothing about a chat in that state changes while it waits: it is as much your move a day later as a minute
+    later. So a live one holds the Porch until you answer it, archive it or mark it done, and no clock and no
+    glance moves it on. Reading a reply is not answering it.
+    """
+    return verdict.kind in (st.ENDED, st.NONE)
+
+
+def unread_since_turn(rec: DesktopRecord, verdict: st.Verdict, last_activity_at: int, now: int) -> bool:
+    """Whether the chat has not been opened since its turn ended, which is what `unread` is read from too."""
+    return _turn_ended_at(verdict, last_activity_at, now) > (rec.last_focused_at or 0) + FOCUS_GRACE_MS
+
+
 def _pr_or_done_lane(pr: PrVerdict, done_at: int | None, last_activity_at: int, now: int) -> _Lane | None:
     """The harbour or the island when a PR or a done mark places the row, else None."""
     if pr.open:
@@ -457,14 +471,20 @@ def _live_lane(*, entry: RegistryEntry, verdict: st.Verdict, rec: DesktopRecord 
     if has_background(background):
         # The turn ended, so the registry says idle, but a background task the session launched is still going.
         return _background_lane(background, verdict, last_activity_at, now)
+    waiting = awaits_reply(verdict)
     placed = _pr_or_done_lane(pr, done_at, last_activity_at, now)
-    if placed is not None:
+    # An open PR no longer hides a chat waiting on you: the PR can sit for days while the question in the chat is
+    # yours to answer now. A merge or a done mark still sails the row, since both say you have finished with it.
+    if placed is not None and not (waiting and placed.lane == "open_pr"):
         return placed
-    if (verdict.kind in (st.ENDED, st.NONE)
-            and now - _turn_ended_at(verdict, last_activity_at, now) <= NEEDS_INPUT_MS):
+    if waiting:
         started = entry.started_at or 0
         since = status_since if last_activity_at >= started else last_activity_at
         return _Lane("your_turn", NEEDS_INPUT_LABEL, since)
+    # The registry says idle with your own prompt or an abandoned tool call last, which is a turn that never
+    # finished: interrupted, or the status not caught up yet. A dead session reads the same tail the same way.
+    if verdict.kind in (st.MODEL_NEXT, st.TOOL_PENDING):
+        return _Lane("stopped", "Stopped mid-turn", last_activity_at)
     if pr.closed:
         return _jail_lane(last_activity_at)
 
@@ -514,6 +534,11 @@ def _dead_lane(*, verdict: st.Verdict, rec: DesktopRecord | None, pr: PrVerdict,
     if pr.closed and now - max(last_activity_at, pr.closed_at or 0) <= GRAVEYARD_INACTIVE_MS:
         return _jail_lane(last_activity_at)
     if recent:
+        # Ending the process is not an answer, so a turn you never read keeps the Porch rather than dropping to
+        # the cottages: quitting the app used to sweep everything waiting on you off the board's front. A chat you
+        # did read rests here, unlike a live one: it has gone, and you have seen the last thing it said.
+        if rec is not None and awaits_reply(verdict) and unread_since_turn(rec, verdict, last_activity_at, now):
+            return _Lane("your_turn", NEEDS_INPUT_LABEL, last_activity_at)
         return _Lane("recent", "Recent", last_activity_at)
     if now - last_activity_at > GRAVEYARD_INACTIVE_MS:
         return _Lane("graveyard", "Inactive", last_activity_at, rest_reason="inactive")

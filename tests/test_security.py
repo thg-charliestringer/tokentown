@@ -1588,7 +1588,9 @@ def desktop_record(n: int, last_activity_at: int, prs: tuple[PullRequest, ...]) 
     return DesktopRecord(
         session_id=f"local_{n:08d}-2222-4333-8444-555555555555", cli_session_id=None, cwd="/w/repo",
         origin_cwd="/w/repo", title=None, model=None, effort=None, branch=None, permission_mode=None,
-        created_at=None, last_activity_at=last_activity_at, last_focused_at=None, is_archived=False, error_at=None,
+        # Focused when it last spoke, so these rows rest: an unread turn would be Needs input instead.
+        created_at=None, last_activity_at=last_activity_at, last_focused_at=last_activity_at, is_archived=False,
+        error_at=None,
         prs=prs, transcript_unavailable=False)
 
 
@@ -2455,7 +2457,7 @@ class DoneWiringTests(unittest.TestCase):
                                       record("assistant", done_at + 90_000, ("text",), "end_turn")), None)
         self.assertTrue(app.scan_once())
         self.assertEqual(self.store.marks(), {})
-        self.assertEqual((self.rows(app)[rid]["lane"], self.rows(app)[rid]["doneAt"]), ("recent", None))
+        self.assertEqual((self.rows(app)[rid]["lane"], self.rows(app)[rid]["doneAt"]), ("your_turn", None))
 
     def test_go_to_valhalla_marks_at_the_end_of_the_reply_and_bring_back_holds(self):
         from dataclasses import replace
@@ -2482,7 +2484,7 @@ class DoneWiringTests(unittest.TestCase):
 
         self.assertEqual(self.post_done(httpd, rid, False), 200)
         self.assertTrue(app.scan_once())
-        self.assertEqual((self.rows(app)[rid]["lane"], self.store.marks()), ("recent", {}))
+        self.assertEqual((self.rows(app)[rid]["lane"], self.store.marks()), ("your_turn", {}))
 
     def test_go_to_valhalla_waits_while_the_row_cannot_be_marked(self):
         rid = self.records[0].session_id

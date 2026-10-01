@@ -27,10 +27,10 @@ export const LANE_WORD = Object.freeze({
 export const LANE_HELP = Object.freeze({
   needs_you: 'Waiting for you to approve, answer or review a plan',
   errored: 'Rate limited, signed out or an API error',
-  your_turn: 'Claude finished its turn in the last 2 hours',
+  your_turn: 'Claude finished its turn: your move until you answer it',
   running: 'Working, or a task it started in the background still runs',
   stopped: 'Ended mid-turn',
-  idle: 'Quiet for 2 hours or more',
+  idle: 'Live, with a turn that has not finished',
   open_pr: 'A PR is still open',
   jail: 'A PR was closed without merging',
   recent: 'Active in the last 7 days',
